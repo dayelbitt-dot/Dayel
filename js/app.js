@@ -2,6 +2,8 @@ import { initSupabase, isCloud, list, insert, update, remove } from "./store.js"
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
 import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast } from "./ui.js";
 import { mountCapture } from "./capture.js";
+import { detectColumns, matchClient, buildProcessFromRow, parseCSV, inferGrau, extractProcessesFromText } from "./planilha.js";
+import { extractTextFromFile } from "./files.js";
 
 let state = { route: "dashboard" };
 
@@ -539,8 +541,15 @@ async function renderClients() {
     rows.forEach((c) => listWrap.append(clientCard(c)));
   };
   search.addEventListener("input", () => draw(search.value));
-  const importInput = el("input", { type: "file", class: "hidden", accept: ".json,application/json" });
-  importInput.addEventListener("change", async () => { const f = importInput.files[0]; importInput.value = ""; if (f) await importarBackup(f); });
+  const importInput = el("input", { type: "file", class: "hidden" });
+  importInput.addEventListener("change", async () => {
+    const f = importInput.files[0]; importInput.value = "";
+    if (!f) return;
+    const nome = f.name.toLowerCase();
+    if (/\.json$/.test(nome)) await importarBackup(f);
+    else if (/\.(xlsx|xls|csv)$/.test(nome)) await importarPlanilha(f);
+    else await importarArquivoLivre(f); // PDF, imagem, txt, doc… (leitura por texto)
+  });
   main.append(
     el("div", { class: "section-head" }, [
       el("div", {}, [el("h1", { class: "page-title" }, "Clientes 👤"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
@@ -591,6 +600,89 @@ async function importarBackup(file) {
   renderClients();
 }
 
+// Carrega o leitor de Excel (SheetJS) de uma CDN, com alternativas.
+async function loadXLSX() {
+  const cdns = [
+    "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm",
+    "https://esm.sh/xlsx@0.18.5",
+    "https://unpkg.com/xlsx@0.18.5/xlsx.mjs",
+  ];
+  let err;
+  for (const u of cdns) { try { return await import(u); } catch (e) { err = e; } }
+  throw err || new Error("CDN indisponível");
+}
+
+// Importa uma PLANILHA de processos (.xlsx/.xls/.csv), casando com clientes já
+// cadastrados — sem criar clientes novos. Separa 1º e 2º grau.
+async function importarPlanilha(file) {
+  toast("Lendo a planilha… (na 1ª vez, carrega o leitor — precisa de internet)", { duration: 120000 });
+  let rows;
+  try {
+    if (/\.csv$/i.test(file.name)) {
+      rows = parseCSV(await file.text());
+    } else {
+      const XLSX = await loadXLSX();
+      const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    }
+  } catch (e) {
+    toast("Não consegui ler a planilha. " + (e.message || "Verifique a internet e tente de novo."));
+    return;
+  }
+  rows = (rows || []).filter((r) => Object.values(r).some((v) => (v ?? "").toString().trim() !== ""));
+  if (!rows.length) { toast("A planilha está vazia ou sem cabeçalho."); return; }
+
+  const [clients, processes] = await Promise.all([list("clients"), list("processes")]);
+  if (!clients.length) { toast("Cadastre/importe os clientes primeiro — a planilha vincula aos clientes existentes."); return; }
+
+  const cols = detectColumns(Object.keys(rows[0]));
+  // Processa 1º grau antes do 2º, para que o 2º possa casar pelo número do 1º
+  const ordenadas = rows.map((r, i) => ({ r, i, g: inferGrau(r, cols) }))
+    .sort((a, b) => (a.g === b.g ? a.i - b.i : (a.g < b.g ? -1 : 1))).map((x) => x.r);
+  const known = processes.slice();
+  let ok = 0, sem = 0;
+  for (const row of ordenadas) {
+    try {
+      const { client } = matchClient(row, cols, clients, known);
+      const base = buildProcessFromRow(row, cols, client);
+      await insert("processes", { ...base, client_id: client ? client.id : null, status: "Ativo", andamentos: [] });
+      if (client && base.num) known.push({ num: base.num, client_id: client.id });
+      ok++; if (!client) sem++;
+    } catch {}
+  }
+  toast(`✅ ${ok} processos importados${sem ? " · ⚠️ " + sem + " sem cliente identificado (abra e vincule)" : ""}.`, { duration: 9000 });
+  renderClients();
+}
+
+// Importa QUALQUER arquivo (PDF, foto, txt, etc.): extrai o texto e localiza
+// números de processo (CNJ), casando com clientes já cadastrados.
+async function importarArquivoLivre(file) {
+  toast(`Lendo “${file.name}”… (PDF/foto pode levar alguns segundos)`, { duration: 120000 });
+  let texto = "";
+  try { texto = await extractTextFromFile(file, (m) => toast(m, { duration: 120000 })); }
+  catch (e) { toast("Não consegui ler o arquivo. " + (e.message || "")); return; }
+  if (!texto || !texto.trim()) { toast("Não encontrei texto nesse arquivo."); return; }
+
+  const [clients, processes] = await Promise.all([list("clients"), list("processes")]);
+  const achados = extractProcessesFromText(texto, clients, processes);
+  if (!achados.length) { toast("Não encontrei números de processo (padrão CNJ) no arquivo."); return; }
+
+  let ok = 0, sem = 0;
+  for (const a of achados) {
+    try {
+      await insert("processes", {
+        num: a.num, nome: (a.client ? a.client.nome + " — " : "") + "Processo " + a.num,
+        client_id: a.client ? a.client.id : null, grau: a.grau, status: "Ativo",
+        obs: a.contexto || null, andamentos: [],
+      });
+      ok++; if (!a.client) sem++;
+    } catch {}
+  }
+  toast(`✅ ${ok} processos encontrados${sem ? " · ⚠️ " + sem + " sem cliente identificado (abra e vincule)" : ""}. Revise, pois leitura de PDF/foto pode falhar.`, { duration: 10000 });
+  renderClients();
+}
+
 function clientCard(c) {
   return el("div", { class: "row", onclick: () => openClient(c.id) }, [
     avatar(c.nome),
@@ -599,6 +691,18 @@ function clientCard(c) {
       el("div", { class: "t2" }, [c.cpf || "CPF não informado", c.tel || ""].filter(Boolean).join(" · ")),
     ]),
     el("span", { class: "pill" }, "abrir ›"),
+  ]);
+}
+
+function grauSection(label, arr, grauVal, clientId) {
+  return el("div", { class: "card" }, [
+    el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+      el("div", { class: "card-title", style: "margin:0" }, `${label} (${arr.length})`),
+      el("button", { class: "btn btn-primary btn-sm", onclick: () => openProcessModal(null, clientId, () => openClient(clientId), grauVal) }, "＋ Novo"),
+    ]),
+    arr.length
+      ? el("div", { class: "list" }, arr.map((p) => processCard(p, true, null, () => openProcess(p.id, () => openClient(clientId)))))
+      : el("div", { class: "empty" }, "Nenhum processo neste grau."),
   ]);
 }
 
@@ -634,15 +738,8 @@ async function openClient(id) {
         : el("div", { class: "empty" }, "Sem dados extras. Toque em Editar."),
       c.obs ? el("div", { class: "t2", style: "margin-top:10px; white-space:pre-wrap" }, "📝 " + c.obs) : null,
     ]),
-    el("div", { class: "card" }, [
-      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
-        el("div", { class: "card-title", style: "margin:0" }, `Processos (${meus.length})`),
-        el("button", { class: "btn btn-primary btn-sm", onclick: () => openProcessModal(null, id) }, "＋ Novo"),
-      ]),
-      meus.length
-        ? el("div", { class: "list" }, meus.map((p) => processCard(p, true, null, () => openProcess(p.id, () => openClient(id)))))
-        : el("div", { class: "empty" }, "Nenhum processo para este cliente."),
-    ]),
+    grauSection("Processos — 1º grau", meus.filter((p) => (p.grau || "1") !== "2"), "1", id),
+    grauSection("Processos — 2º grau", meus.filter((p) => p.grau === "2"), "2", id),
     el("div", { class: "card" }, [
       el("div", { class: "card-title" }, `Tarefas do cliente (${minhasTarefas.length})`),
       minhasTarefas.length
@@ -732,6 +829,7 @@ function statusBadge(s) {
 
 function processCard(p, compact, clienteNome, onOpen) {
   const meta = [];
+  meta.push(el("span", { class: "tag" }, p.grau === "2" ? "🏛️ 2º grau" : "⚖️ 1º grau"));
   if (p.tipo) meta.push(el("span", { class: "tag" }, p.tipo));
   if (p.fase) meta.push(el("span", { class: "tag" }, "📍 " + p.fase));
   if (!compact && clienteNome) meta.push(el("span", { class: "tag" }, "👤 " + clienteNome));
@@ -756,7 +854,8 @@ async function openProcess(id, backFn) {
   const cliente = clients.find((c) => c.id === p.client_id);
 
   const linhas = [
-    ["Número", p.num], ["Cliente", cliente ? cliente.nome : ""], ["Tipo de ação", p.tipo],
+    ["Número", p.num], ["Cliente", cliente ? cliente.nome : ""], ["Grau", p.grau === "2" ? "2º grau" : "1º grau"],
+    ["Tipo de ação", p.tipo],
     ["Vara / Juízo", p.vara], ["Tribunal", p.tribunal], ["Partes contrárias", p.partes],
     ["Distribuição", p.data_distribuicao ? prettyDate(p.data_distribuicao) : ""],
     ["Fase atual", p.fase], ["Valor da causa", p.valor != null ? BRLnum(p.valor) : ""],
@@ -814,7 +913,7 @@ async function openProcess(id, backFn) {
   removeFab();
 }
 
-function openProcessModal(existing, fixedClientId, onDone) {
+function openProcessModal(existing, fixedClientId, onDone, defaultGrau) {
   const f = existing || {};
   const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val ?? "", ...attrs });
   const sel = (opts, val) => { const s = el("select", { class: "form-control" }); opts.forEach((o) => s.append(el("option", { value: o, ...(o === val ? { selected: "" } : {}) }, o))); return s; };
@@ -830,6 +929,8 @@ function openProcessModal(existing, fixedClientId, onDone) {
   const data = inp("", f.data_distribuicao, { type: "date" });
   const fase = sel(FASES, f.fase);
   const status = sel(STATUS, f.status || "Ativo");
+  const grauSel = el("select", { class: "form-control" });
+  [["1", "1º grau"], ["2", "2º grau"]].forEach(([v, l]) => grauSel.append(el("option", { value: v, ...(((f.grau || defaultGrau || "1") === v) ? { selected: "" } : {}) }, l)));
   const valor = inp("Ex: 15000 ou 15.000,00", f.valor != null ? String(f.valor) : "", { inputmode: "decimal" });
   const obs = el("textarea", { rows: "3", placeholder: "Histórico, estratégia, pontos de atenção…" }, f.obs || "");
 
@@ -865,7 +966,7 @@ function openProcessModal(existing, fixedClientId, onDone) {
 
   const form = el("form", {}, [
     lbl("Número do processo", num), lbl("Nome / Descrição *", nome), lbl("Cliente", clienteSel),
-    lbl("Tipo de ação", tipo), lbl("Vara / Juízo", vara), lbl("Tribunal", tribunal),
+    lbl("Grau", grauSel), lbl("Tipo de ação", tipo), lbl("Vara / Juízo", vara), lbl("Tribunal", tribunal),
     lbl("Partes contrárias", partes), lbl("Data de distribuição", data), lbl("Fase atual", fase),
     lbl("Status", status), lbl("Valor da causa (R$)", valor), lbl("Observações / Estratégia", obs),
     el("div", { class: "card", style: "background:var(--bg-elev)" }, [
@@ -884,7 +985,7 @@ function openProcessModal(existing, fixedClientId, onDone) {
     const payload = {
       num: num.value.trim(), nome: nome.value.trim(), client_id: clienteSel.value || null,
       tipo: tipo.value, vara: vara.value.trim(), tribunal: tribunal.value, partes: partes.value.trim(),
-      data_distribuicao: data.value || null, fase: fase.value, status: status.value,
+      data_distribuicao: data.value || null, fase: fase.value, status: status.value, grau: grauSel.value,
       valor: parseValor(valor.value), obs: obs.value.trim(), andamentos: ands,
     };
     if (existing) await update("processes", existing.id, payload);

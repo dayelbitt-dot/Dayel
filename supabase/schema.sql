@@ -75,6 +75,9 @@ create table if not exists public.processes (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Grau do processo (1º / 2º) ----------
+alter table public.processes add column if not exists grau text default '1';
+
 -- ---------- Vínculos das tarefas ao CRM (para a captura inteligente) ----------
 alter table public.tasks add column if not exists description text;
 alter table public.tasks add column if not exists due_time text;
