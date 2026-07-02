@@ -380,6 +380,11 @@ function openTaskModal(area) {
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const DOW = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 let agendaState = null; // { year, month, selected }
+// Cache de eventos do Google, carregado em segundo plano (NUNCA bloqueia o desenho da Agenda)
+let googleEvents = [];
+let googleLoadedKey = null;   // chave "ano-mês" já carregada, evita recarregar à toa
+let googleLoading = false;
+let googleSilentTried = false; // só tenta reconectar em silêncio uma vez por sessão
 
 function dateToISO(d) {
   const off = d.getTimezoneOffset();
@@ -406,18 +411,14 @@ async function renderAgenda() {
   const first = new Date(year, month, 1);
   const gridStart = new Date(year, month, 1 - first.getDay());
 
-  // Google Agenda (período do mês visível)
+  // Google Agenda: NÃO bloqueia o desenho. Usa o cache já carregado (se houver)
+  // e dispara o carregamento em segundo plano (ensureGoogleEvents, no fim).
   let gStatus = "off";
   if (gcal.googleEnabled()) {
-    if (!gcal.isConnected() && gcal.wasLinked()) { try { await gcal.connect(false); } catch {} }
+    gStatus = gcal.isConnected() ? "connected" : (googleLoading ? "loading" : "connect");
     if (gcal.isConnected()) {
-      gStatus = "connected";
-      try {
-        const rEnd = new Date(gridStart); rEnd.setDate(rEnd.getDate() + 42);
-        const g = await gcal.listEvents(gridStart.toISOString(), rEnd.toISOString());
-        g.forEach((x) => push(x.date, { kind: "gcal", title: x.title, time: x.time, start: minutesOf(x.time), allDay: !x.time, location: x.location, htmlLink: x.htmlLink }));
-      } catch { gStatus = "error"; }
-    } else gStatus = "connect";
+      googleEvents.forEach((x) => push(x.date, { kind: "gcal", title: x.title, time: x.time, start: minutesOf(x.time), allDay: !x.time, location: x.location, htmlLink: x.htmlLink }));
+    }
   }
 
   // calendário mensal
@@ -473,6 +474,43 @@ async function renderAgenda() {
     futuros.length ? chrono : el("div", { class: "empty" }, "Nenhum compromisso agendado."),
   ].filter(Boolean));
   addFab(() => openAgendaAdd(agendaState.selected || today));
+
+  // Carrega o Google em segundo plano (nunca trava a tela). Ao terminar, redesenha.
+  if (gcal.googleEnabled()) ensureGoogleEvents(gridStart, year, month);
+}
+
+// Reconecta em silêncio (1x) e busca eventos do mês visível — tudo assíncrono,
+// sem travar a Agenda. Quando os dados chegam, redesenha só se ainda na Agenda.
+async function ensureGoogleEvents(gridStart, year, month) {
+  const key = year + "-" + month;
+  if (googleLoading) return;
+  const redraw = () => { if (state.route === "agenda") renderAgenda(); };
+
+  // Ainda não conectado: tenta reconexão silenciosa uma única vez por sessão.
+  if (!gcal.isConnected()) {
+    if (!gcal.wasLinked() || googleSilentTried) return;
+    googleSilentTried = true;
+    googleLoading = true;
+    try { await gcal.connect(false); } catch {}
+    googleLoading = false;
+    if (!gcal.isConnected()) { redraw(); return; }
+    // conectou → segue para a busca
+  }
+
+  // Conectado e este mês já carregado → nada a fazer.
+  if (googleLoadedKey === key) return;
+
+  googleLoading = true;
+  redraw(); // mostra o estado "carregando" na barra do Google
+  try {
+    const rEnd = new Date(gridStart); rEnd.setDate(rEnd.getDate() + 42);
+    googleEvents = await gcal.listEvents(gridStart.toISOString(), rEnd.toISOString());
+    googleLoadedKey = key;
+  } catch { /* silencioso: mantém o cache anterior */ }
+  finally {
+    googleLoading = false;
+    redraw();
+  }
 }
 
 function openEvent(e) {
@@ -493,6 +531,10 @@ function chronoRow(e) {
 
 function googleBar(status) {
   if (status === "off") return null;
+  if (status === "loading")
+    return el("div", { class: "gbar" }, [
+      el("span", { class: "t2" }, "🔄 Sincronizando com o Google Agenda…"),
+    ]);
   if (status === "connect")
     return el("div", { class: "gbar" }, [
       el("span", { class: "t2" }, "Veja e crie eventos do seu Google Agenda aqui."),
