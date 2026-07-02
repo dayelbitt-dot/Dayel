@@ -111,6 +111,19 @@ export function parseNaturalTask(input, defaultArea = "pessoal") {
     }
   }
 
+  // ---------- HORA ----------
+  let due_time = null;
+  const setTime = (h, min, mm) => {
+    if (due_time || h < 0 || h > 23 || min < 0 || min > 59) return;
+    due_time = String(h).padStart(2, "0") + ":" + String(min).padStart(2, "0");
+    text = (text.slice(0, mm.index) + " " + text.slice(mm.index + mm[0].length)).replace(/\s+/g, " ").trim();
+  };
+  if (!due_time && (m = low().match(/\bmeio[-\s]?dia\b/))) setTime(12, 0, m);
+  if (!due_time && (m = low().match(/\b(?:as\s+)?(\d{1,2})[:h](\d{2})\b/))) setTime(+m[1], +m[2], m);
+  if (!due_time && (m = low().match(/\b(?:as\s+)?(\d{1,2})\s*h\b/))) setTime(+m[1], 0, m);
+  if (!due_time && (m = low().match(/\bas\s+(\d{1,2})(?:\s*horas?)?\b/))) setTime(+m[1], 0, m);
+  if (!due_time && (m = low().match(/\b(\d{1,2})\s*horas?\b/))) setTime(+m[1], 0, m);
+
   // ---------- LIMPEZA DO TÍTULO ----------
   let title = text
     .replace(/^[\s,.;:–-]+/, "")
@@ -123,5 +136,5 @@ export function parseNaturalTask(input, defaultArea = "pessoal") {
   if (!title) title = original; // se sobrou vazio, usa o texto original
   title = title.charAt(0).toUpperCase() + title.slice(1);
 
-  return { title, area, priority, due_date: due };
+  return { title, area, priority, due_date: due, due_time };
 }
