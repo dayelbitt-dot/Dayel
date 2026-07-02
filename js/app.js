@@ -105,7 +105,7 @@ function navigate(route) {
   state.route = route;
   $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === route));
   removeFab();
-  const routes = { dashboard: renderDashboard, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
+  const routes = { dashboard: renderDashboard, clients: renderClients, processes: renderProcesses, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
   (routes[route] || renderDashboard)();
 }
 
@@ -451,6 +451,291 @@ function openNoteModal() {
   openModal(el("div", {}, [el("h3", {}, "Nova nota"), form]));
   setTimeout(() => title.focus(), 50);
 }
+
+// ==================== CLIENTES ====================
+const AVATAR_CORES = ["#3D4F72", "#4A5C2E", "#6B7FA3", "#B8872A", "#5B3FA3", "#1A6B5A", "#3f6fe0", "#0e8fd4"];
+const TIPOS = ["Família", "Inventário", "Divórcio", "Alimentos / Revisional", "Guarda", "Danos morais", "Cobrança", "Civil", "Outro"];
+const TRIBUNAIS = ["1ª Instância", "TJRS", "STJ", "STF", "TRT"];
+const FASES = ["Petição inicial", "Citação", "Contestação", "Instrução", "Sentença", "Recurso", "Execução", "Encerrado"];
+const STATUS = ["Ativo", "Suspenso", "Encerrado"];
+
+function iniciais(nome) {
+  const p = (nome || "?").trim().split(/\s+/);
+  return ((p[0]?.[0] || "") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
+}
+function corAvatar(str) {
+  let h = 0; for (const c of str || "") h = (h * 31 + c.charCodeAt(0)) % AVATAR_CORES.length;
+  return AVATAR_CORES[h];
+}
+function avatar(nome) {
+  return el("div", { class: "avatar", style: `background:${corAvatar(nome)}` }, iniciais(nome));
+}
+
+async function renderClients() {
+  loading();
+  const clients = (await list("clients", { orderBy: "nome", asc: true }));
+  const main = $("#main");
+  main.innerHTML = "";
+  const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nome ou CPF…" });
+  const listWrap = el("div", { class: "list" });
+  const draw = (q = "") => {
+    const f = q.trim().toLowerCase();
+    const rows = clients.filter((c) => !f || (c.nome || "").toLowerCase().includes(f) || (c.cpf || "").includes(f));
+    listWrap.innerHTML = "";
+    if (!rows.length) { listWrap.append(el("div", { class: "empty" }, clients.length ? "Nenhum cliente encontrado." : "Nenhum cliente ainda. Toque em + para cadastrar.")); return; }
+    rows.forEach((c) => listWrap.append(clientCard(c)));
+  };
+  search.addEventListener("input", () => draw(search.value));
+  main.append(
+    el("div", {}, [el("h1", { class: "page-title" }, "Clientes 👤"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
+    search, listWrap,
+  );
+  draw();
+  addFab(() => openClientModal());
+}
+
+function clientCard(c) {
+  return el("div", { class: "row", onclick: () => openClient(c.id) }, [
+    avatar(c.nome),
+    el("div", { class: "grow" }, [
+      el("div", { class: "t1" }, c.nome),
+      el("div", { class: "t2" }, [c.cpf || "CPF não informado", c.tel || ""].filter(Boolean).join(" · ")),
+    ]),
+    el("span", { class: "pill" }, "abrir ›"),
+  ]);
+}
+
+async function openClient(id) {
+  loading();
+  const [clients, procs] = await Promise.all([list("clients"), list("processes")]);
+  const c = clients.find((x) => x.id === id);
+  if (!c) { renderClients(); return; }
+  const meus = procs.filter((p) => p.client_id === id);
+
+  const dados = [
+    ["CPF", c.cpf], ["RG", c.rg], ["Telefone", c.tel], ["E-mail", c.email],
+    ["Nascimento", c.nasc ? prettyDate(c.nasc) : ""], ["Endereço", c.endereco],
+    ["Área", c.area], ["Origem", c.origem],
+  ].filter(([, v]) => v);
+
+  const main = $("#main");
+  main.innerHTML = "";
+  main.append(
+    el("button", { class: "back-btn", onclick: renderClients }, "← Clientes"),
+    el("div", { class: "detail-head" }, [
+      avatar(c.nome),
+      el("div", {}, [el("h1", { class: "page-title", style: "font-size:20px" }, c.nome), el("p", { class: "page-sub" }, "Pasta do cliente")]),
+    ]),
+    el("div", { class: "card" }, [
+      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+        el("div", { class: "card-title", style: "margin:0" }, "Dados cadastrais"),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClientModal(c) }, "Editar"),
+      ]),
+      dados.length
+        ? el("dl", { class: "kv" }, dados.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]))
+        : el("div", { class: "empty" }, "Sem dados extras. Toque em Editar."),
+      c.obs ? el("div", { class: "t2", style: "margin-top:10px; white-space:pre-wrap" }, "📝 " + c.obs) : null,
+    ]),
+    el("div", { class: "card" }, [
+      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+        el("div", { class: "card-title", style: "margin:0" }, `Processos (${meus.length})`),
+        el("button", { class: "btn btn-primary btn-sm", onclick: () => openProcessModal(null, id) }, "＋ Novo"),
+      ]),
+      meus.length
+        ? el("div", { class: "list" }, meus.map((p) => processCard(p, true)))
+        : el("div", { class: "empty" }, "Nenhum processo para este cliente."),
+    ]),
+    el("div", { style: "text-align:center;margin-top:6px" }, [
+      el("button", { class: "btn btn-danger btn-sm", onclick: async () => {
+        if (confirm(`Excluir o cliente "${c.nome}"? Os processos ficam sem vínculo.`)) { await remove("clients", id); renderClients(); }
+      } }, "Excluir cliente"),
+    ]),
+  );
+  removeFab();
+}
+
+function openClientModal(existing) {
+  const f = existing || {};
+  const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val || "", ...attrs });
+  const nome = inp("Nome completo *", f.nome, { required: "" });
+  const cpf = inp("000.000.000-00", f.cpf);
+  const rg = inp("RG", f.rg);
+  const tel = inp("(51) 9 0000-0000", f.tel);
+  const email = inp("email@exemplo.com", f.email, { type: "email" });
+  const nasc = inp("", f.nasc, { type: "date" });
+  const endereco = inp("Rua, nº, bairro, cidade — UF", f.endereco);
+  const area = inp("Ex: Família, Cível…", f.area);
+  const origem = inp("Ex: Indicação, Instagram…", f.origem);
+  const obs = el("textarea", { rows: "3", placeholder: "Resumo do caso, histórico…" }, f.obs || "");
+
+  const form = el("form", {}, [
+    lbl("Nome *", nome), lbl("CPF", cpf), lbl("RG", rg), lbl("Telefone / WhatsApp", tel),
+    lbl("E-mail", email), lbl("Nascimento", nasc), lbl("Endereço", endereco),
+    lbl("Área", area), lbl("Origem", origem), lbl("Observações", obs),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!nome.value.trim()) { nome.focus(); return; }
+    const data = { nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim() };
+    if (existing) { await update("clients", existing.id, data); closeModal(); openClient(existing.id); }
+    else { const saved = await insert("clients", data); closeModal(); if (saved) openClient(saved.id); else renderClients(); }
+  };
+  openModal(el("div", {}, [el("h3", {}, existing ? "Editar cliente" : "Novo cliente"), form]));
+  setTimeout(() => nome.focus(), 50);
+}
+
+// ==================== PROCESSOS ====================
+async function renderProcesses() {
+  loading();
+  const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
+  const nameOf = (cid) => clients.find((c) => c.id === cid)?.nome || "";
+  const main = $("#main");
+  main.innerHTML = "";
+  const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nº, nome ou cliente…" });
+  const chips = el("div", { class: "filters" }, ["Todos", ...STATUS].map((s) =>
+    el("button", { class: "chip" + (s === "Todos" ? " active" : ""), "data-s": s, onclick: (e) => { $$(".chip", chips).forEach((x) => x.classList.remove("active")); e.target.classList.add("active"); draw(); } }, s)
+  ));
+  const listWrap = el("div", { class: "list" });
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const sf = $(".chip.active", chips)?.dataset.s || "Todos";
+    const rows = procs.filter((p) => {
+      if (sf !== "Todos" && (p.status || "Ativo") !== sf) return false;
+      if (!q) return true;
+      return [p.num, p.nome, nameOf(p.client_id)].some((x) => (x || "").toLowerCase().includes(q));
+    });
+    listWrap.innerHTML = "";
+    if (!rows.length) { listWrap.append(el("div", { class: "empty" }, procs.length ? "Nenhum processo encontrado." : "Nenhum processo ainda. Toque em + para cadastrar.")); return; }
+    rows.forEach((p) => listWrap.append(processCard(p, false, nameOf(p.client_id))));
+  };
+  search.addEventListener("input", draw);
+  main.append(
+    el("div", {}, [el("h1", { class: "page-title" }, "Processos ⚖️"), el("p", { class: "page-sub" }, `${procs.length} cadastrado${procs.length === 1 ? "" : "s"}`)]),
+    search, chips, listWrap,
+  );
+  draw();
+  addFab(() => openProcessModal());
+}
+
+function statusBadge(s) {
+  const k = (s || "Ativo").toLowerCase();
+  return el("span", { class: "badge badge-" + (k === "encerrado" ? "encerrado" : k === "suspenso" ? "suspenso" : "ativo") }, s || "Ativo");
+}
+
+function processCard(p, compact, clienteNome) {
+  const meta = [];
+  if (p.tipo) meta.push(el("span", { class: "tag" }, p.tipo));
+  if (p.fase) meta.push(el("span", { class: "tag" }, "📍 " + p.fase));
+  if (!compact && clienteNome) meta.push(el("span", { class: "tag" }, "👤 " + clienteNome));
+  if (p.andamentos && p.andamentos.length) meta.push(el("span", { class: "tag" }, "🕓 " + p.andamentos.length));
+  return el("div", { class: "row", style: "align-items:flex-start", onclick: () => openProcessModal(p) }, [
+    el("div", { class: "grow" }, [
+      el("div", { class: "t1" }, p.nome),
+      p.num ? el("div", { class: "t2" }, "Nº " + p.num) : null,
+      el("div", { class: "proc-meta" }, meta),
+    ]),
+    statusBadge(p.status),
+  ]);
+}
+
+function openProcessModal(existing, fixedClientId) {
+  const f = existing || {};
+  const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val ?? "", ...attrs });
+  const sel = (opts, val) => { const s = el("select", { class: "form-control" }); opts.forEach((o) => s.append(el("option", { value: o, ...(o === val ? { selected: "" } : {}) }, o))); return s; };
+
+  const num = inp("0000000-00.0000.8.21.0000", f.num);
+  const nome = inp("Ex: Revisão de Alimentos — João Silva", f.nome, { required: "" });
+  const clienteSel = el("select", { class: "form-control" });
+  clienteSel.append(el("option", { value: "" }, "— nenhum —"));
+  const tipo = sel(TIPOS, f.tipo);
+  const vara = inp("Ex: 1ª Vara de Família — Venâncio Aires", f.vara);
+  const tribunal = sel(TRIBUNAIS, f.tribunal);
+  const partes = inp("Parte contrária, advogado…", f.partes);
+  const data = inp("", f.data_distribuicao, { type: "date" });
+  const fase = sel(FASES, f.fase);
+  const status = sel(STATUS, f.status || "Ativo");
+  const valor = inp("0,00", f.valor, { type: "number", step: "0.01", inputmode: "decimal" });
+  const obs = el("textarea", { rows: "3", placeholder: "Histórico, estratégia, pontos de atenção…" }, f.obs || "");
+
+  // andamentos: existentes + novos
+  let ands = Array.isArray(f.andamentos) ? f.andamentos.slice() : [];
+  const timeline = el("div", { class: "timeline" });
+  const andText = el("input", { class: "form-control", placeholder: "Descreva o andamento…" });
+  const drawAnds = () => {
+    timeline.innerHTML = "";
+    if (!ands.length) { timeline.append(el("div", { class: "t2" }, "Nenhum andamento registrado.")); return; }
+    ands.slice().reverse().forEach((a, revIdx) => {
+      const i = ands.length - 1 - revIdx;
+      timeline.append(el("div", { class: "and-item" }, [
+        el("div", { class: "and-dot" }),
+        el("div", { class: "and-body" }, [
+          el("div", { class: "and-when" }, prettyDate(a.data) + (a.hora ? " às " + a.hora : "")),
+          el("div", { class: "and-text" }, a.texto),
+        ]),
+        el("button", { class: "del", type: "button", onclick: () => { ands.splice(i, 1); drawAnds(); } }, "×"),
+      ]));
+    });
+  };
+  const addAnd = () => {
+    const t = andText.value.trim(); if (!t) return;
+    const now = new Date();
+    const off = now.getTimezoneOffset();
+    const dataISO = new Date(now.getTime() - off * 60000).toISOString().slice(0, 10);
+    ands.push({ data: dataISO, hora: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), texto: t });
+    andText.value = ""; drawAnds();
+  };
+  andText.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addAnd(); } });
+  drawAnds();
+
+  const form = el("form", {}, [
+    lbl("Número do processo", num), lbl("Nome / Descrição *", nome), lbl("Cliente", clienteSel),
+    lbl("Tipo de ação", tipo), lbl("Vara / Juízo", vara), lbl("Tribunal", tribunal),
+    lbl("Partes contrárias", partes), lbl("Data de distribuição", data), lbl("Fase atual", fase),
+    lbl("Status", status), lbl("Valor da causa (R$)", valor), lbl("Observações / Estratégia", obs),
+    el("div", { class: "card", style: "background:var(--bg-elev)" }, [
+      el("div", { class: "card-title" }, "Andamentos"),
+      timeline,
+      el("div", { class: "and-add" }, [andText, el("button", { type: "button", class: "btn btn-sm", onclick: addAnd }, "Adicionar")]),
+    ]),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!nome.value.trim()) { nome.focus(); return; }
+    const payload = {
+      num: num.value.trim(), nome: nome.value.trim(), client_id: clienteSel.value || null,
+      tipo: tipo.value, vara: vara.value.trim(), tribunal: tribunal.value, partes: partes.value.trim(),
+      data_distribuicao: data.value || null, fase: fase.value, status: status.value,
+      valor: valor.value ? parseFloat(valor.value) : null, obs: obs.value.trim(), andamentos: ands,
+    };
+    if (existing) await update("processes", existing.id, payload);
+    else await insert("processes", payload);
+    closeModal();
+    if (fixedClientId) openClient(fixedClientId);
+    else if (existing && state.route !== "processes") refresh();
+    else renderProcesses();
+  };
+
+  openModal(el("div", {}, [
+    el("h3", {}, existing ? "Editar processo" : "Novo processo"),
+    existing ? el("button", { class: "btn btn-danger btn-sm", style: "float:right;margin-top:-40px", onclick: async () => { if (confirm("Excluir este processo?")) { await remove("processes", existing.id); closeModal(); fixedClientId ? openClient(fixedClientId) : renderProcesses(); } } }, "Excluir") : null,
+    form,
+  ]));
+  // popular o select de clientes e pré-selecionar
+  list("clients", { orderBy: "nome", asc: true }).then((cs) => {
+    cs.forEach((c) => clienteSel.append(el("option", { value: c.id, ...(((fixedClientId || f.client_id) === c.id) ? { selected: "" } : {}) }, c.nome)));
+  });
+  setTimeout(() => nome.focus(), 50);
+}
+
+function lbl(text, control) { return el("label", {}, [text, control]); }
 
 // ==================== HELPERS ====================
 function stat(label, value, cls = "") {
