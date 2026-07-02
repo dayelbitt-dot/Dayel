@@ -1,7 +1,7 @@
 {
   "name": "Meu Assistente",
   "short_name": "Assistente",
-  "description": "Assistente pessoal, profissional e financeiro para toda a sua vida.",
+  "description": "Assistente pessoal e profissional para organizar toda a sua vida.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

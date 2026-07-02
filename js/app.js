@@ -1,12 +1,8 @@
 import { initSupabase, isCloud, list, insert, update, remove } from "./store.js";
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
-import * as U from "./ui.js";
-import { $, $$, el, BRL, todayISO, monthKey, monthLabel, prettyDate, openModal, closeModal, donut, PALETTE } from "./ui.js";
+import { $, $$, el, todayISO, prettyDate, openModal, closeModal } from "./ui.js";
 
-const CATS_OUT = ["Alimentação", "Moradia", "Transporte", "Saúde", "Lazer", "Educação", "Contas", "Compras", "Outros"];
-const CATS_IN = ["Salário", "Freelance", "Investimentos", "Vendas", "Presente", "Outros"];
-
-let state = { route: "dashboard", selectedMonth: monthKey() };
+let state = { route: "dashboard" };
 
 // ==================== BOOTSTRAP ====================
 async function boot() {
@@ -100,7 +96,7 @@ function navigate(route) {
   state.route = route;
   $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === route));
   removeFab();
-  const routes = { dashboard: renderDashboard, finance: renderFinance, personal: renderTasksPage, professional: renderTasksPage, notes: renderNotes };
+  const routes = { dashboard: renderDashboard, personal: renderTasksPage, professional: renderTasksPage, notes: renderNotes };
   (routes[route] || renderDashboard)();
 }
 
@@ -114,20 +110,17 @@ function loading() { $("#main").innerHTML = '<div class="empty">Carregando…</d
 // ==================== DASHBOARD ====================
 async function renderDashboard() {
   loading();
-  const [tx, tasks] = await Promise.all([
-    list("transactions"),
-    list("tasks"),
+  const [tasks, notes] = await Promise.all([
+    list("tasks", { orderBy: "created_at", asc: true }),
+    list("notes"),
   ]);
-  const mk = monthKey();
-  const monthTx = tx.filter((t) => monthKey(t.occurred_on) === mk);
-  const income = sum(monthTx.filter((t) => t.kind === "income"));
-  const expense = sum(monthTx.filter((t) => t.kind === "expense"));
-  const balance = income - expense;
 
   const today = todayISO();
   const pending = tasks.filter((t) => !t.done);
   const dueToday = pending.filter((t) => t.due_date === today);
   const overdue = pending.filter((t) => t.due_date && t.due_date < today);
+  const personalOpen = pending.filter((t) => (t.area || "pessoal") === "pessoal");
+  const workOpen = pending.filter((t) => t.area === "profissional");
 
   const main = $("#main");
   main.innerHTML = "";
@@ -135,30 +128,46 @@ async function renderDashboard() {
     el("div", { class: "section-head" }, [
       el("div", {}, [
         el("h1", { class: "page-title" }, saudacao()),
-        el("p", { class: "page-sub" }, `Resumo de ${monthLabel(mk)}`),
+        el("p", { class: "page-sub" }, resumoLinha(pending.length, overdue.length)),
       ]),
     ]),
     el("div", { class: "stat-grid" }, [
-      stat("Entradas", BRL(income), "pos"),
-      stat("Saídas", BRL(expense), "neg"),
-      stat("Saldo", BRL(balance), balance >= 0 ? "pos" : "neg"),
-    ]),
-    dashCard("💰 Finanças", "Ver tudo", "finance", monthTx.length
-      ? el("div", { class: "list" }, monthTx.slice(0, 3).map(txRow))
-      : el("div", { class: "empty" }, "Nenhum lançamento este mês.")),
-    dashCard("📌 Para hoje", "Ver tarefas", "personal",
-      dueToday.length || overdue.length
-        ? el("div", { class: "list" }, [
-            ...overdue.slice(0, 3).map((t) => taskRow(t, true)),
-            ...dueToday.slice(0, 3).map((t) => taskRow(t, true)),
-          ])
-        : el("div", { class: "empty" }, "Nada para hoje. Tudo em dia! 🎉")),
-    el("div", { class: "stat-grid" }, [
-      stat("Tarefas abertas", String(pending.length)),
+      stat("Abertas", String(pending.length)),
       stat("Atrasadas", String(overdue.length), overdue.length ? "neg" : ""),
       stat("Concluídas", String(tasks.filter((t) => t.done).length), "pos"),
     ]),
+    dashCard("📌 Para hoje", "Ver tarefas", "personal",
+      dueToday.length || overdue.length
+        ? el("div", { class: "list" }, [
+            ...overdue.slice(0, 4).map((t) => taskRow(t, true)),
+            ...dueToday.slice(0, 4).map((t) => taskRow(t, true)),
+          ])
+        : el("div", { class: "empty" }, "Nada para hoje. Tudo em dia! 🎉")),
+    dashCard("🧑 Pessoal", "Ver tudo", "personal",
+      personalOpen.length
+        ? el("div", { class: "list" }, sortTasks(personalOpen).slice(0, 3).map((t) => taskRow(t, true)))
+        : el("div", { class: "empty" }, "Sem tarefas pessoais abertas.")),
+    dashCard("💼 Trabalho", "Ver tudo", "professional",
+      workOpen.length
+        ? el("div", { class: "list" }, sortTasks(workOpen).slice(0, 3).map((t) => taskRow(t, true)))
+        : el("div", { class: "empty" }, "Sem tarefas de trabalho abertas.")),
+    dashCard("📝 Notas", "Ver tudo", "notes",
+      notes.length
+        ? el("div", { class: "list" }, notes.slice(0, 3).map((n) =>
+            el("div", { class: "row" }, [
+              el("div", { class: "grow" }, [
+                el("div", { class: "t1" }, n.title || "Sem título"),
+                n.body ? el("div", { class: "t2" }, n.body) : null,
+              ]),
+            ])))
+        : el("div", { class: "empty" }, "Nenhuma nota ainda.")),
   );
+}
+
+function resumoLinha(abertas, atrasadas) {
+  if (abertas === 0) return "Tudo em dia! Nenhuma tarefa aberta. 🎉";
+  const base = `${abertas} tarefa${abertas > 1 ? "s" : ""} aberta${abertas > 1 ? "s" : ""}`;
+  return atrasadas ? `${base} · ${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}` : base;
 }
 
 function dashCard(title, linkLabel, route, body) {
@@ -176,123 +185,6 @@ function saudacao() {
   if (h < 12) return "Bom dia ☀️";
   if (h < 18) return "Boa tarde 🌤️";
   return "Boa noite 🌙";
-}
-
-// ==================== FINANÇAS ====================
-async function renderFinance() {
-  loading();
-  const tx = await list("transactions");
-  const months = [...new Set(tx.map((t) => monthKey(t.occurred_on)))].sort().reverse();
-  if (!months.includes(state.selectedMonth)) state.selectedMonth = months[0] || monthKey();
-  const mk = state.selectedMonth;
-  const monthTx = tx.filter((t) => monthKey(t.occurred_on) === mk);
-  const income = sum(monthTx.filter((t) => t.kind === "income"));
-  const expense = sum(monthTx.filter((t) => t.kind === "expense"));
-
-  // agrupa despesas por categoria
-  const byCat = {};
-  monthTx.filter((t) => t.kind === "expense").forEach((t) => {
-    byCat[t.category] = (byCat[t.category] || 0) + Number(t.amount);
-  });
-  const catData = Object.entries(byCat)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }));
-
-  const main = $("#main");
-  main.innerHTML = "";
-  main.append(
-    el("h1", { class: "page-title" }, "Finanças 💰"),
-    el("div", { class: "filters" },
-      (months.length ? months : [mk]).map((m) =>
-        el("button", { class: "chip" + (m === mk ? " active" : ""), onclick: () => { state.selectedMonth = m; renderFinance(); } }, monthLabel(m))
-      )
-    ),
-    el("div", { class: "stat-grid" }, [
-      stat("Entradas", BRL(income), "pos"),
-      stat("Saídas", BRL(expense), "neg"),
-      stat("Saldo", BRL(income - expense), income - expense >= 0 ? "pos" : "neg"),
-    ]),
-    el("div", { class: "card" }, [
-      el("div", { class: "card-title" }, "Despesas por categoria"),
-      catData.length
-        ? el("div", { class: "chart-wrap" }, [
-            donut(catData),
-            el("div", { class: "legend" }, catData.map((d) =>
-              el("div", { class: "legend-item" }, [
-                el("span", { class: "dot", style: `background:${d.color}` }),
-                el("span", { class: "lg" }, d.name),
-                el("span", { class: "lv" }, BRL(d.value)),
-              ])
-            )),
-          ])
-        : el("div", { class: "empty" }, "Sem despesas neste mês."),
-    ]),
-    el("div", { class: "card" }, [
-      el("div", { class: "card-title" }, "Lançamentos"),
-      monthTx.length
-        ? el("div", { class: "list" }, monthTx.slice().sort((a,b)=> (a.occurred_on<b.occurred_on?1:-1)).map(txRow))
-        : el("div", { class: "empty" }, "Nenhum lançamento. Toque em + para adicionar."),
-    ]),
-  );
-  addFab(() => openTxModal());
-}
-
-function txRow(t) {
-  const isIn = t.kind === "income";
-  return el("div", { class: "row" }, [
-    el("div", { class: "grow" }, [
-      el("div", { class: "t1" }, t.note || t.category),
-      el("div", { class: "t2" }, `${t.category} · ${prettyDate(t.occurred_on)}`),
-    ]),
-    el("div", { class: "amount " + (isIn ? "value pos" : "value neg") }, (isIn ? "+" : "−") + BRL(t.amount).replace("R$", "R$ ")),
-    el("button", { class: "del", title: "Excluir", onclick: async () => { await remove("transactions", t.id); refresh(); } }, "×"),
-  ]);
-}
-
-function openTxModal() {
-  let kind = "expense";
-  const catSel = el("select", {});
-  const fillCats = () => {
-    catSel.innerHTML = "";
-    (kind === "income" ? CATS_IN : CATS_OUT).forEach((c) => catSel.append(el("option", { value: c }, c)));
-  };
-  fillCats();
-
-  const seg = el("div", { class: "seg" }, [
-    el("button", { class: "expense active", onclick: () => setKind("expense") }, "Saída"),
-    el("button", { class: "income", onclick: () => setKind("income") }, "Entrada"),
-  ]);
-  function setKind(k) {
-    kind = k;
-    seg.children[0].classList.toggle("active", k === "expense");
-    seg.children[1].classList.toggle("active", k === "income");
-    fillCats();
-  }
-
-  const amount = el("input", { type: "number", step: "0.01", min: "0", inputmode: "decimal", placeholder: "0,00", required: "" });
-  const note = el("input", { type: "text", placeholder: "Ex: mercado, uber…" });
-  const date = el("input", { type: "date", value: todayISO() });
-
-  const form = el("form", {}, [
-    seg,
-    el("label", {}, ["Valor", amount]),
-    el("label", {}, ["Categoria", catSel]),
-    el("label", {}, ["Descrição (opcional)", note]),
-    el("label", {}, ["Data", date]),
-    el("div", { class: "modal-actions" }, [
-      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
-      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
-    ]),
-  ]);
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const val = parseFloat(amount.value);
-    if (!val || val <= 0) { amount.focus(); return; }
-    await insert("transactions", { kind, amount: val, category: catSel.value, note: note.value.trim(), occurred_on: date.value || todayISO() });
-    closeModal(); renderFinance();
-  };
-  openModal(el("div", {}, [el("h3", {}, "Novo lançamento"), form]));
-  setTimeout(() => amount.focus(), 50);
 }
 
 // ==================== TAREFAS (Pessoal / Profissional) ====================
@@ -441,7 +333,6 @@ function stat(label, value, cls = "") {
     el("div", { class: "value " + cls }, value),
   ]);
 }
-function sum(rows) { return rows.reduce((s, r) => s + Number(r.amount || 0), 0); }
 function refresh() { navigate(state.route); }
 
 // ==================== SERVICE WORKER ====================

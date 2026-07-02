@@ -1,13 +1,12 @@
 # ✦ Meu Assistente
 
-Assistente **pessoal, profissional e financeiro** para toda a sua vida — em um único app que roda no **celular e no computador** (qualquer aparelho com navegador).
+Assistente **pessoal e profissional** para organizar toda a sua vida — em um único app que roda no **celular e no computador** (qualquer aparelho com navegador).
 
 É um **PWA**: você abre pelo link e pode "instalar" na tela inicial como se fosse um app de loja. Não precisa de Play Store nem App Store.
 
 ## O que já tem
 
-- 🏠 **Início** — painel com resumo do mês (entradas, saídas, saldo) e tarefas do dia
-- 💰 **Finanças** — lançar entradas e saídas, categorias, gráfico de despesas e saldo por mês
+- 🏠 **Início** — painel com resumo das tarefas do dia, pendências e notas recentes
 - 🧑 **Pessoal** — tarefas, prioridades e prazos
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
 - 📝 **Notas** — anotações rápidas
