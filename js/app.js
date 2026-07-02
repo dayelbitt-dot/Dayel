@@ -97,7 +97,7 @@ function navigate(route) {
   state.route = route;
   $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === route));
   removeFab();
-  const routes = { dashboard: renderDashboard, personal: renderTasksPage, professional: renderTasksPage, notes: renderNotes };
+  const routes = { dashboard: renderDashboard, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
   (routes[route] || renderDashboard)();
 }
 
@@ -111,9 +111,10 @@ function loading() { $("#main").innerHTML = '<div class="empty">Carregando…</d
 // ==================== DASHBOARD ====================
 async function renderDashboard() {
   loading();
-  const [tasks, notes] = await Promise.all([
+  const [tasks, notes, reminders] = await Promise.all([
     list("tasks", { orderBy: "created_at", asc: true }),
     list("notes"),
+    list("reminders"),
   ]);
 
   const today = todayISO();
@@ -122,6 +123,7 @@ async function renderDashboard() {
   const overdue = pending.filter((t) => t.due_date && t.due_date < today);
   const personalOpen = pending.filter((t) => (t.area || "pessoal") === "pessoal");
   const workOpen = pending.filter((t) => t.area === "profissional");
+  const upcomingReminders = sortReminders(reminders).filter((r) => !r.remind_on || r.remind_on >= today).slice(0, 3);
 
   const main = $("#main");
   main.innerHTML = "";
@@ -153,6 +155,10 @@ async function renderDashboard() {
       workOpen.length
         ? el("div", { class: "list" }, sortTasks(workOpen).slice(0, 3).map((t) => taskRow(t, true)))
         : el("div", { class: "empty" }, "Sem tarefas de trabalho abertas.")),
+    dashCard("🔔 Lembretes", "Ver tudo", "reminders",
+      upcomingReminders.length
+        ? el("div", { class: "list" }, upcomingReminders.map((r) => reminderRow(r, true)))
+        : el("div", { class: "empty" }, "Nenhum lembrete próximo.")),
     dashCard("📝 Notas", "Ver tudo", "notes",
       notes.length
         ? el("div", { class: "list" }, notes.slice(0, 3).map((n) =>
@@ -294,6 +300,103 @@ function openTaskModal(area) {
   setTimeout(() => title.focus(), 50);
 }
 
+// ==================== LEMBRETES GERAIS ====================
+// Ordenados por data (ordem cronológica): os mais próximos primeiro.
+function sortReminders(list) {
+  return list.slice().sort((a, b) => {
+    if (!a.remind_on && !b.remind_on) return (a.created_at < b.created_at ? 1 : -1);
+    if (!a.remind_on) return 1;   // sem data vai para o fim
+    if (!b.remind_on) return -1;
+    return a.remind_on < b.remind_on ? -1 : (a.remind_on > b.remind_on ? 1 : 0);
+  });
+}
+
+async function renderReminders() {
+  loading();
+  const all = sortReminders(await list("reminders"));
+  const today = todayISO();
+
+  // agrupa em blocos cronológicos
+  const groups = [
+    { key: "atrasado", label: "⚠️ Atrasados", items: [] },
+    { key: "hoje", label: "📌 Hoje", items: [] },
+    { key: "semana", label: "🗓️ Próximos 7 dias", items: [] },
+    { key: "futuro", label: "🔮 Mais adiante", items: [] },
+    { key: "semdata", label: "📎 Sem data", items: [] },
+  ];
+  const in7 = addDaysISO(today, 7);
+  for (const r of all) {
+    if (!r.remind_on) groups[4].items.push(r);
+    else if (r.remind_on < today) groups[0].items.push(r);
+    else if (r.remind_on === today) groups[1].items.push(r);
+    else if (r.remind_on <= in7) groups[2].items.push(r);
+    else groups[3].items.push(r);
+  }
+
+  const main = $("#main");
+  main.innerHTML = "";
+  main.append(
+    el("div", {}, [
+      el("h1", { class: "page-title" }, "Lembretes 🔔"),
+      el("p", { class: "page-sub" }, "Tudo que você precisa lembrar, em ordem cronológica"),
+    ]),
+  );
+  if (!all.length) {
+    main.append(el("div", { class: "empty" }, "Nenhum lembrete ainda. Toque em + para adicionar."));
+  } else {
+    for (const g of groups) {
+      if (!g.items.length) continue;
+      main.append(
+        el("div", { class: "group-head" }, g.label),
+        el("div", { class: "list" }, g.items.map((r) => reminderRow(r))),
+      );
+    }
+  }
+  addFab(() => openReminderModal());
+}
+
+function reminderRow(r, compact = false) {
+  const today = todayISO();
+  const late = r.remind_on && r.remind_on < today;
+  const children = [
+    el("div", { class: "grow" }, [
+      el("div", { class: "t1" }, r.title || "Lembrete"),
+      r.body ? el("div", { class: "t2", style: "white-space:pre-wrap; margin-top:2px" }, r.body) : null,
+      r.remind_on
+        ? el("div", { class: "t2", style: "margin-top:4px;" + (late ? "color:var(--red)" : "color:var(--accent)") }, "📅 " + prettyDate(r.remind_on) + (late ? " · atrasado" : ""))
+        : null,
+    ]),
+  ];
+  if (!compact) {
+    children.push(el("button", { class: "del", title: "Excluir", onclick: async () => { await remove("reminders", r.id); renderReminders(); } }, "×"));
+  }
+  return el("div", { class: "row reminder-row" }, children);
+}
+
+function openReminderModal() {
+  const title = el("input", { type: "text", placeholder: "Sobre o que é o lembrete?", required: "" });
+  const body = el("textarea", { rows: "4", placeholder: "Detalhes importantes (opcional)…" });
+  const date = el("input", { type: "date", value: todayISO() });
+
+  const form = el("form", {}, [
+    el("label", {}, ["Título", title]),
+    el("label", {}, ["Data", date]),
+    el("label", {}, ["Informações (opcional)", body]),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!title.value.trim()) { title.focus(); return; }
+    await insert("reminders", { title: title.value.trim(), body: body.value.trim(), remind_on: date.value || null });
+    closeModal(); renderReminders();
+  };
+  openModal(el("div", {}, [el("h3", {}, "Novo lembrete"), form]));
+  setTimeout(() => title.focus(), 50);
+}
+
 // ==================== NOTAS ====================
 async function renderNotes() {
   loading();
@@ -349,6 +452,12 @@ function stat(label, value, cls = "") {
   ]);
 }
 function refresh() { navigate(state.route); }
+function addDaysISO(iso, n) {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
 
 // ==================== SERVICE WORKER ====================
 if ("serviceWorker" in navigator) {

@@ -1,8 +1,8 @@
 -- ============================================================
 --  Banco de dados do "Meu Assistente" (Supabase)
 --  Cole tudo isto no Supabase → SQL Editor → Run.
---  Cria as tabelas (tarefas e notas) e garante que cada usuário
---  só vê os seus próprios dados.
+--  Cria as tabelas (tarefas, notas e lembretes) e garante que cada
+--  usuário só vê os seus próprios dados.
 -- ============================================================
 
 -- ---------- Tarefas (Pessoal e Profissional) ----------
@@ -27,16 +27,27 @@ create table if not exists public.notes (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Lembretes gerais (ordenados por data) ----------
+create table if not exists public.reminders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  title text not null,
+  body text,
+  remind_on date,
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 --  Segurança: Row Level Security (cada usuário só acessa o seu)
 -- ============================================================
 alter table public.tasks enable row level security;
 alter table public.notes enable row level security;
+alter table public.reminders enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['tasks', 'notes'] loop
+  foreach t in array array['tasks', 'notes', 'reminders'] loop
     execute format('drop policy if exists "own_select" on public.%I;', t);
     execute format('drop policy if exists "own_insert" on public.%I;', t);
     execute format('drop policy if exists "own_update" on public.%I;', t);
@@ -52,3 +63,4 @@ end $$;
 -- Índices úteis
 create index if not exists idx_task_user on public.tasks (user_id, done);
 create index if not exists idx_note_user on public.notes (user_id, created_at);
+create index if not exists idx_rem_user  on public.reminders (user_id, remind_on);

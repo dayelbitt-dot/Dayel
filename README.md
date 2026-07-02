@@ -7,10 +7,13 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 ## O que já tem
 
 - ✨ **Captura rápida** — descreva a tarefa em linguagem natural e o sistema cadastra sozinho
-- 🏠 **Início** — painel com resumo das tarefas do dia, pendências e notas recentes
+- 🏠 **Início** — painel com resumo das tarefas do dia, pendências, lembretes e notas
 - 🧑 **Pessoal** — tarefas, prioridades e prazos
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
+- 🔔 **Lembretes gerais** — tudo que você precisa lembrar, organizado por data (ordem cronológica), agrupado em Atrasados · Hoje · Próximos 7 dias · Mais adiante · Sem data
 - 📝 **Notas** — anotações rápidas
+
+Visual em **tema claro**, otimizado para celular e computador.
 
 ### ✨ Captura rápida (texto, voz e arquivos)
 
