@@ -74,6 +74,12 @@ create table if not exists public.processes (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Vínculos das tarefas ao CRM (para a captura inteligente) ----------
+alter table public.tasks add column if not exists description text;
+alter table public.tasks add column if not exists due_time text;
+alter table public.tasks add column if not exists client_id  uuid references public.clients (id)   on delete set null;
+alter table public.tasks add column if not exists process_id uuid references public.processes (id) on delete set null;
+
 -- ============================================================
 --  Segurança: Row Level Security (cada usuário só acessa o seu)
 -- ============================================================
