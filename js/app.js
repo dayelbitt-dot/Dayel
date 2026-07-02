@@ -640,7 +640,7 @@ async function openClient(id) {
         el("button", { class: "btn btn-primary btn-sm", onclick: () => openProcessModal(null, id) }, "＋ Novo"),
       ]),
       meus.length
-        ? el("div", { class: "list" }, meus.map((p) => processCard(p, true)))
+        ? el("div", { class: "list" }, meus.map((p) => processCard(p, true, null, () => openProcess(p.id, () => openClient(id)))))
         : el("div", { class: "empty" }, "Nenhum processo para este cliente."),
     ]),
     el("div", { class: "card" }, [
@@ -730,13 +730,13 @@ function statusBadge(s) {
   return el("span", { class: "badge badge-" + (k === "encerrado" ? "encerrado" : k === "suspenso" ? "suspenso" : "ativo") }, s || "Ativo");
 }
 
-function processCard(p, compact, clienteNome) {
+function processCard(p, compact, clienteNome, onOpen) {
   const meta = [];
   if (p.tipo) meta.push(el("span", { class: "tag" }, p.tipo));
   if (p.fase) meta.push(el("span", { class: "tag" }, "📍 " + p.fase));
   if (!compact && clienteNome) meta.push(el("span", { class: "tag" }, "👤 " + clienteNome));
   if (p.andamentos && p.andamentos.length) meta.push(el("span", { class: "tag" }, "🕓 " + p.andamentos.length));
-  return el("div", { class: "row", style: "align-items:flex-start", onclick: () => openProcessModal(p) }, [
+  return el("div", { class: "row", style: "align-items:flex-start", onclick: onOpen || (() => openProcess(p.id, renderProcesses)) }, [
     el("div", { class: "grow" }, [
       el("div", { class: "t1" }, p.nome),
       p.num ? el("div", { class: "t2" }, "Nº " + p.num) : null,
@@ -746,7 +746,75 @@ function processCard(p, compact, clienteNome) {
   ]);
 }
 
-function openProcessModal(existing, fixedClientId) {
+// Página de visualização (só leitura) do processo, com botão Editar
+async function openProcess(id, backFn) {
+  loading();
+  const back = backFn || renderProcesses;
+  const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
+  const p = procs.find((x) => x.id === id);
+  if (!p) { back(); return; }
+  const cliente = clients.find((c) => c.id === p.client_id);
+
+  const linhas = [
+    ["Número", p.num], ["Cliente", cliente ? cliente.nome : ""], ["Tipo de ação", p.tipo],
+    ["Vara / Juízo", p.vara], ["Tribunal", p.tribunal], ["Partes contrárias", p.partes],
+    ["Distribuição", p.data_distribuicao ? prettyDate(p.data_distribuicao) : ""],
+    ["Fase atual", p.fase], ["Valor da causa", p.valor != null ? BRLnum(p.valor) : ""],
+  ].filter(([, v]) => v);
+
+  const ands = Array.isArray(p.andamentos) ? p.andamentos : [];
+  const timeline = el("div", { class: "timeline" });
+  ands.slice().reverse().forEach((a) => timeline.append(el("div", { class: "and-item" }, [
+    el("div", { class: "and-dot" }),
+    el("div", { class: "and-body" }, [
+      el("div", { class: "and-when" }, (a.data ? prettyDate(a.data) : "") + (a.hora ? " às " + a.hora : "")),
+      el("div", { class: "and-text" }, a.texto || ""),
+    ]),
+  ])));
+  if (!ands.length) timeline.append(el("div", { class: "t2" }, "Nenhum andamento registrado."));
+
+  // adicionar andamento rápido (sem entrar em edição)
+  const andInput = el("input", { class: "form-control", placeholder: "Novo andamento…" });
+  const addAnd = async () => {
+    const txt = andInput.value.trim(); if (!txt) return;
+    const now = new Date(); const off = now.getTimezoneOffset();
+    const novo = { data: new Date(now.getTime() - off * 60000).toISOString().slice(0, 10), hora: now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), texto: txt };
+    await update("processes", id, { andamentos: [...ands, novo] });
+    openProcess(id, backFn);
+  };
+  andInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addAnd(); } });
+
+  const main = $("#main");
+  main.innerHTML = "";
+  main.append(
+    el("button", { class: "back-btn", onclick: back }, "← Voltar"),
+    el("div", { class: "section-head", style: "align-items:flex-start" }, [
+      el("div", {}, [el("h1", { class: "page-title", style: "font-size:19px" }, p.nome), cliente ? el("p", { class: "page-sub" }, "👤 " + cliente.nome) : null]),
+      statusBadge(p.status),
+    ]),
+    el("div", { class: "card" }, [
+      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+        el("div", { class: "card-title", style: "margin:0" }, "Dados do processo"),
+        el("button", { class: "btn btn-primary btn-sm", onclick: () => openProcessModal(p, null, () => openProcess(id, backFn)) }, "✏️ Editar"),
+      ]),
+      linhas.length
+        ? el("dl", { class: "kv" }, linhas.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]))
+        : el("div", { class: "empty" }, "Sem dados preenchidos. Toque em Editar."),
+      p.obs ? el("div", { class: "t2", style: "margin-top:10px; white-space:pre-wrap" }, "📝 " + p.obs) : null,
+    ]),
+    el("div", { class: "card" }, [
+      el("div", { class: "card-title" }, `Andamentos (${ands.length})`),
+      timeline,
+      el("div", { class: "and-add" }, [andInput, el("button", { class: "btn btn-sm", onclick: addAnd }, "Adicionar")]),
+    ]),
+    cliente ? el("div", { style: "text-align:center;margin-top:4px" }, [
+      el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClient(cliente.id) }, "Abrir pasta do cliente →"),
+    ]) : null,
+  );
+  removeFab();
+}
+
+function openProcessModal(existing, fixedClientId, onDone) {
   const f = existing || {};
   const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val ?? "", ...attrs });
   const sel = (opts, val) => { const s = el("select", { class: "form-control" }); opts.forEach((o) => s.append(el("option", { value: o, ...(o === val ? { selected: "" } : {}) }, o))); return s; };
@@ -762,7 +830,7 @@ function openProcessModal(existing, fixedClientId) {
   const data = inp("", f.data_distribuicao, { type: "date" });
   const fase = sel(FASES, f.fase);
   const status = sel(STATUS, f.status || "Ativo");
-  const valor = inp("0,00", f.valor, { type: "number", step: "0.01", inputmode: "decimal" });
+  const valor = inp("Ex: 15000 ou 15.000,00", f.valor != null ? String(f.valor) : "", { inputmode: "decimal" });
   const obs = el("textarea", { rows: "3", placeholder: "Histórico, estratégia, pontos de atenção…" }, f.obs || "");
 
   // andamentos: existentes + novos
@@ -817,13 +885,13 @@ function openProcessModal(existing, fixedClientId) {
       num: num.value.trim(), nome: nome.value.trim(), client_id: clienteSel.value || null,
       tipo: tipo.value, vara: vara.value.trim(), tribunal: tribunal.value, partes: partes.value.trim(),
       data_distribuicao: data.value || null, fase: fase.value, status: status.value,
-      valor: valor.value ? parseFloat(valor.value) : null, obs: obs.value.trim(), andamentos: ands,
+      valor: parseValor(valor.value), obs: obs.value.trim(), andamentos: ands,
     };
     if (existing) await update("processes", existing.id, payload);
     else await insert("processes", payload);
     closeModal();
-    if (fixedClientId) openClient(fixedClientId);
-    else if (existing && state.route !== "processes") refresh();
+    if (onDone) onDone();
+    else if (fixedClientId) openClient(fixedClientId);
     else renderProcesses();
   };
 
@@ -840,6 +908,16 @@ function openProcessModal(existing, fixedClientId) {
 }
 
 function lbl(text, control) { return el("label", {}, [text, control]); }
+function BRLnum(n) { return (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
+function parseValor(s) {
+  if (s == null) return null;
+  let v = String(s).replace(/[^\d.,-]/g, "");
+  if (!v) return null;
+  if (v.includes(",") && v.includes(".")) v = v.replace(/\./g, "").replace(",", ".");
+  else if (v.includes(",")) v = v.replace(",", ".");
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
 
 // ==================== HELPERS ====================
 function stat(label, value, cls = "") {
