@@ -215,6 +215,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 .and-add { display: flex; gap: 8px; margin-top: 10px; }
 .and-add input { flex: 1; }
 
+/* Anexos */
+.att-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.att-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--card-2, #f5f7fb); border: 1px solid var(--border); border-radius: 10px; }
+.att-ico { font-size: 18px; flex-shrink: 0; }
+.att-name { font-size: 14px; font-weight: 600; color: var(--accent); cursor: pointer; overflow-wrap: anywhere; }
+.att-name:hover { text-decoration: underline; }
+.att-size { flex-shrink: 0; white-space: nowrap; }
+.att-block { margin-top: 4px; }
+
 /* Chart */
 .chart-wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .legend { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 140px; }

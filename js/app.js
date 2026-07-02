@@ -327,10 +327,42 @@ async function openTaskEditModal(t, onDone) {
   cliSel.addEventListener("change", fillProcs);
   fillProcs();
 
+  // ---- anexos ----
+  let atts = Array.isArray(t.attachments) ? t.attachments.slice() : [];
+  const attList = el("div", { class: "att-list" });
+  const attInput = el("input", { type: "file", class: "hidden", multiple: "" });
+  const attBtn = el("button", { type: "button", class: "btn btn-ghost btn-sm" }, "📎 Anexar arquivo");
+  const drawAtts = () => {
+    attList.innerHTML = "";
+    if (!atts.length) { attList.append(el("div", { class: "t2" }, "Nenhum anexo.")); return; }
+    atts.forEach((a, i) => attList.append(el("div", { class: "att-item" }, [
+      el("span", { class: "att-ico" }, iconForType(a.type, a.name)),
+      el("span", { class: "att-name grow", onclick: () => openAttachment(a) }, a.name),
+      el("span", { class: "att-size t2" }, fmtBytes(a.size)),
+      el("button", { type: "button", class: "del", title: "Remover", onclick: () => { atts.splice(i, 1); drawAtts(); } }, "×"),
+    ])));
+  };
+  attBtn.onclick = () => attInput.click();
+  attInput.onchange = async () => {
+    const chosen = [...attInput.files]; attInput.value = "";
+    attBtn.disabled = true; attBtn.textContent = "Lendo…";
+    const novos = await filesToAttachments(chosen, (m) => toast(m));
+    atts = atts.concat(novos);
+    attBtn.disabled = false; attBtn.textContent = "📎 Anexar arquivo";
+    drawAtts();
+  };
+  drawAtts();
+  const anexosBlock = el("div", { class: "att-block" }, [
+    el("div", { class: "cap-field", style: "margin:0" }, [el("span", {}, "Anexos"), attList]),
+    el("div", { style: "margin-top:6px" }, [attBtn, el("div", { class: "t2", style: "margin-top:4px" }, "Até 8 MB por arquivo (PDF, imagem, documento…).")]),
+    attInput,
+  ]);
+
   const form = el("form", {}, [
     lbl("Título", title), lbl("Descrição", desc), lbl("Área (mover)", seg),
     el("div", { class: "cap-row" }, [lbl("Data", date), lbl("Hora", time), lbl("Prioridade", prio)]),
     lbl(cliLabel, cliSel), cliHint, lbl(procLabel, procSel),
+    anexosBlock,
     el("div", { class: "modal-actions" }, [
       el("button", { type: "button", class: "btn btn-danger", onclick: async () => { if (confirm("Excluir esta tarefa?")) { await remove("tasks", t.id); closeModal(); refresh(); } } }, "Excluir"),
       el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
@@ -339,11 +371,17 @@ async function openTaskEditModal(t, onDone) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!title.value.trim()) { title.focus(); return; }
-    await update("tasks", t.id, {
-      title: title.value.trim(), description: desc.value.trim(), area, priority: prio.value,
-      due_date: date.value || null, due_time: time.value || null,
-      client_id: cliSel.value || null, process_id: procSel.value || null,
-    });
+    try {
+      await update("tasks", t.id, {
+        title: title.value.trim(), description: desc.value.trim(), area, priority: prio.value,
+        due_date: date.value || null, due_time: time.value || null,
+        client_id: cliSel.value || null, process_id: procSel.value || null,
+        attachments: atts,
+      });
+    } catch (err) {
+      toast("Não consegui salvar os anexos (talvez muito grandes). " + (err?.message || ""));
+      return;
+    }
     closeModal(); if (onDone) onDone(); else refresh();
   };
   openModal(el("div", {}, [el("h3", {}, "Editar tarefa"), form]));
@@ -437,6 +475,38 @@ async function openTask(tOrId, backFn) {
 
   const toggleDone = async () => { await update("tasks", id, { done: !t.done, done_at: !t.done ? new Date().toISOString() : null }); openTask(id, back); };
 
+  // ---- anexos (com adicionar/baixar/remover direto na página) ----
+  const anexos = Array.isArray(t.attachments) ? t.attachments : [];
+  const attInput = el("input", { type: "file", class: "hidden", multiple: "" });
+  const addAtt = el("button", { class: "btn btn-ghost btn-sm", onclick: () => attInput.click() }, "📎 Anexar");
+  attInput.onchange = async () => {
+    const chosen = [...attInput.files]; attInput.value = "";
+    addAtt.disabled = true; addAtt.textContent = "Lendo…";
+    const novos = await filesToAttachments(chosen, (m) => toast(m));
+    if (novos.length) { try { await update("tasks", id, { attachments: anexos.concat(novos) }); } catch (e) { toast("Não consegui salvar (arquivo grande?). " + (e?.message || "")); } }
+    openTask(id, back);
+  };
+  const removeAtt = async (i) => {
+    const rest = anexos.slice(); rest.splice(i, 1);
+    await update("tasks", id, { attachments: rest }); openTask(id, back);
+  };
+  const attCard = el("div", { class: "card" }, [
+    el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+      el("div", { class: "card-title", style: "margin:0" }, `📎 Anexos (${anexos.length})`),
+      addAtt,
+    ]),
+    anexos.length
+      ? el("div", { class: "att-list" }, anexos.map((a, i) => el("div", { class: "att-item" }, [
+          el("span", { class: "att-ico" }, iconForType(a.type, a.name)),
+          el("span", { class: "att-name grow", onclick: () => openAttachment(a) }, a.name),
+          el("span", { class: "att-size t2" }, fmtBytes(a.size)),
+          el("button", { class: "btn btn-ghost btn-sm", onclick: () => openAttachment(a), title: "Baixar" }, "⤓"),
+          el("button", { class: "del", title: "Remover", onclick: () => removeAtt(i) }, "×"),
+        ])))
+      : el("div", { class: "t2" }, "Nenhum arquivo anexado. Toque em Anexar."),
+    attInput,
+  ]);
+
   const main = $("#main");
   main.innerHTML = "";
   main.append(...[
@@ -458,6 +528,7 @@ async function openTask(tOrId, backFn) {
     ]),
     cliCard,
     procCard,
+    attCard,
     el("div", { class: "detail-actions", style: "display:flex; gap:8px; margin-top:6px" }, [
       el("button", { class: "btn btn-block " + (t.done ? "btn-ghost" : "btn-primary"), onclick: toggleDone }, t.done ? "↩ Reabrir" : "✓ Concluir"),
       el("button", { class: "btn btn-danger btn-block", onclick: async () => { if (confirm("Excluir esta tarefa?")) { await remove("tasks", id); back(); } } }, "Excluir"),
@@ -500,7 +571,7 @@ let agendaState = null; // { year, month, selected }
 let googleEvents = [];
 let googleLoadedKey = null;   // chave "ano-mês" já carregada, evita recarregar à toa
 let googleLoading = false;
-let googleSilentTried = false; // só tenta reconectar em silêncio uma vez por sessão
+let googleSilentAt = 0; // quando tentamos a última reconexão silenciosa (cooldown)
 
 function dateToISO(d) {
   const off = d.getTimezoneOffset();
@@ -595,22 +666,28 @@ async function renderAgenda() {
   if (gcal.googleEnabled()) ensureGoogleEvents(gridStart, year, month);
 }
 
-// Reconecta em silêncio (1x) e busca eventos do mês visível — tudo assíncrono,
+// Reconecta em silêncio e busca eventos do mês visível — tudo assíncrono,
 // sem travar a Agenda. Quando os dados chegam, redesenha só se ainda na Agenda.
+// A reconexão silenciosa (prompt:'none') NÃO abre pop-up: se o Google já foi
+// autorizado uma vez e há sessão no navegador, o token é renovado sozinho.
 async function ensureGoogleEvents(gridStart, year, month) {
   const key = year + "-" + month;
   if (googleLoading) return;
   const redraw = () => { if (state.route === "agenda") renderAgenda(); };
 
-  // Ainda não conectado: tenta reconexão silenciosa uma única vez por sessão.
+  // Não conectado (nunca ou token de 1h expirou): tenta renovar em silêncio.
+  // Com cooldown de 20s para não repetir à toa, mas SEM limite por sessão —
+  // assim continua vinculado sem você precisar clicar de novo.
   if (!gcal.isConnected()) {
-    if (!gcal.wasLinked() || googleSilentTried) return;
-    googleSilentTried = true;
+    if (!gcal.wasLinked()) return;
+    if (Date.now() - googleSilentAt < 20000) return;
+    googleSilentAt = Date.now();
     googleLoading = true;
     try { await gcal.connect(false); } catch {}
     googleLoading = false;
     if (!gcal.isConnected()) { redraw(); return; }
-    // conectou → segue para a busca
+    googleLoadedKey = null; // reconectou → força rebuscar o mês
+    // segue para a busca
   }
 
   // Conectado e este mês já carregado → nada a fazer.
@@ -1437,6 +1514,52 @@ function parseValor(s) {
   else if (v.includes(",")) v = v.replace(",", ".");
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
+}
+
+// ==================== ANEXOS (arquivos embutidos na tarefa) ====================
+const MAX_ANEXO = 8 * 1024 * 1024; // 8 MB por arquivo
+function fmtBytes(n) {
+  if (!n && n !== 0) return "";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+function iconForType(type, name) {
+  const t = (type || "") + " " + (name || "").toLowerCase();
+  if (/image\//.test(type) || /\.(png|jpe?g|gif|webp|heic)$/.test(name || "")) return "🖼️";
+  if (/pdf/.test(t)) return "📕";
+  if (/word|\.docx?$/.test(t)) return "📘";
+  if (/sheet|excel|\.xlsx?$|\.csv$/.test(t)) return "📊";
+  if (/audio\//.test(type)) return "🎵";
+  if (/video\//.test(type)) return "🎬";
+  return "📄";
+}
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error || new Error("erro ao ler o arquivo"));
+    r.readAsDataURL(file);
+  });
+}
+// Lê os arquivos escolhidos e devolve os anexos válidos (respeitando o limite de tamanho).
+async function filesToAttachments(fileList, onWarn) {
+  const out = [];
+  for (const file of fileList) {
+    if (file.size > MAX_ANEXO) { onWarn && onWarn(`"${file.name}" tem ${fmtBytes(file.size)} — o limite é ${fmtBytes(MAX_ANEXO)}.`); continue; }
+    try {
+      const data = await readFileAsDataURL(file);
+      out.push({ name: file.name, type: file.type || "", size: file.size, data });
+    } catch { onWarn && onWarn(`Não consegui ler "${file.name}".`); }
+  }
+  return out;
+}
+// Abre/baixa um anexo (data URL) de forma confiável em qualquer navegador.
+function openAttachment(a) {
+  try {
+    const link = el("a", { href: a.data, download: a.name || "arquivo" });
+    document.body.append(link); link.click(); link.remove();
+  } catch { toast("Não foi possível abrir o anexo."); }
 }
 
 // ==================== HELPERS ====================
