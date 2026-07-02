@@ -14,6 +14,7 @@ const ASSETS = [
   "./js/nlp.js",
   "./js/capture.js",
   "./js/files.js",
+  "./js/planilha.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
 ];
