@@ -94,6 +94,12 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:16p
 .keyrow input{flex:1}
 .keyhelp{display:block;color:var(--muted);font-size:11.5px;font-weight:300;line-height:1.5}
 .keyhelp strong{color:var(--ink-soft);font-weight:500}
+.ai-summary{background:linear-gradient(180deg,#fffdf7,#f6ecd6);border:1px solid var(--gold-soft);border-radius:12px;padding:15px 17px;margin-bottom:20px}
+.ai-summary .ttl{font-family:var(--sans);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-deep);font-weight:600;margin-bottom:9px;display:flex;align-items:center;gap:7px}
+.ai-summary dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:5px 12px}
+.ai-summary dt{font-size:12px;color:var(--muted);font-weight:500}
+.ai-summary dd{margin:0;font-size:13px;color:var(--ink)}
+.ai-summary .foot{margin-top:10px;font-size:11.5px;color:var(--muted);font-weight:300}
 
 /* Question groups */
 .group{margin-bottom:24px;padding-bottom:22px;border-bottom:1px solid var(--line)}
@@ -284,6 +290,7 @@ pre.metaprompt{background:linear-gradient(180deg,#fffdf8,#faf4e6);border-color:v
     <div class="panel">
       <h2><span class="ic">◐</span> Defina cada detalhe da imagem</h2>
       <p class="hint">Clique nas opções. Quanto mais específico, mais rico e fiel o metaprompt. Cada bloco tem também um campo livre para o que faltar.</p>
+      <div id="ai-summary" class="hidden"></div>
       <div id="groups"></div>
     </div>
     <div class="actionbar">
@@ -700,10 +707,11 @@ function allowedForAI(){
   return out;
 }
 function applyAnswers(obj){
+  const choices = (obj && obj.choices) ? obj.choices : (obj||{});
   let n=0;
   AI_GROUPS.forEach(id=>{
-    if(!(id in obj))return;
-    const g=grp(id), val=obj[id], ids=g.options.map(o=>o.id);
+    if(!(id in choices))return;
+    const g=grp(id), val=choices[id], ids=g.options.map(o=>o.id);
     if(g.type==="multi"){
       const arr=(Array.isArray(val)?val:[val]).filter(v=>ids.includes(v));
       if(arr.length){state.sel[id]=[...new Set(arr)];n+=arr.length;}
@@ -711,6 +719,16 @@ function applyAnswers(obj){
       const v=Array.isArray(val)?val[0]:val;
       if(ids.includes(v)){state.sel[id]=v;n++;}
     }
+  });
+  // respostas escritas sugeridas pela IA -> campos livres de cada pergunta (deixa tudo específico)
+  const notes=(obj&&obj.notes)?obj.notes : ((obj&&obj.details)?obj.details:{});
+  AI_GROUPS.forEach(id=>{
+    let v=notes[id];
+    if(id==="typology"&&!v)v=notes.building;
+    if(id==="context"&&!v)v=notes.surroundings;
+    if(id==="palette"&&!v)v=notes.colors;
+    const s=Array.isArray(v)?v.join(", "):v;
+    if(s&&String(s).trim())state.free[id]=String(s).trim().slice(0,320);
   });
   return n;
 }
@@ -721,16 +739,50 @@ function setAspectFromDims(w,h){
   for(const k in cand){const d=Math.abs(r-cand[k]);if(d<bd){bd=d;best=k;}}
   state.sel.aspect=best;
 }
-async function geminiAnalyze(rec,key){
-  const instruction="You are an expert architectural image analyst. Look at the attached image of an architectural project and choose the options that best match what is ACTUALLY VISIBLE. Reply with ONLY a compact JSON object whose keys are the group ids listed below. For a 'single' group give one option id (string); for a 'multi' group give an array of option ids. Use ONLY ids from the allowed lists. Omit any key you cannot determine from the image. Do not add commentary. Groups and allowed option ids (id: meaning): "+JSON.stringify(allowedForAI());
-  const body={contents:[{parts:[{text:instruction},{inline_data:{mime_type:rec.mime||"image/jpeg",data:rec.b64}}]}],generationConfig:{temperature:0.1,responseMimeType:"application/json"}};
-  const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(key);
-  const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(!res.ok){let t="";try{t=await res.text();}catch(_){}throw new Error("HTTP "+res.status+(t?(" — "+t.slice(0,160)):""));}
-  const data=await res.json();
-  const txt=(data&&data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts||[]).map(p=>p.text||"").join("");
-  if(!txt) throw new Error("resposta vazia da IA");
-  try{return JSON.parse(txt);}catch(_){const m=txt.match(/\{[\s\S]*\}/);if(m)return JSON.parse(m[0]);throw new Error("JSON inválido da IA");}
+const AI_MODELS=["gemini-2.5-flash","gemini-2.0-flash","gemini-flash-latest"];
+async function geminiAnalyze(recs,key){
+  const instruction=
+`You are a senior architect and architectural photographer. Study the attached architectural image(s) VERY carefully and in detail — inspect the materials and their finishes, the exact window and door pattern, the structure, the colors, the vegetation and site, and the light. Then analyse it.
+
+Return ONLY a JSON object with EXACTLY these two keys:
+
+"choices": an object where, for EVERY group id in the list below, you give the option id(s) that best match what you actually see. ALWAYS pick the single closest option for every group using your best professional judgment — do NOT leave groups empty and do NOT default everything to the same generic answer; only omit a group if it is truly impossible to tell from the image. For a "single" group give one id string; for a "multi" group give an array of ids. Use ONLY ids from the allowed lists.
+
+"notes": an object that gives a SHORT, SPECIFIC written answer (in English) for as many of the group ids as make sense, to be used as the free-text detail of each question. Be concrete about exactly what is visible, never generic, never invent things. Especially fill these:
+  - "materials": real materials with colors/finishes, e.g. "warm travertine cladding, black anodized aluminium window frames, fluted reeded glass";
+  - "typology": what the building specifically is, e.g. "two-storey hillside single-family house with a cantilevered upper volume";
+  - "style": precise style read, e.g. "warm contemporary minimalism with tropical-modernist influence";
+  - "context": specific site, e.g. "gently sloped garden over light gravel with a low stone wall";
+  - "vegetation": specific plants, e.g. "mature olive trees and ornamental grasses";
+  - "elements": notable scene elements, e.g. "reflecting lap pool along the facade";
+  - "palette": dominant colors, e.g. "warm beige, charcoal, natural oak";
+  - "viewpoint": camera read, e.g. "three-quarter frontal view of the main facade";
+  - "time": light read, e.g. "late-afternoon warm sun from the left".
+Keep each note under ~20 words.
+
+Groups and allowed option ids (id: meaning): `+JSON.stringify(allowedForAI());
+  const parts=[{text:instruction}];
+  recs.forEach(r=>{ if(r.b64) parts.push({inline_data:{mime_type:r.mime||"image/jpeg",data:r.b64}}); });
+  const body={contents:[{parts}],generationConfig:{temperature:0.2,responseMimeType:"application/json",maxOutputTokens:2048}};
+  let lastErr;
+  for(const model of AI_MODELS){
+    try{
+      const url="https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+encodeURIComponent(key);
+      const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!res.ok){
+        let t="";try{t=await res.text();}catch(_){}
+        const err=new Error("HTTP "+res.status+(t?(" — "+t.slice(0,160)):""));
+        if(res.status===404||res.status===400){lastErr=err;continue;} // modelo indisponível → tenta o próximo
+        throw err;
+      }
+      const cand=(data=>((data.candidates||[])[0]||{}))(await res.json());
+      const rparts=(cand.content||{}).parts||[];
+      const txt=rparts.map(p=>p.text||"").join("");
+      if(!txt){lastErr=new Error("resposta vazia da IA");continue;}
+      try{return JSON.parse(txt);}catch(_){const m=txt.match(/\{[\s\S]*\}/);if(m)return JSON.parse(m[0]);lastErr=new Error("JSON inválido da IA");continue;}
+    }catch(e){ lastErr=e; if(!/HTTP (404|400)/.test(String(e.message||"")))throw e; }
+  }
+  throw lastErr||new Error("falha na análise");
 }
 async function localEstimate(rec){
   const im=new Image(); im.src=rec.url;
@@ -752,6 +804,20 @@ async function localEstimate(rec){
   if(!obj.materials.length)obj.materials.push("concrete");
   return obj;
 }
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function showAISummary(obj){
+  const box=$("#ai-summary");
+  const notes=(obj&&obj.notes)?obj.notes : ((obj&&obj.details)?obj.details:null);
+  if(!notes){box.classList.add("hidden");box.innerHTML="";return;}
+  const val=v=>Array.isArray(v)?v.join(", "):(v||"");
+  const order=[["materials","Materiais"],["typology","O que é"],["style","Estilo"],["context","Entorno"],["vegetation","Vegetação"],["elements","Elementos"],["palette","Cores"],["viewpoint","Vista"],["time","Luz"]];
+  const rows=order.map(([id,lbl])=>[lbl, val(notes[id]||(id==="typology"?notes.building:id==="context"?notes.surroundings:id==="palette"?notes.colors:""))]).filter(r=>r[1]&&r[1].trim());
+  if(!rows.length){box.classList.add("hidden");box.innerHTML="";return;}
+  box.innerHTML=`<div class="ttl">✦ O que a IA identificou na sua imagem</div>
+    <dl>${rows.map(r=>`<dt>${esc(r[0])}</dt><dd>${esc(r[1])}</dd>`).join("")}</dl>
+    <div class="foot">Cada item já foi escrito no campo livre da pergunta correspondente e entra no metaprompt. Ajuste qualquer resposta como quiser.</div>`;
+  box.classList.remove("hidden");
+}
 let analyzing=false;
 async function analyzeProject(){
   if(analyzing)return;
@@ -763,12 +829,19 @@ async function analyzeProject(){
   hint.textContent = key?"Enviando ao Gemini para identificar materiais e estilo…":"Sem chave — usando estimativa local…";
   try{
     let obj, src;
-    if(key && rec.b64){ obj=await geminiAnalyze(rec,key); src="ia"; }
+    if(key){ obj=await geminiAnalyze(state.project.filter(x=>x.b64), key); src="ia"; }
     else { obj=await localEstimate(rec); src="local"; }
     const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h);
     renderGroups(); updateCount(); setMode("guided");
+    const nn=(obj&&obj.notes)?obj.notes:((obj&&obj.details)?obj.details:{});
+    const dm=nn.materials?(Array.isArray(nn.materials)?nn.materials.join(", "):nn.materials):"";
     hint.textContent="";
-    toast(src==="ia" ? `✦ A IA leu seu projeto e preencheu ${n} respostas — ajuste o que quiser` : `Estimativa local: ${n} respostas (aproximado) — ajuste`);
+    if(src==="ia"){
+      showAISummary(obj);
+      toast(dm ? `✦ IA identificou: ${dm.slice(0,70)}${dm.length>70?"…":""}` : `✦ IA preencheu ${n} respostas — ajuste o que quiser`);
+    } else {
+      toast(`Estimativa local: ${n} respostas (aproximado) — ajuste`);
+    }
   }catch(e){
     // fallback: estimativa local
     try{
@@ -832,6 +905,7 @@ function imgCount(){return state.project.length+state.refs.length;}
 /* =========================================================================
    METAPROMPT GENERATION
    ========================================================================= */
+const EDITORIAL = "EDITORIAL, MAGAZINE-QUALITY ARCHITECTURAL PHOTOGRAPHY — frame and light it like a full-page hero shot in a top design magazine (Dezeen, ArchDaily, Wallpaper*, Architectural Digest) documenting an award-winning building. It must feel curated, cinematic and three-dimensional, NEVER flat, hard, dull or snapshot-like. Use dimensional, sculptural lighting: a soft directional key light with gentle fill and a hint of rim/backlight so volumes and materials read with rich tonal gradation and depth; layered composition with a clear foreground, midground and background; genuine atmospheric depth (subtle haze, light falloff, believable ambient occlusion); a refined filmic color grade with smooth highlight roll-off, gentle contrast and deep-but-open shadows; elegant negative space and a confident, intentional viewpoint. The scene should feel alive and inhabited, with soft natural light shaping every surface. ";
 const ULTRA = "100% ULTRA-PHOTOREALISTIC — the ENTIRE image, without a single exception, must look like a real photograph shot on a full-frame camera, never a 3D render, never CGI, never a video-game look. Absolutely no robotic, plastic, waxy, rubbery, over-smooth or artificially clean surfaces anywhere. EVERY material must show real-world physical behaviour and micro-imperfections: concrete with pores, stains, form marks and subtle patina; wood with real grain, knots and slight tonal variation; metal with fine brushing, micro-scratches and real anisotropic reflections; glass with realistic reflections, faint smudges, dust and true refraction; stone and marble with natural veining and honed micro-relief; fabric and vegetation with fibrous detail. Add subtle real-world touches everywhere — dust, tiny dirt, weathering, edge wear, uneven aging, contact shadows, ambient occlusion in crevices — so no surface looks freshly-generated or synthetic. Physically-based global illumination, ray-traced reflections and refractions, accurate soft shadows, realistic depth of field, high dynamic range and subtle natural photographic grain and lens characteristics. Sky, ground, background, people and vegetation must be equally photorealistic — 8K, razor-sharp, indistinguishable from a professional architectural photograph.";
 
 function subjectPhrase(){
@@ -896,7 +970,7 @@ function enginePhrase(model){
   return bits.length?(bits.join(", ")+"."):"";
 }
 function negativeList(){
-  const base=["3D render look","CGI","video-game graphics","robotic surfaces","plastic or waxy textures","rubbery materials","over-smooth surfaces","artificially clean surfaces","synthetic materials","illustration","painting","drawing","cartoon","flat or dull lighting","blown-out highlights","low detail","blurry","distorted proportions","warped or leaning vertical lines","added or removed windows","added or removed doors","extra floors","duplicated or misaligned windows","invented elements","redesigned building","melting geometry","oversaturated colors","HDR halos","text","watermark","signature","jpeg artifacts"];
+  const base=["flat lighting","flat lifeless image","dull","hard harsh lighting","evenly-lit","lack of depth","two-dimensional","snapshot","amateur photo","3D render look","CGI","video-game graphics","robotic surfaces","plastic or waxy textures","rubbery materials","over-smooth surfaces","artificially clean surfaces","synthetic materials","illustration","painting","drawing","cartoon","blown-out highlights","low detail","blurry","distorted proportions","warped or leaning vertical lines","added or removed windows","added or removed doors","extra floors","duplicated or misaligned windows","invented elements","redesigned building","melting geometry","oversaturated colors","HDR halos","text","watermark","signature","jpeg artifacts"];
   if(!(state.sel.elements||[]).includes("people"))base.push("people","crowds");
   if(!(state.sel.elements||[]).includes("cars"))base.push("cars","traffic");
   if(state.sel.mood==="clean"||state.sel.mood==="serene")base.push("visual clutter","noise");
@@ -912,6 +986,7 @@ function buildNarrative(model){
   paras.push(cameraPhrase());
   const sur=surroundPhrase(); if(sur)paras.push(sur);
   const mp=moodPhrase(); if(mp)paras.push(mp);
+  paras.push(EDITORIAL);
   const eng=enginePhrase(model);
   paras.push(ULTRA+(eng?(" Finish it "+eng):""));
   const ref=referenceClause(); if(ref)paras.push(ref);
@@ -1195,6 +1270,7 @@ function init(){
     if(!confirm("Recomeçar do zero? Suas seleções serão apagadas."))return;
     GROUPS.forEach(g=>{state.sel[g.id]=g.type==="multi"?[]:null;state.free[g.id]="";});
     state.project=[];state.refs=[];$("#describe-text").value="";$("#detected").textContent="";$("#proj-hint").textContent="";
+    const asum=$("#ai-summary");asum.classList.add("hidden");asum.innerHTML="";
     renderGroups();updateCount();renderThumbs("project");renderThumbs("refs");setMode("project");toast("Recomeçado ✓");
   });
 }
