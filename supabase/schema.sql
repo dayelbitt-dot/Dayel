@@ -84,6 +84,9 @@ alter table public.tasks add column if not exists due_time text;
 alter table public.tasks add column if not exists client_id  uuid references public.clients (id)   on delete set null;
 alter table public.tasks add column if not exists process_id uuid references public.processes (id) on delete set null;
 
+-- ---------- Anexos das tarefas (arquivos embutidos: nome, tipo, tamanho, dados) ----------
+alter table public.tasks add column if not exists attachments jsonb not null default '[]';
+
 -- ============================================================
 --  Segurança: Row Level Security (cada usuário só acessa o seu)
 -- ============================================================
