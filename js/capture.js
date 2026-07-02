@@ -3,7 +3,7 @@
 // prioridade, cliente e processo detectados) para ajuste antes de gerar.
 
 import { el, prettyDate, toast } from "./ui.js";
-import { parseNaturalTask } from "./nlp.js";
+import { parseNaturalTask, shortTitle, isLongText } from "./nlp.js";
 import { extractTextFromFile } from "./files.js";
 import { list } from "./store.js";
 
@@ -81,8 +81,12 @@ export function mountCapture(defaultArea, onCreate) {
     const linkedArea = det.client || det.process ? "profissional" : p.area;
     let area = linkedArea;
 
-    const title = el("input", { class: "form-control", value: p.title || "", placeholder: "Título" });
-    const desc = el("textarea", { class: "form-control", rows: "2", placeholder: "Descrição (opcional)" }, "");
+    // Texto longo (ex: mensagem colada) → título curto + descrição com o conteúdo
+    const longo = isLongText(raw);
+    const tituloInicial = longo ? shortTitle(p.title || raw) : (p.title || "");
+    const descInicial = longo ? raw.trim() : "";
+    const title = el("input", { class: "form-control", value: tituloInicial, placeholder: "Título" });
+    const desc = el("textarea", { class: "form-control", rows: longo ? "4" : "2", placeholder: "Descrição (opcional)" }, descInicial);
     const date = el("input", { class: "form-control", type: "date", value: p.due_date || "" });
     const time = el("input", { class: "form-control", type: "time", value: p.due_time || "" });
     const prio = el("select", { class: "form-control" });
