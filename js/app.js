@@ -553,7 +553,10 @@ async function renderClients() {
   main.append(
     el("div", { class: "section-head" }, [
       el("div", {}, [el("h1", { class: "page-title" }, "Clientes 👤"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
-      el("button", { class: "btn btn-ghost btn-sm", onclick: () => importInput.click() }, "⬆ Importar"),
+      el("div", { style: "display:flex; gap:6px; flex-shrink:0" }, [
+        el("button", { class: "btn btn-ghost btn-sm", onclick: openImportsManager, title: "Desfazer importações" }, "↩︎"),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => importInput.click() }, "⬆ Importar"),
+      ]),
     ]),
     importInput, search, listWrap,
   );
@@ -681,6 +684,47 @@ async function importarArquivoLivre(file) {
   }
   toast(`✅ ${ok} processos encontrados${sem ? " · ⚠️ " + sem + " sem cliente identificado (abra e vincule)" : ""}. Revise, pois leitura de PDF/foto pode falhar.`, { duration: 10000 });
   renderClients();
+}
+
+// Agrupa itens por proximidade de created_at (cada bloco ≈ uma importação).
+function clusterByCreated(items, gapMs = 5 * 60 * 1000) {
+  const withT = items.filter((x) => x.created_at)
+    .map((x) => ({ x, t: new Date(x.created_at).getTime() }))
+    .filter((o) => !isNaN(o.t))
+    .sort((a, b) => a.t - b.t);
+  const batches = [];
+  let cur = null;
+  for (const { x, t } of withT) {
+    if (cur && t - cur.last <= gapMs) { cur.items.push(x); cur.last = t; }
+    else { cur = { items: [x], first: t, last: t }; batches.push(cur); }
+  }
+  return batches.reverse(); // mais recentes primeiro
+}
+
+// Ferramenta: ver e excluir importações/criações recentes de processos.
+async function openImportsManager() {
+  const procs = await list("processes");
+  const batches = clusterByCreated(procs);
+  const fmt = (ms) => { const d = new Date(ms); return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); };
+
+  const rows = batches.map((bt, i) => el("div", { class: "row" }, [
+    el("div", { class: "grow" }, [
+      el("div", { class: "t1" }, `${bt.items.length} processo${bt.items.length > 1 ? "s" : ""}` + (i === 0 ? "  · mais recente" : "")),
+      el("div", { class: "t2" }, "criados em " + fmt(bt.first)),
+    ]),
+    el("button", { class: "btn btn-danger btn-sm", onclick: async () => {
+      if (!confirm(`Excluir ${bt.items.length} processo(s) criados em ${fmt(bt.first)}?\n\nOs CLIENTES não são afetados. Isso não pode ser desfeito.`)) return;
+      for (const it of bt.items) { try { await remove("processes", it.id); } catch {} }
+      closeModal(); toast(`🗑 ${bt.items.length} processo(s) excluído(s).`); openImportsManager();
+    } }, "🗑 Excluir"),
+  ]));
+
+  openModal(el("div", {}, [
+    el("h3", {}, "Desfazer importações"),
+    el("p", { class: "t2", style: "margin-bottom:12px" }, "Cada bloco reúne os processos criados juntos (geralmente uma importação de Excel). Exclua os que quiser — os clientes não são afetados. Os mais recentes ficam no topo."),
+    rows.length ? el("div", { class: "list" }, rows) : el("div", { class: "empty" }, "Nenhum processo cadastrado."),
+    el("div", { class: "modal-actions" }, [el("button", { class: "btn btn-ghost", onclick: closeModal }, "Fechar")]),
+  ]));
 }
 
 function clientCard(c) {
