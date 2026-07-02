@@ -10,17 +10,9 @@ permissions:
   pages: write
   id-token: write
 
-# Um deploy por vez
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
