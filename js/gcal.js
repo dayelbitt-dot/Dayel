@@ -27,24 +27,37 @@ function loadGIS() {
   });
 }
 
+function withTimeout(promise, ms, what) {
+  return Promise.race([promise, new Promise((_, r) => setTimeout(() => r(new Error("timeout: " + (what || ""))), ms))]);
+}
+
 // interactive=false tenta reconectar em silêncio (se já autorizou antes)
 export async function connect(interactive = true) {
   if (!GOOGLE_CLIENT_ID) throw new Error("Google não configurado");
-  await loadGIS();
+  await withTimeout(loadGIS(), 10000, "carregar Google");
   return new Promise((resolve, reject) => {
-    const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: SCOPE,
-      callback: (resp) => {
-        if (resp.error) { reject(new Error(resp.error)); return; }
-        accessToken = resp.access_token;
-        tokenExpiry = Date.now() + ((resp.expires_in ? resp.expires_in * 1000 : 3600000) - 60000);
-        localStorage.setItem("gcal_linked", "1");
-        resolve(true);
-      },
-    });
+    let settled = false;
+    const finish = (fn, v) => { if (!settled) { settled = true; fn(v); } };
+    let tokenClient;
+    try {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: SCOPE,
+        callback: (resp) => {
+          if (resp.error) { finish(reject, new Error(resp.error)); return; }
+          accessToken = resp.access_token;
+          tokenExpiry = Date.now() + ((resp.expires_in ? resp.expires_in * 1000 : 3600000) - 60000);
+          localStorage.setItem("gcal_linked", "1");
+          finish(resolve, true);
+        },
+        // chamado quando NÃO dá para obter o token (ex: silencioso falhou) — antes ficava travado
+        error_callback: (err) => { finish(reject, new Error(err?.type || "google_error")); },
+      });
+    } catch (e) { finish(reject, e); return; }
+    // rede de segurança: nunca deixa a promessa pendurada
+    setTimeout(() => finish(reject, new Error("timeout")), interactive ? 120000 : 8000);
     try { tokenClient.requestAccessToken({ prompt: interactive ? "" : "none" }); }
-    catch (e) { reject(e); }
+    catch (e) { finish(reject, e); }
   });
 }
 
@@ -55,10 +68,15 @@ export function disconnect() {
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch("https://www.googleapis.com/calendar/v3" + path, {
-    ...opts,
-    headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json", ...(opts.headers || {}) },
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  let res;
+  try {
+    res = await fetch("https://www.googleapis.com/calendar/v3" + path, {
+      ...opts, signal: ctrl.signal,
+      headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json", ...(opts.headers || {}) },
+    });
+  } finally { clearTimeout(timer); }
   if (res.status === 401) { accessToken = null; tokenExpiry = 0; throw new Error("Sessão do Google expirou — reconecte."); }
   if (!res.ok) throw new Error("Google " + res.status + ": " + (await res.text()).slice(0, 140));
   return res.status === 204 ? null : res.json();
