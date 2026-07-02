@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0d1117" />
+<title>ArchRender Master — Gerador de Prompts de Renderização Arquitetônica</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E" />
+<style>
+:root{
+  --bg:#0d1117; --bg-2:#131a24; --panel:#161d2a; --panel-2:#1c2534;
+  --border:#28324333; --border-2:#2a3546; --text:#e8edf5; --muted:#8b97ab;
+  --accent:#e0a458; --accent-2:#6fb2e0; --good:#4ec98a; --bad:#e06666;
+  --chip:#1e2735; --chip-on:#3a2f1e; --radius:14px;
+  --shadow:0 12px 40px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:
+    radial-gradient(1200px 700px at 85% -15%, #1a2536 0%, transparent 55%),
+    radial-gradient(900px 600px at -10% 10%, #201a12 0%, transparent 50%),
+    var(--bg);
+  color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased; line-height:1.5;
+}
+a{color:var(--accent-2)}
+.wrap{max-width:1080px;margin:0 auto;padding:22px 18px 80px}
+
+/* Header */
+header.top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand-mark{
+  width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-size:22px;
+  background:linear-gradient(140deg,#e0a458,#b5732e);color:#1a1206;box-shadow:0 6px 20px rgba(224,164,88,.28)
+}
+.brand h1{font-size:19px;margin:0;letter-spacing:.2px}
+.brand p{margin:1px 0 0;font-size:12.5px;color:var(--muted)}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Tabs */
+.modebar{display:flex;gap:6px;background:var(--panel);border:1px solid var(--border-2);border-radius:13px;padding:5px;margin-bottom:18px}
+.modebar button{flex:1;border:0;background:transparent;color:var(--muted);padding:11px 10px;border-radius:9px;font-weight:650;font-size:14px;cursor:pointer;transition:.15s}
+.modebar button .n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#2a3546;color:var(--muted);font-size:12px;margin-right:7px}
+.modebar button.active{background:linear-gradient(140deg,#2b3446,#212a3a);color:var(--text);box-shadow:inset 0 0 0 1px var(--border-2)}
+.modebar button.active .n{background:var(--accent);color:#1a1206}
+
+/* Cards / panels */
+.panel{background:var(--panel);border:1px solid var(--border-2);border-radius:var(--radius);padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.panel h2{font-size:16px;margin:0 0 3px;display:flex;align-items:center;gap:9px}
+.panel h2 .ic{font-size:18px}
+.panel .hint{color:var(--muted);font-size:13px;margin:0 0 14px}
+
+/* Dropzone */
+.drop{border:1.5px dashed #3a4658;border-radius:13px;padding:26px 18px;text-align:center;cursor:pointer;transition:.15s;background:var(--bg-2)}
+.drop:hover,.drop.over{border-color:var(--accent);background:#1a2130}
+.drop .big{font-size:34px}
+.drop p{margin:8px 0 2px;font-weight:600}
+.drop small{color:var(--muted)}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:14px}
+.thumb{position:relative;border-radius:11px;overflow:hidden;border:1px solid var(--border-2);aspect-ratio:1;background:#0a0e14}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .rm{position:absolute;top:5px;right:5px;width:24px;height:24px;border:0;border-radius:50%;background:#000a;color:#fff;font-size:14px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.thumb .tag{position:absolute;left:0;right:0;bottom:0;background:#000a;color:#fff;font-size:10.5px;padding:3px 6px;text-align:left}
+
+/* Question groups */
+.group{margin-bottom:20px}
+.group:last-child{margin-bottom:4px}
+.group .gtitle{font-size:14.5px;font-weight:700;margin:0 0 3px;display:flex;align-items:center;gap:8px}
+.group .gtitle .badge{font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:#232d3d;border:1px solid var(--border-2);padding:2px 7px;border-radius:20px}
+.group .gsub{color:var(--muted);font-size:12.5px;margin:0 0 10px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{
+  border:1px solid var(--border-2);background:var(--chip);color:var(--text);
+  padding:8px 13px;border-radius:22px;font-size:13.5px;cursor:pointer;transition:.12s;user-select:none;
+}
+.chip:hover{border-color:#4a5a70;transform:translateY(-1px)}
+.chip.on{background:linear-gradient(140deg,#3a2f1e,#443014);border-color:var(--accent);color:#f3d9b3;box-shadow:0 0 0 1px var(--accent) inset}
+.chip .k{opacity:.55;font-size:11px;margin-left:3px}
+
+/* Inputs */
+textarea,input[type=text]{
+  width:100%;background:var(--bg-2);border:1px solid var(--border-2);color:var(--text);
+  padding:12px 14px;border-radius:11px;font-size:14px;resize:vertical;font-family:inherit
+}
+textarea:focus,input:focus{outline:2px solid var(--accent);border-color:transparent}
+.free{margin-top:10px}
+.free label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600}
+
+/* Buttons */
+.btn{border:1px solid var(--border-2);background:var(--panel-2);color:var(--text);padding:10px 16px;border-radius:11px;font-weight:650;font-size:14px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{border-color:#4a5a70}
+.btn.primary{background:linear-gradient(140deg,#e0a458,#c17f34);border-color:transparent;color:#1a1206;box-shadow:0 8px 24px rgba(224,164,88,.25)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:7px 12px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.actionbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px}
+
+/* Output */
+.out-block{margin-bottom:16px}
+.out-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+.out-head h3{font-size:14px;margin:0;display:flex;align-items:center;gap:8px}
+.out-head h3 .dot{width:9px;height:9px;border-radius:50%}
+pre.code{
+  background:#0a0e14;border:1px solid var(--border-2);border-radius:11px;padding:14px;margin:0;
+  white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:13px;color:#d6e0ee;max-height:340px;overflow:auto
+}
+.rational{background:#0f1620;border:1px solid var(--border-2);border-radius:11px;padding:15px;font-size:13.5px;color:#c9d4e3}
+.rational strong{color:var(--accent)}
+.rational ul{margin:8px 0 0;padding-left:18px}
+.rational li{margin:4px 0}
+
+/* misc */
+.summary{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.summary .s{font-size:11.5px;background:#212a3a;border:1px solid var(--border-2);padding:3px 9px;border-radius:16px;color:var(--muted)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:#1c2534;border:1px solid var(--accent);color:var(--text);padding:11px 18px;border-radius:12px;box-shadow:var(--shadow);opacity:0;transition:.25s;pointer-events:none;z-index:60;font-size:14px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.footnote{color:var(--muted);font-size:12px;text-align:center;margin-top:26px}
+.hidden{display:none!important}
+.warnbox{background:#2a1e14;border:1px solid var(--accent);border-radius:11px;padding:12px 14px;font-size:13px;color:#f3d9b3;margin-bottom:14px;display:flex;gap:10px}
+.warnbox .ic{font-size:17px}
+.count-pill{font-size:12px;color:var(--muted);background:#212a3a;border:1px solid var(--border-2);padding:3px 10px;border-radius:16px}
+@media (max-width:560px){.wrap{padding:16px 12px 70px}.brand h1{font-size:17px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark">✦</div>
+      <div>
+        <h1>ArchRender Master</h1>
+        <p>Gerador de prompts ultra-realistas para renderização arquitetônica</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost sm" id="btn-reset">↺ Recomeçar</button>
+    </div>
+  </header>
+
+  <div class="modebar" id="modebar">
+    <button data-mode="images" class="active"><span class="n">1</span>Imagens de referência</button>
+    <button data-mode="guided"><span class="n">2</span>Perguntas objetivas</button>
+    <button data-mode="describe"><span class="n">↳</span>Descrever em texto</button>
+    <button data-mode="output"><span class="n">3</span>Prompt gerado</button>
+  </div>
+
+  <!-- ===== MODE: IMAGES ===== -->
+  <section id="mode-images" class="mode">
+    <div class="panel">
+      <h2><span class="ic">🖼️</span> Anexe as imagens do projeto</h2>
+      <p class="hint">Fotos da maquete, croquis, plantas, fachadas, referências de estilo ou fotos do terreno. Elas orientam a leitura do briefing (não são enviadas a nenhum servidor — ficam só no seu navegador).</p>
+      <div class="drop" id="drop">
+        <div class="big">📎</div>
+        <p>Arraste imagens aqui ou clique para escolher</p>
+        <small>PNG, JPG, WEBP · você pode marcar o que cada imagem representa</small>
+        <input type="file" id="file" accept="image/*" multiple hidden />
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+    <div class="actionbar">
+      <button class="btn primary" data-goto="guided">Continuar para as perguntas →</button>
+      <button class="btn ghost" data-goto="describe">Prefiro descrever em texto</button>
+    </div>
+  </section>
+
+  <!-- ===== MODE: DESCRIBE ===== -->
+  <section id="mode-describe" class="mode hidden">
+    <div class="panel">
+      <h2><span class="ic">✍️</span> Descreva como você quer a imagem</h2>
+      <p class="hint">Escreva livremente — em português mesmo. Ex: <em>"fachada de uma casa de concreto e madeira ao pôr do sol, no campo, com piscina, estilo minimalista, foto de drone"</em>. O app lê suas palavras e <strong>pré-seleciona as perguntas</strong> para você só refinar.</p>
+      <textarea id="describe-text" rows="6" placeholder="Descreva o projeto, o clima, os materiais, o enquadramento, a sensação que quer transmitir..."></textarea>
+      <div class="actionbar">
+        <button class="btn primary" id="btn-analyze">✨ Analisar e gerar as perguntas</button>
+        <span class="count-pill" id="detected"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== MODE: GUIDED ===== -->
+  <section id="mode-guided" class="mode hidden">
+    <div class="panel">
+      <h2><span class="ic">🎛️</span> Defina exatamente como quer a imagem</h2>
+      <p class="hint">Clique nas opções. Quanto mais específico, mais próximo da realidade e do seu desejo. Cada bloco tem também um campo livre para o que faltar.</p>
+      <div id="groups"></div>
+    </div>
+    <div class="actionbar">
+      <button class="btn primary" id="btn-generate">⚙️ Gerar prompt de renderização →</button>
+      <span class="count-pill" id="sel-count">0 opções selecionadas</span>
+    </div>
+  </section>
+
+  <!-- ===== MODE: OUTPUT ===== -->
+  <section id="mode-output" class="mode hidden">
+    <div class="panel">
+      <h2><span class="ic">📤</span> Prompt pronto</h2>
+      <p class="hint">Gerado no idioma técnico (inglês) para máxima acurácia dos modelos de difusão. Ajustado ao motor escolhido.</p>
+      <div id="warn-slot"></div>
+
+      <div class="out-block">
+        <div class="out-head">
+          <h3><span class="dot" style="background:var(--accent)"></span> PROMPT</h3>
+          <button class="btn sm" data-copy="prompt">⧉ Copiar</button>
+        </div>
+        <pre class="code" id="out-prompt"></pre>
+      </div>
+
+      <div class="out-block" id="neg-block">
+        <div class="out-head">
+          <h3><span class="dot" style="background:var(--bad)"></span> NEGATIVE PROMPT</h3>
+          <button class="btn sm" data-copy="neg">⧉ Copiar</button>
+        </div>
+        <pre class="code" id="out-neg"></pre>
+      </div>
+
+      <div class="out-block" id="params-block">
+        <div class="out-head">
+          <h3><span class="dot" style="background:var(--accent-2)"></span> PARÂMETROS SUGERIDOS</h3>
+          <button class="btn sm" data-copy="params">⧉ Copiar</button>
+        </div>
+        <pre class="code" id="out-params"></pre>
+      </div>
+
+      <div class="out-block">
+        <div class="out-head">
+          <h3><span class="dot" style="background:var(--good)"></span> RACIONAL TÉCNICO</h3>
+        </div>
+        <div class="rational" id="out-rational"></div>
+      </div>
+
+      <div class="actionbar">
+        <button class="btn primary" data-copy="all">⧉ Copiar tudo</button>
+        <button class="btn ghost" data-goto="guided">← Ajustar respostas</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="footnote">✦ ArchRender Master — traduz conceitos arquitetônicos em prompts tecnicamente precisos. Processamento 100% local no navegador.</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================================
+   ArchRender Master — data-driven prompt engine
+   Cada opção: {id, pt (rótulo), en (frase técnica em inglês), k?:[palavras-chave p/ modo texto]}
+   ========================================================================= */
+
+const GROUPS = [
+  {
+    id:"typology", part:"subject", type:"single", badge:"Tema",
+    title:"Tipologia / tema principal", sub:"O que é o projeto?",
+    options:[
+      {id:"house", pt:"Residência unifamiliar", en:"single-family residence", k:["casa","residencia","residência","sobrado","house","home"]},
+      {id:"apt", pt:"Edifício residencial", en:"multi-story residential building", k:["predio","prédio","edificio","edifício","apartamento","building"]},
+      {id:"interior", pt:"Interior residencial", en:"residential interior space", k:["interior","sala","cozinha","quarto","living","dentro"]},
+      {id:"retail", pt:"Comércio / varejo", en:"retail commercial space", k:["loja","varejo","comercio","comércio","store","shop"]},
+      {id:"office", pt:"Escritório corporativo", en:"corporate office space", k:["escritorio","escritório","office","corporativo"]},
+      {id:"hotel", pt:"Hotel / hospitality", en:"boutique hotel hospitality project", k:["hotel","pousada","resort","hospitality"]},
+      {id:"restaurant", pt:"Restaurante / café", en:"restaurant and café interior", k:["restaurante","cafe","café","bar","bistro"]},
+      {id:"cultural", pt:"Cultural / museu", en:"cultural museum building", k:["museu","cultural","galeria","teatro","biblioteca"]},
+      {id:"edu", pt:"Educacional", en:"educational institution building", k:["escola","universidade","faculdade","educacional"]},
+      {id:"pavilion", pt:"Pavilhão / efêmero", en:"architectural pavilion", k:["pavilhao","pavilhão","pavilion","efemero"]},
+      {id:"landscape", pt:"Paisagismo / praça", en:"public landscape and plaza design", k:["praca","praça","paisagismo","parque","plaza"]},
+      {id:"retrofit", pt:"Reforma / retrofit", en:"adaptive reuse retrofit project", k:["reforma","retrofit","restauro","renovacao"]},
+    ]
+  },
+  {
+    id:"viewpoint", part:"subject", type:"single", badge:"Vista",
+    title:"Tipo de imagem / ponto de vista", sub:"De onde a câmera olha o projeto.",
+    options:[
+      {id:"exterior", pt:"Exterior / fachada", en:"exterior facade view", k:["fachada","exterior","frente","facade"]},
+      {id:"streeteye", pt:"Vista de rua (eye-level)", en:"street-level eye-level view", k:["rua","street","pedestre"]},
+      {id:"aerial", pt:"Aérea / drone", en:"aerial drone bird's-eye view", k:["aerea","aérea","drone","aereo","topo","de cima"]},
+      {id:"int-view", pt:"Interior amplo", en:"wide interior view", k:["interior amplo","ambiente interno"]},
+      {id:"detail", pt:"Detalhe / close", en:"architectural detail close-up", k:["detalhe","close","macro"]},
+      {id:"section", pt:"Corte perspectivado", en:"perspective section cut view", k:["corte","secao","seção","section"]},
+      {id:"axo", pt:"Axonometria / isométrica", en:"isometric axonometric view", k:["axonometria","isometrica","isométrica","axo"]},
+      {id:"twilight", pt:"Nascer/pôr de janela iluminada", en:"twilight glowing-interior facade shot", k:["twilight","janela iluminada"]},
+    ]
+  },
+  {
+    id:"style", part:"style", type:"single", badge:"Estilo",
+    title:"Estilo arquitetônico", sub:"A linguagem formal do projeto.",
+    options:[
+      {id:"contemp", pt:"Contemporâneo minimalista", en:"contemporary minimalist architecture", k:["minimalista","contemporaneo","contemporâneo","minimalist","clean"]},
+      {id:"modernist", pt:"Modernista", en:"modernist architecture", k:["modernista","modernism","modern"]},
+      {id:"brutalist", pt:"Brutalismo", en:"raw Brutalist architecture", k:["brutalismo","brutalist","brutalista"]},
+      {id:"midcentury", pt:"Mid-Century Modern", en:"Mid-Century Modern architecture", k:["mid-century","midcentury","anos 50","anos 60"]},
+      {id:"bauhaus", pt:"Bauhaus", en:"Bauhaus functionalist architecture", k:["bauhaus"]},
+      {id:"hightech", pt:"High-Tech", en:"High-Tech expressed-structure architecture", k:["high-tech","hightech","tecnologico"]},
+      {id:"parametric", pt:"Paramétrico", en:"parametric fluid architecture", k:["parametrico","paramétrico","parametric","fluido","organico"]},
+      {id:"decon", pt:"Desconstrutivismo", en:"Deconstructivist architecture", k:["desconstrutivismo","deconstructivist"]},
+      {id:"vernacular", pt:"Vernacular / regional", en:"vernacular regional architecture", k:["vernacular","regional","rustico","rústico"]},
+      {id:"industrial", pt:"Industrial", en:"industrial-loft architecture", k:["industrial","loft"]},
+      {id:"scandi", pt:"Escandinavo", en:"Scandinavian architecture", k:["escandinavo","nordico","scandinavian"]},
+      {id:"japandi", pt:"Japandi / wabi-sabi", en:"Japandi wabi-sabi architecture", k:["japandi","wabi","japones","zen"]},
+      {id:"medit", pt:"Mediterrâneo", en:"Mediterranean architecture", k:["mediterraneo","mediterrâneo","grego"]},
+      {id:"tropical", pt:"Tropical / moderno brasileiro", en:"Brazilian tropical modernist architecture", k:["tropical","brasileiro","niemeyer","bo bardi"]},
+    ]
+  },
+  {
+    id:"materials", part:"materials", type:"multi", badge:"Materiais",
+    title:"Materiais principais", sub:"Selecione todos os que aparecem. A materialidade define o realismo.",
+    options:[
+      {id:"concrete", pt:"Concreto aparente", en:"exposed board-formed concrete", k:["concreto","concrete","cimento"]},
+      {id:"concrete-polish", pt:"Concreto polido", en:"polished concrete surfaces", k:["concreto polido","cimento queimado"]},
+      {id:"microcement", pt:"Microcimento", en:"seamless microcement finish", k:["microcimento","microcement"]},
+      {id:"oak", pt:"Madeira clara (carvalho)", en:"natural light oak wood", k:["carvalho","madeira clara","oak"]},
+      {id:"walnut", pt:"Madeira escura (nogueira)", en:"rich walnut wood", k:["nogueira","madeira escura","walnut","ipe","ipê"]},
+      {id:"slats", pt:"Ripado de madeira", en:"vertical wood slat cladding", k:["ripado","brise de madeira","muxarabi"]},
+      {id:"brick", pt:"Tijolo aparente", en:"exposed handmade brick", k:["tijolo","brick","alvenaria"]},
+      {id:"marble", pt:"Mármore", en:"veined marble", k:["marmore","mármore","marble"]},
+      {id:"travertine", pt:"Travertino / pedra", en:"travertine stone", k:["travertino","pedra","stone","granito"]},
+      {id:"corten", pt:"Aço corten", en:"weathering Corten steel", k:["corten","aco corten","aço corten"]},
+      {id:"blacksteel", pt:"Aço / metal preto", en:"matte black steel framing", k:["metal preto","aco preto","aço preto","ferro"]},
+      {id:"glass", pt:"Vidro / cristal", en:"floor-to-ceiling clear glazing", k:["vidro","glass","cristal","envidracado","envidraçado"]},
+      {id:"smokedglass", pt:"Vidro fumê / espelhado", en:"tinted reflective glass curtain wall", k:["vidro fume","fumê","espelhado"]},
+      {id:"stucco", pt:"Reboco / estuque branco", en:"white lime plaster stucco", k:["reboco","estuque","branco","stucco"]},
+      {id:"metalpanel", pt:"Painéis metálicos", en:"perforated metal panel cladding", k:["painel metalico","aluminio","perfurado"]},
+      {id:"bamboo", pt:"Bambu / palha", en:"woven bamboo and thatch", k:["bambu","palha","fibra"]},
+      {id:"terracotta", pt:"Terracota / cerâmica", en:"terracotta ceramic tiles", k:["terracota","ceramica","cerâmica","cobogó","cobogo"]},
+    ]
+  },
+  {
+    id:"mood", part:"mood", type:"single", badge:"Atmosfera",
+    title:"Atmosfera / sensação", sub:"O efeito psicológico que a imagem deve provocar.",
+    options:[
+      {id:"serene", pt:"Sereno / contemplativo", en:"serene contemplative atmosphere", k:["sereno","calmo","contemplativo","tranquilo","zen"]},
+      {id:"monumental", pt:"Imponente / monumental", en:"monumental imposing presence", k:["imponente","monumental","grandioso","imponente"]},
+      {id:"cozy", pt:"Aconchegante / acolhedor", en:"warm cozy intimate mood", k:["aconchegante","acolhedor","cozy","quente"]},
+      {id:"luxe", pt:"Sofisticado / luxo", en:"refined luxurious sophistication", k:["luxo","sofisticado","elegante","luxuoso"]},
+      {id:"clean", pt:"Minimalista / clean", en:"pristine minimalist calm", k:["clean","limpo","minimo","mínimo"]},
+      {id:"dramatic", pt:"Dramático / cinematográfico", en:"dramatic cinematic mood", k:["dramatico","dramático","cinematografico","cinematográfico"]},
+      {id:"vibrant", pt:"Vibrante / energético", en:"vibrant energetic atmosphere", k:["vibrante","energetico","energético","colorido"]},
+    ]
+  },
+  {
+    id:"palette", part:"palette", type:"single", badge:"Cores",
+    title:"Paleta de cores", sub:"Dominante cromática da cena.",
+    options:[
+      {id:"neutral", pt:"Neutra / monocromática", en:"neutral monochromatic palette", k:["neutra","neutro","monocromatico","monocromático"]},
+      {id:"earthy", pt:"Tons terrosos", en:"warm earthy tone palette", k:["terroso","terra","bege","ocre"]},
+      {id:"bw", pt:"Preto e branco", en:"high-contrast black and white palette", k:["preto e branco","pb","monochrome"]},
+      {id:"warm", pt:"Quente (âmbar/dourado)", en:"warm amber golden palette", k:["quente","dourado","ambar","âmbar"]},
+      {id:"cool", pt:"Fria (azul/cinza)", en:"cool blue-grey palette", k:["fria","frio","azul","cinza"]},
+      {id:"contrast", pt:"Contrastante", en:"bold contrasting color palette", k:["contraste","contrastante"]},
+      {id:"pastel", pt:"Pastel / suave", en:"soft pastel palette", k:["pastel","suave"]},
+    ]
+  },
+  {
+    id:"time", part:"light", type:"single", badge:"Luz",
+    title:"Horário / iluminação principal", sub:"O momento do dia define a alma da imagem.",
+    options:[
+      {id:"golden", pt:"Golden hour (nascer/pôr do sol)", en:"golden hour warm low-angle sunlight with long soft shadows", k:["golden","por do sol","pôr do sol","entardecer","nascer do sol","amanhecer"]},
+      {id:"blue", pt:"Blue hour (crepúsculo)", en:"blue hour twilight with balanced interior and sky luminance", k:["blue hour","crepusculo","crepúsculo","anoitecer"]},
+      {id:"midday", pt:"Meio-dia (sol alto)", en:"clear midday sun with short crisp shadows", k:["meio-dia","meio dia","sol alto","midday"]},
+      {id:"overcast", pt:"Nublado difuso (overcast)", en:"soft overcast diffused daylight, no harsh shadows", k:["nublado","overcast","difuso","ceu nublado","céu nublado"]},
+      {id:"night", pt:"Noturno (luz artificial)", en:"night scene lit by warm artificial architectural lighting", k:["noturno","noite","noturna","night"]},
+      {id:"natside", pt:"Interior com luz natural lateral", en:"natural side light streaming through openings", k:["luz natural","luz lateral","janela"]},
+      {id:"volumetric", pt:"Volumétrica / god rays", en:"volumetric god rays through atmospheric haze", k:["volumetrica","volumétrica","god rays","raios de luz","neblina de luz"]},
+    ]
+  },
+  {
+    id:"weather", part:"light", type:"single", badge:"Clima",
+    title:"Clima / céu", sub:"Coerente com o horário escolhido.",
+    options:[
+      {id:"clear", pt:"Céu limpo", en:"clear sky", k:["ceu limpo","céu limpo","limpo","sem nuvens"]},
+      {id:"partly", pt:"Parcialmente nublado", en:"partly cloudy sky with dynamic clouds", k:["parcialmente nublado","nuvens","poucas nuvens"]},
+      {id:"cloudy", pt:"Nublado", en:"overcast cloudy sky", k:["nublado"]},
+      {id:"fog", pt:"Neblina / névoa", en:"low morning fog and atmospheric mist", k:["neblina","nevoa","névoa","fog","bruma"]},
+      {id:"rain", pt:"Após chuva (piso molhado)", en:"post-rain wet reflective surfaces", k:["chuva","molhado","after rain","piso molhado","reflexo"]},
+      {id:"snow", pt:"Neve", en:"snow-covered winter scene", k:["neve","snow","inverno"]},
+    ]
+  },
+  {
+    id:"focal", part:"camera", type:"single", badge:"Lente",
+    title:"Distância focal / lente", sub:"Controla distorção e sensação de espaço.",
+    options:[
+      {id:"12mm", pt:"12mm ultra-wide", en:"12mm ultra-wide-angle lens", k:["12mm","ultra wide","grande angular extrema"]},
+      {id:"24mm", pt:"24mm wide (arquitetura)", en:"24mm wide-angle lens", k:["24mm","wide","grande angular"]},
+      {id:"35mm", pt:"35mm natural", en:"35mm lens", k:["35mm"]},
+      {id:"50mm", pt:"50mm (visão humana)", en:"50mm standard lens", k:["50mm","normal","visao humana"]},
+      {id:"85mm", pt:"85mm (compressão/detalhe)", en:"85mm telephoto lens", k:["85mm","tele","teleobjetiva","compressao"]},
+      {id:"tilt", pt:"Tilt-shift (verticais retas)", en:"tilt-shift lens with corrected vertical parallax", k:["tilt-shift","tilt shift","verticais retas"]},
+    ]
+  },
+  {
+    id:"aperture", part:"camera", type:"single", badge:"Foco",
+    title:"Abertura / profundidade de campo", sub:"Quanto do quadro fica nítido.",
+    options:[
+      {id:"f14", pt:"f/1.4 — fundo desfocado", en:"f/1.4 shallow depth of field with creamy bokeh", k:["f1.4","desfocado","bokeh","fundo desfocado"]},
+      {id:"f28", pt:"f/2.8 — leve desfoque", en:"f/2.8 moderate depth of field", k:["f2.8"]},
+      {id:"f8", pt:"f/8 — tudo nítido", en:"f/8 deep focus with edge-to-edge sharpness", k:["f8","tudo nitido","nítido"]},
+      {id:"f16", pt:"f/16 — nitidez máxima", en:"f/16 maximum depth of field", k:["f16","hiperfocal"]},
+    ]
+  },
+  {
+    id:"perspective", part:"camera", type:"multi", badge:"Enquadramento",
+    title:"Perspectiva / altura da câmera", sub:"Como o espaço é organizado no quadro.",
+    options:[
+      {id:"1pt", pt:"1 ponto de fuga (frontal)", en:"one-point perspective", k:["um ponto de fuga","frontal","1 ponto"]},
+      {id:"2pt", pt:"2 pontos de fuga", en:"balanced two-point perspective", k:["dois pontos de fuga","2 pontos"]},
+      {id:"3pt", pt:"3 pontos de fuga (dinâmico)", en:"dynamic three-point perspective", k:["tres pontos","três pontos","3 pontos"]},
+      {id:"eye", pt:"Altura do olhar", en:"eye-level camera height", k:["altura do olhar","eye level","nivel do olho"]},
+      {id:"low", pt:"Contra-plongée (baixo p/ cima)", en:"low worm's-eye camera angle emphasizing height", k:["de baixo","contra plongee","worm"]},
+      {id:"rule3", pt:"Regra dos terços", en:"rule-of-thirds composition", k:["regra dos tercos","terços"]},
+      {id:"symmetry", pt:"Composição simétrica", en:"centered symmetrical composition", k:["simetrico","simétrica","simetria"]},
+    ]
+  },
+  {
+    id:"context", part:"surround", type:"single", badge:"Entorno",
+    title:"Entorno / contexto", sub:"Onde o projeto está inserido.",
+    options:[
+      {id:"urban", pt:"Urbano denso", en:"dense urban context", k:["urbano","cidade","centro","urban"]},
+      {id:"suburb", pt:"Bairro residencial", en:"quiet residential neighborhood", k:["bairro","suburbio","subúrbio","residencial"]},
+      {id:"rural", pt:"Rural / campo", en:"open rural countryside", k:["campo","rural","fazenda","interior do estado"]},
+      {id:"forest", pt:"Floresta / mata", en:"lush forest setting", k:["floresta","mata","bosque","forest"]},
+      {id:"coast", pt:"Litoral / praia", en:"coastal oceanfront setting", k:["praia","litoral","mar","oceano","costa"]},
+      {id:"mountain", pt:"Montanha", en:"dramatic mountain landscape", k:["montanha","serra","mountain"]},
+      {id:"desert", pt:"Deserto / árido", en:"arid desert landscape", k:["deserto","arido","árido"]},
+      {id:"garden", pt:"Jardim tropical", en:"lush tropical garden", k:["jardim tropical","tropical","selva"]},
+    ]
+  },
+  {
+    id:"vegetation", part:"surround", type:"multi", badge:"Paisagismo",
+    title:"Vegetação / paisagismo", sub:"Espécies e elementos naturais integrados.",
+    options:[
+      {id:"lawn", pt:"Gramado", en:"manicured lawn", k:["grama","gramado","lawn"]},
+      {id:"natives", pt:"Árvores nativas maduras", en:"mature native trees", k:["arvores","árvores","nativas"]},
+      {id:"plane", pt:"Plátanos / árvores urbanas", en:"mature London plane trees", k:["platano","plátano","arvore urbana"]},
+      {id:"olive", pt:"Oliveiras / mediterrâneas", en:"silvery olive trees", k:["oliveira","oliveiras"]},
+      {id:"palm", pt:"Palmeiras", en:"tropical palm trees", k:["palmeira","palmeiras","coqueiro"]},
+      {id:"grasses", pt:"Gramíneas ornamentais", en:"ornamental swaying grasses", k:["gramineas","gramíneas","capim"]},
+      {id:"xeri", pt:"Jardim seco / xeriscape", en:"drought-tolerant xeriscape planting", k:["jardim seco","xeriscape","suculentas","cactos"]},
+      {id:"vines", pt:"Vegetação vertical / trepadeiras", en:"climbing green vertical vegetation", k:["trepadeira","jardim vertical","hera"]},
+    ]
+  },
+  {
+    id:"elements", part:"surround", type:"multi", badge:"Elementos",
+    title:"Elementos de cena", sub:"O que mais aparece na imagem.",
+    options:[
+      {id:"water", pt:"Espelho d'água / piscina", en:"reflecting water pool", k:["piscina","espelho d agua","agua","lago"]},
+      {id:"people", pt:"Pessoas (escala/vida)", en:"human figures for scale and life", k:["pessoas","gente","figuras humanas","pessoa"]},
+      {id:"cars", pt:"Veículos", en:"parked contemporary vehicles", k:["carro","veiculo","veículo","carros"]},
+      {id:"furniture", pt:"Mobiliário de design", en:"curated designer furniture", k:["mobiliario","moveis","móveis","furniture","design"]},
+      {id:"lighting-fx", pt:"Luminárias / iluminação cênica", en:"sculptural architectural light fixtures", k:["luminaria","iluminacao cenica","pendente"]},
+      {id:"art", pt:"Arte / esculturas", en:"curated art pieces", k:["arte","escultura","quadro"]},
+      {id:"birds", pt:"Pássaros / vida", en:"distant birds in the sky", k:["passaros","pássaros","aves"]},
+    ]
+  },
+  {
+    id:"engine", part:"engine", type:"multi", badge:"Render",
+    title:"Estética / qualidade técnica de render", sub:"O acabamento fotorrealista desejado.",
+    options:[
+      {id:"pathtrace", pt:"Path tracing (GI física)", en:"unbiased path-traced global illumination", k:["path tracing","path trace"]},
+      {id:"raytrace", pt:"Ray tracing", en:"ray-traced reflections and shadows", k:["ray tracing","raytracing"]},
+      {id:"pbr", pt:"Materiais PBR físicos", en:"physically based PBR materials with accurate roughness and IOR", k:["pbr","materiais fisicos"]},
+      {id:"microdetail", pt:"Micro-detalhe (arranhões/desgaste)", en:"physically accurate micro-scratches and surface wear", k:["desgaste","arranhoes","micro detalhe","imperfeicoes"]},
+      {id:"hdri", pt:"Iluminação HDRI", en:"HDRI environment lighting", k:["hdri"]},
+      {id:"8k", pt:"Resolução 8K / hiper-nítido", en:"8K resolution, hyper-crisp edge topology", k:["8k","4k","alta resolucao","nitido"]},
+      {id:"photoreal", pt:"Fotorrealismo absoluto", en:"photorealistic architectural visualization", k:["fotorrealista","realista","realismo","photoreal"]},
+    ]
+  },
+  {
+    id:"model", part:"model", type:"single", badge:"Motor-alvo",
+    title:"Para qual ferramenta é o prompt?", sub:"Ajusta a formatação e os parâmetros da saída.",
+    options:[
+      {id:"mj", pt:"Midjourney v6", en:"Midjourney", k:["midjourney","mj"]},
+      {id:"sd", pt:"Stable Diffusion", en:"Stable Diffusion", k:["stable diffusion","sd","automatic1111","comfyui"]},
+      {id:"dalle", pt:"DALL·E 3 / linguagem natural", en:"DALL-E 3", k:["dalle","dall-e","chatgpt"]},
+      {id:"ue5", pt:"Unreal Engine 5", en:"Unreal Engine 5 Lumen", k:["unreal","ue5","lumen"]},
+      {id:"vray", pt:"V-Ray / Corona", en:"V-Ray Corona", k:["vray","v-ray","corona"]},
+      {id:"octane", pt:"Octane / Redshift", en:"Octane", k:["octane","redshift"]},
+    ]
+  },
+  {
+    id:"aspect", part:"aspect", type:"single", badge:"Formato",
+    title:"Proporção / formato", sub:"",
+    options:[
+      {id:"169", pt:"16:9 (paisagem cinematográfica)", en:"16:9", k:["16:9","paisagem","widescreen"]},
+      {id:"32", pt:"3:2 (foto clássica)", en:"3:2", k:["3:2"]},
+      {id:"11", pt:"1:1 (quadrado)", en:"1:1", k:["1:1","quadrado"]},
+      {id:"45", pt:"4:5 (vertical / social)", en:"4:5", k:["4:5","vertical","stories"]},
+      {id:"219", pt:"21:9 (panorâmico)", en:"21:9", k:["21:9","panoramico","panorâmico"]},
+    ]
+  },
+];
+
+/* ---- state ---- */
+const state = { sel:{}, free:{}, images:[] };
+GROUPS.forEach(g=>{ state.sel[g.id] = g.type==="multi" ? [] : null; state.free[g.id]=""; });
+
+/* ---- helpers ---- */
+const $ = s=>document.querySelector(s);
+const $$ = s=>document.querySelectorAll(s);
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1900);}
+function norm(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");}
+function optById(g,id){return g.options.find(o=>o.id===id);}
+
+/* =========================================================================
+   Rendering the question groups
+   ========================================================================= */
+function renderGroups(){
+  const host = $("#groups"); host.innerHTML="";
+  GROUPS.forEach(g=>{
+    const box = document.createElement("div"); box.className="group";
+    box.innerHTML = `
+      <div class="gtitle"><span class="badge">${g.badge}</span> ${g.title}</div>
+      ${g.sub?`<div class="gsub">${g.sub}</div>`:""}
+      <div class="chips" data-g="${g.id}"></div>
+      <div class="free">
+        <label>Outro / detalhe livre (${g.badge.toLowerCase()})</label>
+        <input type="text" data-free="${g.id}" placeholder="algo que não está nas opções acima?" value="${state.free[g.id]||""}">
+      </div>`;
+    const chips = box.querySelector(".chips");
+    g.options.forEach(o=>{
+      const c = document.createElement("span");
+      c.className="chip"; c.dataset.g=g.id; c.dataset.o=o.id; c.textContent=o.pt;
+      chips.appendChild(c);
+    });
+    host.appendChild(box);
+  });
+  refreshChips();
+  // events
+  host.querySelectorAll(".chip").forEach(c=>{
+    c.addEventListener("click",()=>toggle(c.dataset.g,c.dataset.o));
+  });
+  host.querySelectorAll("[data-free]").forEach(inp=>{
+    inp.addEventListener("input",e=>{ state.free[inp.dataset.free]=e.target.value; });
+  });
+}
+function toggle(gid,oid){
+  const g = GROUPS.find(x=>x.id===gid);
+  if(g.type==="multi"){
+    const arr = state.sel[gid];
+    const i = arr.indexOf(oid);
+    if(i>=0) arr.splice(i,1); else arr.push(oid);
+  } else {
+    state.sel[gid] = state.sel[gid]===oid ? null : oid;
+  }
+  refreshChips(); updateCount();
+}
+function refreshChips(){
+  $$("#groups .chip").forEach(c=>{
+    const g=c.dataset.g,o=c.dataset.o, s=state.sel[g];
+    const on = Array.isArray(s) ? s.includes(o) : s===o;
+    c.classList.toggle("on",on);
+  });
+}
+function updateCount(){
+  let n=0; GROUPS.forEach(g=>{const s=state.sel[g.id]; n+= Array.isArray(s)?s.length:(s?1:0);});
+  $("#sel-count").textContent = `${n} ${n===1?"opção selecionada":"opções selecionadas"}`;
+}
+
+/* =========================================================================
+   Images
+   ========================================================================= */
+const REF_TAGS = ["Fachada","Planta","Maquete","Croqui","Interior","Terreno","Referência de estilo","Material"];
+function addFiles(list){
+  [...list].filter(f=>f.type.startsWith("image/")).forEach(f=>{
+    const url = URL.createObjectURL(f);
+    state.images.push({url, name:f.name, tag:REF_TAGS[0]});
+  });
+  renderThumbs();
+}
+function renderThumbs(){
+  const host=$("#thumbs"); host.innerHTML="";
+  state.images.forEach((im,i)=>{
+    const d=document.createElement("div"); d.className="thumb";
+    const opts = REF_TAGS.map(t=>`<option ${t===im.tag?"selected":""}>${t}</option>`).join("");
+    d.innerHTML = `<img src="${im.url}" alt=""><button class="rm" title="remover">×</button>
+      <select class="tag" style="border:0;color:#fff;background:#000a;width:100%;height:auto">${opts}</select>`;
+    d.querySelector(".rm").onclick=()=>{state.images.splice(i,1);renderThumbs();};
+    d.querySelector("select").onchange=e=>{im.tag=e.target.value;};
+    host.appendChild(d);
+  });
+}
+
+/* =========================================================================
+   Describe mode → auto-select
+   ========================================================================= */
+function analyzeText(){
+  const t = norm($("#describe-text").value);
+  if(!t.trim()){ toast("Escreva algo primeiro 🙂"); return; }
+  let hits=0;
+  GROUPS.forEach(g=>{
+    g.options.forEach(o=>{
+      const kws = o.k||[];
+      const found = kws.some(k=>t.includes(norm(k)));
+      if(found){
+        if(g.type==="multi"){ if(!state.sel[g.id].includes(o.id)){state.sel[g.id].push(o.id);hits++;} }
+        else if(!state.sel[g.id]){ state.sel[g.id]=o.id; hits++; }
+      }
+    });
+  });
+  $("#detected").textContent = hits? `${hits} preferências detectadas` : "nada detectado — selecione manualmente";
+  renderGroups(); updateCount();
+  setMode("guided");
+  toast(hits? `✨ ${hits} opções pré-selecionadas — refine abaixo` : "Não reconheci termos — selecione nas perguntas");
+}
+
+/* =========================================================================
+   PROMPT GENERATION
+   ========================================================================= */
+function enOf(gid){
+  const g=GROUPS.find(x=>x.id===gid); const s=state.sel[gid];
+  if(Array.isArray(s)) return s.map(id=>optById(g,id)?.en).filter(Boolean);
+  return s? [optById(g,s)?.en].filter(Boolean) : [];
+}
+function ptOf(gid){
+  const g=GROUPS.find(x=>x.id===gid); const s=state.sel[gid];
+  if(Array.isArray(s)) return s.map(id=>optById(g,id)?.pt).filter(Boolean);
+  return s? [optById(g,s)?.pt].filter(Boolean) : [];
+}
+function freeOf(gid){ return (state.free[gid]||"").trim(); }
+
+function checkContradictions(){
+  const w=[];
+  const time = state.sel.time, weather = state.sel.weather;
+  if(time==="midday" && weather==="fog") w.push("Sol de meio-dia com neblina densa é fisicamente incoerente — névoa costuma se dissipar com o sol alto. Considere 'nascer do sol' + neblina.");
+  if(time==="overcast" && weather==="clear") w.push("'Nublado difuso' e 'céu limpo' se contradizem — mantive o céu difuso como dominante.");
+  if(time==="night" && weather==="clear") { /* ok */ }
+  if((state.sel.elements||[]).includes("water") && state.sel.context==="desert") w.push("Espelho d'água em contexto de deserto é possível, mas exige justificativa projetual (oásis/reservatório) para não parecer artificial.");
+  if(state.sel.focal==="12mm" && state.sel.viewpoint==="detail") w.push("Ultra-wide 12mm num close de detalhe gera distorção indesejada — para detalhe, 50–85mm é mais fiel.");
+  return w;
+}
+
+function buildPrompt(){
+  const model = state.sel.model;
+  // ---- assemble formula parts ----
+  const subj = [];
+  ptOf; // noop
+  const typ = enOf("typology")[0];
+  const view = enOf("viewpoint")[0];
+  const style = enOf("style")[0];
+  if(typ) subj.push(style? `${style} ${typ}` : typ);
+  else if(style) subj.push(style + " architecture project");
+  else subj.push("architectural project");
+  if(view) subj.push(view);
+  if(freeOf("typology")) subj.push(freeOf("typology"));
+  if(freeOf("viewpoint")) subj.push(freeOf("viewpoint"));
+  if(freeOf("style")) subj.push(freeOf("style"));
+
+  const materials = [...enOf("materials"), freeOf("materials")].filter(Boolean);
+  const mat = materials.length? "featuring " + materials.join(", ") : "";
+
+  const cam = [...enOf("focal"), ...enOf("aperture"), ...enOf("perspective"), freeOf("focal"), freeOf("aperture"), freeOf("perspective")].filter(Boolean);
+  const camStr = cam.length? cam.join(", ") : "";
+
+  const light = [...enOf("time"), ...enOf("weather"), freeOf("time"), freeOf("weather")].filter(Boolean);
+  const lightStr = light.join(", ");
+
+  const surround = [...enOf("context"), ...enOf("vegetation"), ...enOf("elements"), freeOf("context"), freeOf("vegetation"), freeOf("elements")].filter(Boolean);
+  const surroundStr = surround.length? "set within " + surround.join(", ") : "";
+
+  const moodpal = [...enOf("mood"), ...enOf("palette"), freeOf("mood"), freeOf("palette")].filter(Boolean).join(", ");
+
+  const engine = [...enOf("engine"), freeOf("engine")].filter(Boolean);
+  // engine-specific technical tail
+  const engineNames = {mj:"", sd:"", dalle:"", ue5:"rendered in Unreal Engine 5 with Lumen real-time global illumination",
+    vray:"rendered with V-Ray / Corona physically accurate global illumination", octane:"Octane render, unbiased spectral global illumination"};
+  const engTail = [];
+  if(engineNames[model]) engTail.push(engineNames[model]);
+  if(engine.length) engTail.push(engine.join(", "));
+  const engStr = engTail.join(", ");
+
+  // ---- order per formula ----
+  let parts = [
+    subj.filter(Boolean).join(", "),
+    mat, camStr, lightStr, surroundStr, moodpal, engStr
+  ].filter(Boolean);
+
+  let core = parts.join(", ");
+  core = core.replace(/\s+,/g,",").replace(/,\s*,/g,", ").trim();
+
+  const ar = enOf("aspect")[0] || "16:9";
+
+  // ---- model-specific formatting ----
+  let prompt="", neg="", params="", negVisible=true, paramsVisible=true;
+  const NEG_BASE = ["blurry","distorted geometry","warped vertical lines","fisheye distortion","low-resolution textures","oversaturated colors","cartoonish","illustration","sketchy linework","deformed structure","watermark","signature","text overlay","jpeg artifacts","duplicated windows","melting edges"];
+  const negList = [...NEG_BASE];
+  if(!(state.sel.elements||[]).includes("people")) negList.push("people","crowds");
+  if(!(state.sel.elements||[]).includes("cars")) negList.push("cars","traffic");
+  if(state.sel.mood==="clean"||state.sel.mood==="serene") negList.push("clutter","visual noise");
+  if(freeOf("engine")) {}
+  neg = negList.join(", ");
+
+  if(model==="mj"){
+    prompt = `${core} --ar ${ar} --v 6.0 --style raw --stylize 250 --quality 2`;
+    // MJ uses --no instead of a separate negative prompt
+    prompt += ` --no ${["people","cars","text","watermark","distorted lines","blurry"].filter(x=>{
+      if(x==="people") return !(state.sel.elements||[]).includes("people");
+      if(x==="cars") return !(state.sel.elements||[]).includes("cars");
+      return true;
+    }).join(", ")}`;
+    negVisible=false;
+    params = `Modelo: Midjourney v6\n--ar ${ar}  (proporção)\n--v 6.0     (versão)\n--style raw (menos "embelezamento" automático)\n--stylize 250 (fidelidade ao prompt vs. estética)\n--quality 2\nDica: no MJ o negative vai embutido em --no (acima), não em bloco separado.`;
+  } else if(model==="sd"){
+    prompt = core;
+    params = `Modelo: Stable Diffusion (SDXL recomendado)\nSteps: 30–40\nCFG Scale: 5–7\nSampler: DPM++ 2M Karras\nResolução base: ${ar==="16:9"?"1344×768":ar==="9:16"||ar==="4:5"?"768×1344":"1024×1024"} (+ hires fix 1.5–2x)\nProporção: ${ar}\nUse o NEGATIVE PROMPT acima no campo próprio.`;
+  } else if(model==="dalle"){
+    // DALL-E prefers natural sentence
+    prompt = toSentence(core, ar);
+    negVisible=false; paramsVisible=false;
+  } else { // ue5 / vray / octane → descritivo de setup
+    prompt = core + `, ${ar} aspect framing, 8K output`;
+    negVisible=false;
+    const eng = model==="ue5"?"Unreal Engine 5 (Lumen + Nanite)":model==="vray"?"V-Ray / Corona":"Octane / Redshift";
+    params = `Motor: ${eng}\nSaída: 8K, proporção ${ar}\nAmostragem: elevar samples até ruído imperceptível (GI limpa)\nExposição: física (câmera com ISO/obturador/abertura reais)\nTone mapping: filmic / AgX\nUse o texto acima como descritivo de cena, luz e materiais para montar o setup.`;
+  }
+
+  return {prompt, neg, params, negVisible, paramsVisible, ar, model};
+}
+
+function toSentence(core, ar){
+  // DALL-E 3 responds better to descriptive natural language
+  let s = "A photorealistic architectural visualization of " + core + ".";
+  s = s.replace(/, featuring/g, ", featuring").replace(/\s+/g," ");
+  s += ` The image should read as a professional architectural photograph, ${ar} framing, with physically accurate lighting, materials, and reflections. Keep all vertical lines straight and the geometry precise.`;
+  return s;
+}
+
+/* ---- Racional técnico (PT) ---- */
+function buildRational(built){
+  const bits=[];
+  const lens = ptOf("focal")[0], ap = ptOf("aperture")[0], time = ptOf("time")[0],
+        mood = ptOf("mood")[0], mats = ptOf("materials"), style = ptOf("style")[0],
+        view = ptOf("viewpoint")[0], model = ptOf("model")[0];
+
+  if(lens){
+    let why = {
+      "12mm ultra-wide":"abraça todo o volume em espaços apertados, mas exige correção de verticais para não distorcer a arquitetura.",
+      "24mm wide (arquitetura)":"é a lente clássica de arquitetura: amplitude sem a distorção agressiva da ultra-wide.",
+      "35mm natural":"entrega um enquadramento honesto, próximo da leitura natural do espaço.",
+      "50mm (visão humana)":"reproduz a perspectiva do olho humano — leitura realista, sem exageros.",
+      "85mm (compressão/detalhe)":"comprime planos e isola detalhes, valorizando a materialidade.",
+      "Tilt-shift (verticais retas)":"mantém as linhas verticais perfeitamente retas — padrão da fotografia de arquitetura profissional."
+    }[lens]||"define o campo de visão da cena.";
+    bits.push(`<strong>Lente ${lens}:</strong> ${why}`);
+  }
+  if(ap) bits.push(`<strong>Abertura ${ap}:</strong> controla a profundidade de campo, direcionando o olhar do observador.`);
+  if(time){
+    let why={
+      "Golden hour (nascer/pôr do sol)":"a luz quente e rasante esculpe volumes e texturas com sombras longas e suaves — máximo apelo emocional.",
+      "Blue hour (crepúsculo)":"equilibra a luz do céu com a iluminação interna, revelando a arquitetura 'acesa' por dentro.",
+      "Meio-dia (sol alto)":"luz dura e sombras curtas — bom para leitura técnica de volumes, menos dramático.",
+      "Nublado difuso (overcast)":"luz difusa elimina sombras duras e revela cor e material de forma neutra e fiel.",
+      "Noturno (luz artificial)":"destaca a iluminação projetada e o contraste entre cheios e vazios iluminados.",
+      "Volumétrica / god rays":"os raios volumétricos adicionam profundidade atmosférica e dramaticidade."
+    }[time]||"define a atmosfera luminosa.";
+    bits.push(`<strong>Iluminação (${time}):</strong> ${why}`);
+  }
+  if(mats.length) bits.push(`<strong>Materialidade:</strong> especificar ${mats.slice(0,4).join(", ")}${mats.length>4?"…":""} força o motor a resolver reflexos, rugosidade (roughness) e IOR corretos — é o que separa render amador de fotorrealismo.`);
+  if(mood) bits.push(`<strong>Atmosfera "${mood}":</strong> orienta a composição, a paleta e a luz para provocar essa resposta emocional específica.`);
+  if(style && view) bits.push(`<strong>Coerência:</strong> o estilo ${style} em vista de ${view.toLowerCase()} mantém a linguagem formal consistente com o enquadramento.`);
+
+  let warnHtml="";
+  const w = checkContradictions();
+  if(w.length){
+    warnHtml = `<div class="warnbox"><span class="ic">⚠️</span><div><strong>Alertas físicos/projetuais:</strong><ul style="margin:6px 0 0">${w.map(x=>`<li>${x}</li>`).join("")}</ul></div></div>`;
+  }
+  const modelNote = {
+    "Midjourney v6":"No Midjourney o negative é aplicado via <code>--no</code>, embutido no prompt.",
+    "Stable Diffusion":"O SD é o que mais depende do NEGATIVE PROMPT — use-o integralmente para evitar geometria derretida e verticais tortas.",
+    "DALL·E 3 / linguagem natural":"O DALL·E 3 responde melhor a linguagem descritiva contínua do que a listas de tags — por isso o prompt saiu em forma de frase.",
+    "Unreal Engine 5":"Aqui o texto é um descritivo de setup — traduza cada termo em nós de material, luz e pós-processamento.",
+    "V-Ray / Corona":"Use exposição física (câmera real) e eleve o sampling até a GI ficar limpa.",
+    "Octane / Redshift":"Path tracing unbiased entrega a iluminação global mais fiel — cuide do denoise para não perder o micro-detalhe."
+  }[model];
+  if(modelNote) bits.push(`<strong>Nota do motor:</strong> ${modelNote}`);
+
+  const empty = bits.length===0;
+  return warnHtml + (empty
+    ? `<p>Selecione ao menos a tipologia, um estilo e a iluminação para um racional completo. Quanto mais parâmetros, mais preciso o resultado.</p>`
+    : `<ul>${bits.map(b=>`<li>${b}</li>`).join("")}</ul>`);
+}
+
+function generate(){
+  // require minimal input
+  const anySel = GROUPS.some(g=>{const s=state.sel[g.id];return Array.isArray(s)?s.length:s;});
+  const anyFree = Object.values(state.free).some(v=>v&&v.trim());
+  if(!anySel && !anyFree){ toast("Selecione ao menos uma opção 🙂"); return; }
+  if(!state.sel.model) state.sel.model="mj";
+
+  const built = buildPrompt();
+  $("#out-prompt").textContent = built.prompt;
+  $("#out-neg").textContent = built.neg;
+  $("#out-params").textContent = built.params;
+  $("#neg-block").classList.toggle("hidden", !built.negVisible);
+  $("#params-block").classList.toggle("hidden", !built.paramsVisible);
+  $("#out-rational").innerHTML = buildRational(built);
+  // warn slot (duplicated at top for visibility) — keep only inside rational to avoid noise
+  $("#warn-slot").innerHTML="";
+  setMode("output");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+/* =========================================================================
+   Copy
+   ========================================================================= */
+function copyText(kind){
+  let txt="";
+  if(kind==="prompt") txt=$("#out-prompt").textContent;
+  else if(kind==="neg") txt=$("#out-neg").textContent;
+  else if(kind==="params") txt=$("#out-params").textContent;
+  else if(kind==="all"){
+    const p=$("#out-prompt").textContent;
+    const n=$("#neg-block").classList.contains("hidden")?"":`\n\nNEGATIVE PROMPT:\n${$("#out-neg").textContent}`;
+    const pa=$("#params-block").classList.contains("hidden")?"":`\n\nPARÂMETROS:\n${$("#out-params").textContent}`;
+    txt=`PROMPT:\n${p}${n}${pa}`;
+  }
+  navigator.clipboard?.writeText(txt).then(()=>toast("Copiado ✓")).catch(()=>{
+    const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Copiado ✓");
+  });
+}
+
+/* =========================================================================
+   Mode switching
+   ========================================================================= */
+function setMode(m){
+  $$(".mode").forEach(el=>el.classList.add("hidden"));
+  $("#mode-"+m).classList.remove("hidden");
+  $$("#modebar button").forEach(b=>b.classList.toggle("active", b.dataset.mode===m));
+}
+
+/* =========================================================================
+   Wire up
+   ========================================================================= */
+function init(){
+  renderGroups(); updateCount();
+
+  $$("#modebar button").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
+  $$("[data-goto]").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.goto)));
+
+  // dropzone
+  const drop=$("#drop"), file=$("#file");
+  drop.addEventListener("click",()=>file.click());
+  file.addEventListener("change",e=>addFiles(e.target.files));
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+  drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
+
+  $("#btn-analyze").addEventListener("click",analyzeText);
+  $("#btn-generate").addEventListener("click",generate);
+  $$("[data-copy]").forEach(b=>b.addEventListener("click",()=>copyText(b.dataset.copy)));
+
+  $("#btn-reset").addEventListener("click",()=>{
+    if(!confirm("Recomeçar do zero? Suas seleções serão apagadas.")) return;
+    GROUPS.forEach(g=>{state.sel[g.id]=g.type==="multi"?[]:null;state.free[g.id]="";});
+    state.images=[]; $("#describe-text").value=""; $("#detected").textContent="";
+    renderGroups(); updateCount(); renderThumbs(); setMode("images");
+    toast("Recomeçado ✓");
+  });
+}
+init();
+</script>
+</body>
+</html>
