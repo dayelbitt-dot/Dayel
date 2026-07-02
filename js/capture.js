@@ -95,7 +95,21 @@ export function mountCapture(defaultArea, onCreate) {
     const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
     const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
     const seg = el("div", { class: "seg" }, [segP, segT]);
-    const paintSeg = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); };
+    const cliLabel = el("span");
+    const procLabel = el("span");
+    const cliHint = el("div", { class: "t2", style: "margin-top:-4px" });
+    const updateLabels = () => {
+      const pessoal = area === "pessoal";
+      cliLabel.textContent = pessoal ? "🔒 Vincular a um cliente (opcional, só seu)" : "Cliente";
+      procLabel.textContent = pessoal ? "🔒 Processo (opcional, só seu)" : "Processo";
+      cliHint.textContent = pessoal ? "Vínculo só para seu controle — NÃO aparece na pasta do cliente." : "";
+      cliHint.style.display = pessoal ? "block" : "none";
+    };
+    const paintSeg = () => {
+      segP.classList.toggle("active", area === "pessoal");
+      segT.classList.toggle("active", area === "profissional");
+      updateLabels();
+    };
     segP.onclick = () => { area = "pessoal"; paintSeg(); };
     segT.onclick = () => { area = "profissional"; paintSeg(); };
     paintSeg();
@@ -121,7 +135,7 @@ export function mountCapture(defaultArea, onCreate) {
         if (bits.length) procInfo.append(el("div", { class: "t2" }, "⚖️ " + bits.join(" · ")));
       }
     };
-    cliSel.addEventListener("change", () => { if (cliSel.value) area = "profissional", paintSeg(); fillProcs(); });
+    cliSel.addEventListener("change", fillProcs);  // não força mais a área — respeita sua escolha
     procSel.addEventListener("change", showProcInfo);
     fillProcs();
 
@@ -155,8 +169,9 @@ export function mountCapture(defaultArea, onCreate) {
       field("Descrição", desc),
       field("Área", seg),
       el("div", { class: "cap-row" }, [field("Data", date), field("Hora", time), field("Prioridade", prio)]),
-      field("Cliente", cliSel),
-      field("Processo", procSel),
+      field(cliLabel, cliSel),
+      cliHint,
+      field(procLabel, procSel),
       procInfo,
       el("div", { class: "cap-gen" }, [cancelar, gerar]),
     );
