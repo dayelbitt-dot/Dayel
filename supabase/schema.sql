@@ -1,8 +1,9 @@
 -- ============================================================
 --  Banco de dados do "Meu Assistente" (Supabase)
---  Cole tudo isto no Supabase → SQL Editor → Run.
---  Cria as tabelas (tarefas, notas e lembretes) e garante que cada
---  usuário só vê os seus próprios dados.
+--  Aplicado automaticamente pelo GitHub Actions a cada mudança.
+--  (Também pode ser colado manualmente no SQL Editor, se quiser.)
+--  Tabelas: tarefas, notas, lembretes, clientes e processos.
+--  Cada usuário só enxerga os próprios dados (Row Level Security).
 -- ============================================================
 
 -- ---------- Tarefas (Pessoal e Profissional) ----------
