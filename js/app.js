@@ -267,19 +267,72 @@ function taskRow(t, compact = false) {
   check.onclick = async () => { await update("tasks", t.id, { done: !t.done, done_at: !t.done ? new Date().toISOString() : null }); refresh(); };
 
   const meta = [];
-  if (t.due_date) meta.push((late ? "⚠ atrasada · " : "") + prettyDate(t.due_date));
-  const children = [
-    check,
-    el("div", { class: "grow" }, [
-      el("div", { class: "t1" }, t.title),
-      meta.length ? el("div", { class: "t2", style: late ? "color:var(--red)" : "" }, meta.join(" ")) : null,
-    ]),
-  ];
+  if (t.due_date) meta.push((late ? "⚠ atrasada · " : "") + prettyDate(t.due_date) + (t.due_time ? " " + t.due_time : ""));
+  else if (t.due_time) meta.push("🕐 " + t.due_time);
+  if (t.process_id || t.client_id) meta.push("🔗 vinculada");
+  const grow = el("div", { class: "grow", onclick: () => openTaskEditModal(t) }, [
+    el("div", { class: "t1" }, t.title),
+    t.description ? el("div", { class: "t2" }, t.description) : null,
+    meta.length ? el("div", { class: "t2", style: late ? "color:var(--red)" : "" }, meta.join(" · ")) : null,
+  ]);
+  const children = [check, grow];
   if (!compact) {
-    if (t.priority) children.push(el("span", { class: "pill " + t.priority }, t.priority));
+    if (t.priority && t.priority !== "media") children.push(el("span", { class: "pill " + t.priority }, t.priority));
     children.push(el("button", { class: "del", title: "Excluir", onclick: async () => { await remove("tasks", t.id); refresh(); } }, "×"));
   }
   return el("div", { class: "row" + (t.done ? " task-done" : "") }, children);
+}
+
+async function openTaskEditModal(t) {
+  const [clients, processes] = await Promise.all([list("clients", { orderBy: "nome", asc: true }), list("processes")]).catch(() => [[], []]);
+  let area = t.area === "profissional" ? "profissional" : "pessoal";
+  const title = el("input", { class: "form-control", value: t.title || "" });
+  const desc = el("textarea", { class: "form-control", rows: "2", placeholder: "Descrição (opcional)" }, t.description || "");
+  const date = el("input", { class: "form-control", type: "date", value: t.due_date || "" });
+  const time = el("input", { class: "form-control", type: "time", value: t.due_time || "" });
+  const prio = el("select", { class: "form-control" });
+  [["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]].forEach(([v, l]) => prio.append(el("option", { value: v, ...(v === (t.priority || "media") ? { selected: "" } : {}) }, l)));
+
+  const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
+  const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
+  const seg = el("div", { class: "seg" }, [segP, segT]);
+  const paint = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); };
+  segP.onclick = () => { area = "pessoal"; paint(); };
+  segT.onclick = () => { area = "profissional"; paint(); };
+  paint();
+
+  const cliSel = el("select", { class: "form-control" });
+  cliSel.append(el("option", { value: "" }, "— nenhum —"));
+  clients.forEach((c) => cliSel.append(el("option", { value: c.id, ...(t.client_id === c.id ? { selected: "" } : {}) }, c.nome)));
+  const procSel = el("select", { class: "form-control" });
+  const fillProcs = () => {
+    const cid = cliSel.value; procSel.innerHTML = ""; procSel.append(el("option", { value: "" }, "— nenhum —"));
+    processes.filter((p) => !cid || p.client_id === cid).forEach((p) => procSel.append(el("option", { value: p.id, ...(t.process_id === p.id ? { selected: "" } : {}) }, p.nome)));
+  };
+  cliSel.addEventListener("change", fillProcs);
+  fillProcs();
+
+  const form = el("form", {}, [
+    lbl("Título", title), lbl("Descrição", desc), lbl("Área (mover)", seg),
+    el("div", { class: "cap-row" }, [lbl("Data", date), lbl("Hora", time), lbl("Prioridade", prio)]),
+    lbl("Cliente", cliSel), lbl("Processo", procSel),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-danger", onclick: async () => { if (confirm("Excluir esta tarefa?")) { await remove("tasks", t.id); closeModal(); refresh(); } } }, "Excluir"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!title.value.trim()) { title.focus(); return; }
+    await update("tasks", t.id, {
+      title: title.value.trim(), description: desc.value.trim(), area, priority: prio.value,
+      due_date: date.value || null, due_time: time.value || null,
+      client_id: cliSel.value || null, process_id: procSel.value || null,
+    });
+    closeModal(); refresh();
+  };
+  openModal(el("div", {}, [el("h3", {}, "Editar tarefa"), form]));
+  setTimeout(() => title.focus(), 50);
 }
 
 function openTaskModal(area) {
@@ -507,10 +560,11 @@ function clientCard(c) {
 
 async function openClient(id) {
   loading();
-  const [clients, procs] = await Promise.all([list("clients"), list("processes")]);
+  const [clients, procs, tasks] = await Promise.all([list("clients"), list("processes"), list("tasks")]);
   const c = clients.find((x) => x.id === id);
   if (!c) { renderClients(); return; }
   const meus = procs.filter((p) => p.client_id === id);
+  const minhasTarefas = tasks.filter((t) => t.client_id === id && !t.done);
 
   const dados = [
     ["CPF", c.cpf], ["RG", c.rg], ["Telefone", c.tel], ["E-mail", c.email],
@@ -544,6 +598,12 @@ async function openClient(id) {
       meus.length
         ? el("div", { class: "list" }, meus.map((p) => processCard(p, true)))
         : el("div", { class: "empty" }, "Nenhum processo para este cliente."),
+    ]),
+    el("div", { class: "card" }, [
+      el("div", { class: "card-title" }, `Tarefas do cliente (${minhasTarefas.length})`),
+      minhasTarefas.length
+        ? el("div", { class: "list" }, minhasTarefas.map((t) => taskRow(t)))
+        : el("div", { class: "empty" }, "Nenhuma tarefa vinculada. Use a Captura rápida no Início."),
     ]),
     el("div", { style: "text-align:center;margin-top:6px" }, [
       el("button", { class: "btn btn-danger btn-sm", onclick: async () => {
