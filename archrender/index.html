@@ -166,7 +166,31 @@ pre.metaprompt{background:linear-gradient(180deg,#fffdf8,#faf4e6);border-color:v
   color:var(--gold-deep);margin-bottom:16px;display:flex;gap:11px}
 .warnbox .ic{font-size:17px}
 .count-pill{font-size:12px;color:var(--muted);background:#f2e7d0;border:1px solid var(--gold-soft);padding:4px 12px;border-radius:16px;font-weight:500}
-@media (max-width:560px){.wrap{padding:18px 13px 76px}.brand h1{font-size:24px}.modebar button span:not(.n){display:none}.modebar button{min-width:0}.panel{padding:18px}}
+/* Gerar imagem (Nano Banana) */
+.gen-hero{margin:2px 0 24px;text-align:center;padding:22px 20px;border-radius:16px;
+  background:linear-gradient(180deg,#fffdf7,#f5ead2);border:1px solid var(--gold-soft);box-shadow:inset 0 1px 0 #fff}
+.gen-hero .gh-kick{font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--gold-deep);font-weight:600;margin-bottom:13px}
+.btn-gen{width:100%;border:0;cursor:pointer;font-family:var(--serif);font-weight:600;font-size:22px;letter-spacing:.5px;
+  color:#402d10;padding:21px 24px;border-radius:14px;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,#f6e3b4,#dcb26c 38%,#bd8b44 62%,#eac98f);
+  box-shadow:0 16px 36px rgba(176,141,87,.42), inset 0 1px 0 #fff7e4;transition:.18s;
+  display:flex;align-items:center;justify-content:center;gap:13px;flex-wrap:wrap}
+.btn-gen:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.btn-gen:disabled{opacity:.75;cursor:wait;transform:none}
+.btn-gen .gi{font-size:21px}
+.btn-gen .gsub2{font-family:var(--sans);font-weight:600;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  background:#3a2a12;color:#f4dcb0;padding:4px 11px;border-radius:20px}
+.btn-gen::after{content:"";position:absolute;top:0;left:-60%;width:38%;height:100%;pointer-events:none;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.6),transparent);transform:skewX(-20deg);animation:shine 3.4s ease-in-out infinite}
+@keyframes shine{0%,58%{left:-60%}100%{left:135%}}
+.gen-status{font-size:12.5px;color:var(--muted);margin-top:12px;font-weight:300}
+.gen-status a{color:var(--gold-deep)}
+.gen-result{margin-top:16px}
+.gen-result img{width:100%;border-radius:14px;border:1px solid var(--line-2);box-shadow:var(--shadow);display:block}
+.gen-actions{display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(64,45,16,.35);border-top-color:#402d10;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width:560px){.wrap{padding:18px 13px 76px}.brand h1{font-size:24px}.modebar button span:not(.n){display:none}.modebar button{min-width:0}.panel{padding:18px}.btn-gen{font-size:18px}}
 </style>
 </head>
 <body>
@@ -273,6 +297,14 @@ pre.metaprompt{background:linear-gradient(180deg,#fffdf8,#faf4e6);border-color:v
     <div class="panel">
       <h2><span class="ic">✦</span> Seu metaprompt</h2>
       <p class="hint">Ultra-detalhado e no idioma técnico (inglês) para máxima acurácia. Formatado para o motor escolhido. Cole na IA — e, se tiver referências, anexe as imagens junto.</p>
+
+      <div class="gen-hero">
+        <div class="gh-kick">Gere a imagem sem sair daqui</div>
+        <button class="btn-gen" id="btn-gen-img"><span class="gi">✦</span> Gerar imagem agora <span class="gsub2">Nano Banana</span></button>
+        <div class="gen-status" id="gen-status">Usa sua chave do Gemini · replica o seu projeto e imita o estilo das referências</div>
+        <div class="gen-result" id="gen-result"></div>
+      </div>
+
       <div id="warn-slot"></div>
 
       <div class="out-block">
@@ -990,6 +1022,67 @@ function generate(){
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
+/* =========================================================================
+   Gerar a imagem com Nano Banana (Gemini 2.5 Flash Image)
+   ========================================================================= */
+let generatingImg=false;
+async function nanoBananaGenerate(){
+  if(generatingImg)return;
+  const key=(localStorage.getItem("archp_gemini_key")||"").trim();
+  const btn=$("#btn-gen-img"), st=$("#gen-status"), out=$("#gen-result");
+  if(!key){
+    st.innerHTML=`⚠ Para gerar a imagem, cole sua chave do Gemini na aba <strong>Meu projeto</strong> (grátis em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>).`;
+    toast("Falta a chave do Gemini");
+    return;
+  }
+  // brief sempre narrativo (melhor para o Nano Banana), independente do motor escolhido
+  const brief=buildNarrative("nano");
+  let imgNote="";
+  if(state.project.length && state.refs.length)
+    imgNote=`IMPORTANT: the first ${state.project.length} attached image(s) are THE PROJECT — replicate that exact building, its geometry, proportions and materials faithfully; do NOT invent a different building. The remaining ${state.refs.length} attached image(s) are STYLE references — imitate only their lighting, mood, palette and photographic look, never their buildings.`;
+  else if(state.project.length)
+    imgNote=`IMPORTANT: the attached image(s) show THE PROJECT — replicate that exact building and its materials faithfully; do not invent a different building.`;
+  else if(state.refs.length)
+    imgNote=`IMPORTANT: the attached image(s) are STYLE references — imitate only their look and treatment, not their buildings.`;
+  const parts=[{text:`Generate ONE single ultra-photorealistic architectural photograph based on the brief below.\n${imgNote}\n\nBrief:\n${brief}`}];
+  [...state.project, ...state.refs].forEach(im=>{ if(im.b64) parts.push({inline_data:{mime_type:im.mime||"image/jpeg", data:im.b64}}); });
+
+  generatingImg=true; btn.disabled=true;
+  btn.innerHTML=`<span class="spin"></span> Gerando imagem…`;
+  st.textContent="Enviando ao Nano Banana… pode levar de 10 a 40 segundos.";
+  out.innerHTML="";
+  try{
+    const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key="+encodeURIComponent(key);
+    const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts}]})});
+    if(!res.ok){let t="";try{t=await res.text();}catch(_){ } throw new Error("HTTP "+res.status+(t?(" — "+t.slice(0,220)):""));}
+    const data=await res.json();
+    const rparts=((((data.candidates||[])[0]||{}).content)||{}).parts||[];
+    let img=null, txt="";
+    rparts.forEach(p=>{const d=p.inlineData||p.inline_data; if(d&&d.data)img=d; else if(p.text)txt+=p.text;});
+    if(!img) throw new Error(txt?("o modelo respondeu texto em vez de imagem: "+txt.slice(0,200)):"nenhuma imagem foi retornada");
+    const mime=img.mimeType||img.mime_type||"image/png";
+    const srcData=`data:${mime};base64,${img.data}`;
+    out.innerHTML=`<img src="${srcData}" alt="imagem gerada pelo Nano Banana">
+      <div class="gen-actions">
+        <a class="btn primary sm" href="${srcData}" download="archprompter-nano-banana.png">⬇ Baixar imagem</a>
+        <button class="btn sm" id="btn-gen-again">↻ Gerar variação</button>
+      </div>`;
+    $("#btn-gen-again").addEventListener("click",nanoBananaGenerate);
+    st.textContent="Imagem gerada ✓ — gere variações ou baixe.";
+    toast("Imagem gerada ✓");
+  }catch(e){
+    const msg=String(e.message||e);
+    let hint=msg;
+    if(/HTTP 400/.test(msg)) hint="requisição inválida (verifique se a chave tem acesso ao modelo de imagem). "+msg;
+    else if(/HTTP 403/.test(msg)) hint="acesso negado — sua chave pode não ter permissão/ cota para gerar imagens. "+msg;
+    else if(/HTTP 429/.test(msg)) hint="cota excedida no Gemini — tente novamente mais tarde. "+msg;
+    st.innerHTML=`⚠ Não consegui gerar a imagem: ${hint.slice(0,240)}`;
+  }finally{
+    generatingImg=false; btn.disabled=false;
+    btn.innerHTML=`<span class="gi">✦</span> Gerar imagem agora <span class="gsub2">Nano Banana</span>`;
+  }
+}
+
 /* ---- Copy ---- */
 function copyText(kind){
   let txt="";
@@ -1092,6 +1185,7 @@ function init(){
     toast(keyInput.value.trim()?"Chave salva neste navegador ✓":"Chave removida");
   });
   $("#btn-analyze-proj").addEventListener("click",analyzeProject);
+  $("#btn-gen-img").addEventListener("click",nanoBananaGenerate);
   setupMic();
   $("#btn-analyze").addEventListener("click",analyzeText);
   $("#btn-generate").addEventListener("click",generate);
