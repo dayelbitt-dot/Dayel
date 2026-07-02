@@ -149,6 +149,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 .cal-dot.task { background: var(--accent); }
 .cal-dot.reminder { background: var(--amber); }
 .cal-dot.late { background: var(--red); }
+.cal-dot.gcal { background: var(--green); }
+.gbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.gbar .t2 { margin: 0; }
 .cal-cell.selected .cal-dot { outline: 1px solid rgba(255,255,255,.6); }
 .agenda-day { font-size: 14px; font-weight: 800; margin: 4px 2px; }
 .agenda-item { display: flex; align-items: center; gap: 10px; }

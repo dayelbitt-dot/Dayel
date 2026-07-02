@@ -4,6 +4,7 @@ import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast } from ".
 import { mountCapture } from "./capture.js";
 import { detectColumns, matchClient, buildProcessFromRow, parseCSV, inferGrau, extractProcessesFromText } from "./planilha.js";
 import { extractTextFromFile } from "./files.js";
+import * as gcal from "./gcal.js";
 
 let state = { route: "dashboard" };
 
@@ -401,6 +402,20 @@ async function renderAgenda() {
   const first = new Date(year, month, 1);
   const gridStart = new Date(year, month, 1 - first.getDay());
 
+  // Google Agenda: reconecta em silêncio e busca eventos do período visível
+  let gStatus = "off";
+  if (gcal.googleEnabled()) {
+    if (!gcal.isConnected() && gcal.wasLinked()) { try { await gcal.connect(false); } catch {} }
+    if (gcal.isConnected()) {
+      gStatus = "connected";
+      try {
+        const rangeEnd = new Date(gridStart); rangeEnd.setDate(rangeEnd.getDate() + 42);
+        const gEvents = await gcal.listEvents(gridStart.toISOString(), rangeEnd.toISOString());
+        gEvents.forEach((g) => add(g.date, { kind: "gcal", title: g.title, time: g.time, htmlLink: g.htmlLink }));
+      } catch (e) { gStatus = "error"; }
+    } else gStatus = "connect";
+  }
+
   const main = $("#main");
   main.innerHTML = "";
 
@@ -421,7 +436,7 @@ async function renderAgenda() {
     const iso = dateToISO(cd);
     const items = ev[iso] || [];
     const dots = el("div", { class: "cal-dots" });
-    const kinds = new Set(items.map((x) => x.kind === "reminder" ? "reminder" : (iso < today ? "late" : "task")));
+    const kinds = new Set(items.map((x) => x.kind === "reminder" ? "reminder" : (x.kind === "gcal" ? "gcal" : (iso < today ? "late" : "task"))));
     [...kinds].slice(0, 3).forEach((k) => dots.append(el("div", { class: "cal-dot " + k })));
     const cls = ["cal-cell"];
     if (cd.getMonth() !== month) cls.push("other");
@@ -444,6 +459,7 @@ async function renderAgenda() {
 
   main.append(
     el("div", {}, [el("h1", { class: "page-title" }, "Agenda 🗓️"), el("p", { class: "page-sub" }, "Compromissos, prazos e lembretes")]),
+    googleBar(gStatus),
     el("div", { class: "card" }, [head, grid]),
     el("div", { class: "agenda-day" }, diaLabel),
     lista,
@@ -451,14 +467,37 @@ async function renderAgenda() {
   addFab(() => openAgendaAdd(agendaState.selected));
 }
 
+function googleBar(status) {
+  if (status === "off") return null;
+  if (status === "connect")
+    return el("div", { class: "gbar" }, [
+      el("span", { class: "t2" }, "Veja e crie eventos do seu Google Agenda aqui."),
+      el("button", { class: "btn btn-sm btn-primary", onclick: async () => {
+        try { await gcal.connect(true); renderAgenda(); } catch (e) { toast("Não foi possível conectar ao Google. " + (e.message || "")); }
+      } }, "🔗 Conectar Google"),
+    ]);
+  if (status === "error")
+    return el("div", { class: "gbar" }, [
+      el("span", { class: "t2" }, "Sessão do Google expirou."),
+      el("button", { class: "btn btn-sm", onclick: async () => { try { await gcal.connect(true); renderAgenda(); } catch {} } }, "Reconectar"),
+    ]);
+  return el("div", { class: "gbar" }, [
+    el("span", { class: "t2" }, "✅ Google Agenda conectado"),
+    el("button", { class: "btn btn-sm btn-ghost", onclick: () => { gcal.disconnect(); renderAgenda(); } }, "Desconectar"),
+  ]);
+}
+
 function agendaItemRow(it) {
-  const icon = it.kind === "reminder" ? "🔔" : "✓";
+  const isG = it.kind === "gcal";
+  const icon = it.kind === "reminder" ? "🔔" : isG ? "📅" : "✓";
   const t = it.time ? el("span", { class: "agenda-time" }, it.time) : el("span", { class: "agenda-time allday" }, "dia todo");
-  const open = it.kind === "reminder" ? () => navigate("reminders") : () => openTaskEditModal(it.raw);
+  const open = it.kind === "reminder" ? () => navigate("reminders")
+    : isG ? () => { if (it.htmlLink) window.open(it.htmlLink, "_blank"); }
+    : () => openTaskEditModal(it.raw);
   return el("div", { class: "row agenda-item", onclick: open }, [
     t,
     el("div", { class: "grow" }, [el("div", { class: "t1" }, it.title)]),
-    el("span", { class: "pill" }, icon + (it.kind === "reminder" ? " lembrete" : " tarefa")),
+    el("span", { class: "pill" }, icon + (it.kind === "reminder" ? " lembrete" : isG ? " Google" : " tarefa")),
   ]);
 }
 
@@ -467,9 +506,14 @@ function openAgendaAdd(dateISO) {
   const time = el("input", { class: "form-control", type: "time" });
   const tipo = el("select", { class: "form-control" });
   [["pessoal", "Tarefa pessoal"], ["profissional", "Tarefa de trabalho"], ["lembrete", "Lembrete"]].forEach(([v, l]) => tipo.append(el("option", { value: v }, l)));
+  const gChk = el("input", { type: "checkbox" });
+  const gRow = gcal.isConnected()
+    ? el("label", { style: "flex-direction:row; align-items:center; gap:8px; font-size:13px; color:var(--text)" }, [gChk, "📅 Criar também no Google Agenda"])
+    : null;
   const form = el("form", {}, [
     el("label", {}, [`No dia ${prettyDate(dateISO)}`, title]),
     el("div", { class: "cap-row" }, [lbl("Hora (opcional)", time), lbl("Tipo", tipo)]),
+    gRow,
     el("div", { class: "modal-actions" }, [
       el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
       el("button", { type: "submit", class: "btn btn-primary" }, "Adicionar"),
@@ -480,6 +524,10 @@ function openAgendaAdd(dateISO) {
     if (!title.value.trim()) { title.focus(); return; }
     if (tipo.value === "lembrete") await insert("reminders", { title: title.value.trim(), body: "", remind_on: dateISO });
     else await insert("tasks", { title: title.value.trim(), area: tipo.value, priority: "media", due_date: dateISO, due_time: time.value || null, done: false });
+    if (gRow && gChk.checked) {
+      try { await gcal.createEvent({ title: title.value.trim(), date: dateISO, time: time.value || null }); toast("📅 Também criado no Google Agenda."); }
+      catch (err) { toast("Salvo aqui, mas falhou no Google: " + (err.message || "")); }
+    }
     closeModal(); renderAgenda();
   };
   openModal(el("div", {}, [el("h3", {}, "Novo compromisso"), form]));
