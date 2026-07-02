@@ -1,0 +1,44 @@
+name: Aplicar schema no Supabase
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/schema.sql"
+      - ".github/workflows/db-migrate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Aplicar schema via API do Supabase
+        env:
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          PROJECT_REF: pugquehxhquetjwzfgyq
+        run: |
+          if [ -z "$SUPABASE_PAT" ]; then
+            echo "ℹ️  Segredo SUPABASE_PAT ainda não configurado — pulando (nada foi aplicado)."
+            echo "    Configure em: Settings → Secrets and variables → Actions → New repository secret"
+            exit 0
+          fi
+          echo "Aplicando supabase/schema.sql no projeto $PROJECT_REF…"
+          body=$(jq -Rs '{query: .}' supabase/schema.sql)
+          resp=$(curl -sS -w $'\n%{http_code}' -X POST \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_PAT" \
+            -H "Content-Type: application/json" \
+            -d "$body")
+          code=$(printf '%s' "$resp" | tail -n1)
+          printf '%s\n' "$resp" | sed '$d'
+          if [ "$code" -ge 300 ]; then
+            echo "❌ Falhou ao aplicar o schema (HTTP $code)"
+            exit 1
+          fi
+          echo "✅ Schema aplicado com sucesso (HTTP $code)"
