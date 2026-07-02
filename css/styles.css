@@ -132,7 +132,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 
 /* ---- Calendário / Agenda ---- */
 .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.cal-title { font-size: 17px; font-weight: 800; text-transform: capitalize; }
+.cal-title { font-size: 17px; font-weight: 800; }
 .cal-nav { display: flex; gap: 6px; align-items: center; }
 .cal-nav button { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 16px; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -157,6 +157,33 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 .agenda-item { display: flex; align-items: center; gap: 10px; }
 .agenda-time { font-size: 12px; font-weight: 800; color: var(--accent); min-width: 46px; }
 .agenda-time.allday { color: var(--muted); font-weight: 600; }
+
+/* Visão de semana (grade de horários) */
+.wk-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.wk { min-width: 900px; }
+.wk-head, .wk-allday, .wk-body { display: grid; }
+.wk-head { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 1px solid var(--border); }
+.wk-dayhead { text-align: center; padding: 8px 2px; font-size: 12px; color: var(--muted); font-weight: 700; border-left: 1px solid var(--border); white-space: nowrap; }
+.wk-dayhead .dnum { font-size: 15px; color: var(--text); }
+.wk-dayhead.today .dnum { background: var(--red); color: #fff; border-radius: 999px; padding: 1px 7px; }
+.wk-allday { border-bottom: 1px solid var(--border); min-height: 24px; }
+.wk-gutlabel { font-size: 10px; color: var(--muted); padding: 4px; text-align: right; align-self: center; }
+.wk-adcell { border-left: 1px solid var(--border); padding: 2px; display: flex; flex-direction: column; gap: 2px; }
+.wk-adchip { font-size: 10px; background: var(--card-2); border-radius: 4px; padding: 1px 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.wk-body { position: relative; }
+.wk-gutter { position: relative; }
+.wk-hourlabel { position: absolute; right: 6px; font-size: 10px; color: var(--muted); transform: translateY(-6px); }
+.wk-daycol { position: relative; border-left: 1px solid var(--border); }
+.wk-event { position: absolute; left: 2px; right: 2px; border-radius: 6px; padding: 3px 5px; overflow: hidden; font-size: 11px; line-height: 1.2; border-left: 3px solid var(--accent); background: var(--card-2); color: var(--text); cursor: pointer; }
+.wk-event.work { background: #26324c; color: #fff; border-left-color: #8fa8e0; }
+.wk-event.personal { background: #e7eefb; border-left-color: var(--accent); }
+.wk-event.reminder { background: #fbf1da; border-left-color: var(--amber); }
+.wk-event.gcal { background: #e2f0e8; border-left-color: var(--green); }
+.wk-adchip.reminder { background: #fbf1da; } .wk-adchip.gcal { background: #e2f0e8; }
+.wk-ev-title { font-weight: 700; }
+.wk-ev-sub { font-size: 10px; opacity: .85; }
+.wk-now { position: absolute; height: 2px; background: var(--red); z-index: 3; }
+.wk-nowbadge { position: absolute; left: 2px; font-size: 10px; font-weight: 800; color: #fff; background: var(--red); border-radius: 4px; padding: 0 4px; transform: translateY(-50%); z-index: 4; }
 
 /* Cabeçalho de grupo (lembretes por data) */
 .group-head { font-size: 13px; font-weight: 800; color: var(--muted); margin: 6px 2px -2px; letter-spacing: .2px; }

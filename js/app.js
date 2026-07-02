@@ -382,89 +382,161 @@ function dateToISO(d) {
   const off = d.getTimezoneOffset();
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
+const HH = 48; // altura de 1 hora, em px
+function minutesOf(hhmm) { if (!hhmm) return null; const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; }
+function fmtMin(min) { return String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0"); }
 
 async function renderAgenda() {
   loading();
-  const [tasks, reminders, procs] = await Promise.all([list("tasks"), list("reminders"), list("processes")]);
+  const [tasks, reminders] = await Promise.all([list("tasks"), list("reminders")]);
   const today = todayISO();
-  if (!agendaState) {
-    const d = new Date();
-    agendaState = { year: d.getFullYear(), month: d.getMonth(), selected: today };
-  }
+  if (!agendaState || !agendaState.weekStart) agendaState = { weekStart: today };
 
-  // eventos por data
-  const ev = {};
-  const add = (iso, item) => { if (!iso) return; (ev[iso] = ev[iso] || []).push(item); };
-  tasks.filter((t) => !t.done).forEach((t) => add(t.due_date, { kind: "task", title: t.title, time: t.due_time, raw: t }));
-  reminders.forEach((r) => add(r.remind_on, { kind: "reminder", title: r.title, raw: r }));
+  // eventos normalizados
+  const ev = {};                 // iso -> [evento]
+  const allEvents = [];          // para a lista cronológica
+  const push = (iso, e) => { if (!iso) return; const rec = { ...e, date: iso }; (ev[iso] = ev[iso] || []).push(rec); allEvents.push(rec); };
+  tasks.filter((t) => !t.done).forEach((t) => {
+    const s = minutesOf(t.due_time);
+    push(t.due_date, { kind: t.area === "profissional" ? "work" : "personal", title: t.title, start: s, end: s != null ? s + 60 : null, allDay: s == null, raw: t });
+  });
+  reminders.forEach((r) => push(r.remind_on, { kind: "reminder", title: r.title, start: null, end: null, allDay: true, raw: r }));
 
-  const { year, month } = agendaState;
-  const first = new Date(year, month, 1);
-  const gridStart = new Date(year, month, 1 - first.getDay());
+  const weekStartDate = new Date(agendaState.weekStart + "T00:00:00");
+  const weekEndDate = new Date(weekStartDate); weekEndDate.setDate(weekEndDate.getDate() + 7);
 
-  // Google Agenda: reconecta em silêncio e busca eventos do período visível
+  // Google Agenda
   let gStatus = "off";
   if (gcal.googleEnabled()) {
     if (!gcal.isConnected() && gcal.wasLinked()) { try { await gcal.connect(false); } catch {} }
     if (gcal.isConnected()) {
       gStatus = "connected";
       try {
-        const rangeEnd = new Date(gridStart); rangeEnd.setDate(rangeEnd.getDate() + 42);
-        const gEvents = await gcal.listEvents(gridStart.toISOString(), rangeEnd.toISOString());
-        gEvents.forEach((g) => add(g.date, { kind: "gcal", title: g.title, time: g.time, htmlLink: g.htmlLink }));
-      } catch (e) { gStatus = "error"; }
+        const gEvents = await gcal.listEvents(weekStartDate.toISOString(), weekEndDate.toISOString());
+        gEvents.forEach((g) => { const s = minutesOf(g.time), e2 = minutesOf(g.endTime); push(g.date, { kind: "gcal", title: g.title, start: s, end: e2 != null ? e2 : (s != null ? s + 60 : null), allDay: s == null, location: g.location, htmlLink: g.htmlLink }); });
+      } catch { gStatus = "error"; }
     } else gStatus = "connect";
+  }
+
+  // dias da semana visível
+  const days = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(weekStartDate); d.setDate(d.getDate() + i); days.push({ date: d, iso: dateToISO(d) }); }
+
+  // faixa de horas (8–19 por padrão, expande p/ caber tudo)
+  let earliest = 8 * 60, latest = 19 * 60;
+  days.forEach((dd) => (ev[dd.iso] || []).forEach((e) => { if (e.start != null) { earliest = Math.min(earliest, e.start); latest = Math.max(latest, e.end || e.start + 60); } }));
+  const minH = Math.max(0, Math.floor(earliest / 60));
+  const maxH = Math.min(24, Math.ceil(latest / 60));
+  const bodyH = (maxH - minH) * HH;
+  const cols = `50px repeat(7, minmax(116px, 1fr))`;
+
+  // cabeçalho de dias
+  const dayHeads = days.map((d) => {
+    const isToday = d.iso === today;
+    return el("div", { class: "wk-dayhead" + (isToday ? " today" : "") }, [
+      el("span", {}, DOW[d.date.getDay()] + "., "),
+      el("span", { class: "dnum" }, String(d.date.getDate())),
+    ]);
+  });
+
+  // linha "dia inteiro"
+  const adCells = days.map((d) => el("div", { class: "wk-adcell" },
+    (ev[d.iso] || []).filter((e) => e.allDay).map((e) => el("div", { class: "wk-adchip " + e.kind, onclick: () => openEvent(e) }, (e.kind === "reminder" ? "🔔 " : "") + e.title))));
+
+  // gutter de horas
+  const hourLabels = [];
+  for (let h = minH; h <= maxH; h++) hourLabels.push(el("div", { class: "wk-hourlabel", style: `top:${(h - minH) * HH}px` }, fmtMin(h * 60)));
+
+  // colunas dos dias com eventos posicionados
+  const dayCols = days.map((d) => {
+    const col = el("div", { class: "wk-daycol", style: `background:repeating-linear-gradient(to bottom, var(--card) 0, var(--card) ${HH - 1}px, var(--border) ${HH - 1}px, var(--border) ${HH}px)` });
+    (ev[d.iso] || []).filter((e) => e.start != null).sort((a, b) => a.start - b.start).forEach((e) => {
+      const top = (e.start - minH * 60) / 60 * HH;
+      const height = Math.max(24, ((e.end || e.start + 60) - e.start) / 60 * HH);
+      col.append(el("div", { class: "wk-event " + e.kind, style: `top:${top}px; height:${height}px`, onclick: () => openEvent(e) }, [
+        el("div", { class: "wk-ev-title" }, e.title),
+        el("div", { class: "wk-ev-sub" }, "🕐 " + fmtMin(e.start) + (e.end ? "–" + fmtMin(e.end) : "")),
+        e.location ? el("div", { class: "wk-ev-sub" }, "📍 " + e.location) : null,
+      ]));
+    });
+    return col;
+  });
+
+  // linha do "agora"
+  const body = el("div", { class: "wk-body", style: `grid-template-columns:${cols}; height:${bodyH}px` }, [
+    el("div", { class: "wk-gutter" }, hourLabels), ...dayCols,
+  ]);
+  const todayInWeek = days.some((d) => d.iso === today);
+  if (todayInWeek) {
+    const now = new Date(); const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin >= minH * 60 && nowMin <= maxH * 60) {
+      const y = (nowMin - minH * 60) / 60 * HH;
+      body.append(el("div", { class: "wk-nowbadge", style: `top:${y}px` }, fmtMin(nowMin)));
+      body.append(el("div", { class: "wk-now", style: `top:${y}px; left:50px; right:0` }));
+    }
+  }
+
+  const wk = el("div", { class: "wk", style: `grid-template-columns:${cols}` }, [
+    el("div", { class: "wk-head", style: `grid-template-columns:${cols}` }, [el("div", {}), ...dayHeads]),
+    el("div", { class: "wk-allday", style: `grid-template-columns:${cols}` }, [el("div", { class: "wk-gutlabel" }, "dia inteiro"), ...adCells]),
+    body,
+  ]);
+
+  // navegação
+  const goWeek = (delta) => { const d = new Date(weekStartDate); d.setDate(d.getDate() + delta * 7); agendaState.weekStart = dateToISO(d); renderAgenda(); };
+  const m1 = weekStartDate.getMonth(), m2 = new Date(weekEndDate.getTime() - 86400000).getMonth();
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const titulo = (m1 === m2 ? cap(MESES[m1]) : cap(MESES[m1]) + "–" + MESES[m2]) + " de " + weekStartDate.getFullYear();
+  const head = el("div", { class: "cal-head" }, [
+    el("div", { class: "cal-title" }, titulo),
+    el("div", { class: "cal-nav" }, [
+      el("button", { onclick: () => goWeek(-1), title: "Semana anterior" }, "‹"),
+      el("button", { onclick: () => { agendaState.weekStart = today; renderAgenda(); }, style: "width:auto;padding:0 10px;font-size:13px;font-weight:700" }, "Hoje"),
+      el("button", { onclick: () => goWeek(1), title: "Próxima semana" }, "›"),
+    ]),
+  ]);
+
+  // lista cronológica de TODOS os compromissos (de hoje em diante)
+  const futuros = allEvents.filter((e) => e.date >= today).sort((a, b) => a.date !== b.date ? (a.date < b.date ? -1 : 1) : ((a.start ?? -1) - (b.start ?? -1)));
+  const chrono = el("div", { class: "list" });
+  let curDate = null;
+  for (const e of futuros) {
+    if (e.date !== curDate) {
+      curDate = e.date;
+      const dd = new Date(e.date + "T00:00:00");
+      const lbl = e.date === today ? "Hoje" : `${DOW[dd.getDay()]}, ${dd.getDate()} de ${MESES[dd.getMonth()]}`;
+      chrono.append(el("div", { class: "group-head" }, lbl));
+    }
+    chrono.append(chronoRow(e));
   }
 
   const main = $("#main");
   main.innerHTML = "";
-
-  const title = el("div", { class: "cal-title" }, `${MESES[month]} ${year}`);
-  const go = (delta) => { const d = new Date(year, month + delta, 1); agendaState.year = d.getFullYear(); agendaState.month = d.getMonth(); renderAgenda(); };
-  const head = el("div", { class: "cal-head" }, [
-    title,
-    el("div", { class: "cal-nav" }, [
-      el("button", { onclick: () => go(-1), title: "Mês anterior" }, "‹"),
-      el("button", { onclick: () => { const d = new Date(); agendaState = { year: d.getFullYear(), month: d.getMonth(), selected: todayISO() }; renderAgenda(); }, title: "Hoje", style: "width:auto;padding:0 10px;font-size:13px;font-weight:700" }, "Hoje"),
-      el("button", { onclick: () => go(1), title: "Próximo mês" }, "›"),
-    ]),
-  ]);
-
-  const grid = el("div", { class: "cal-grid" }, DOW.map((d) => el("div", { class: "cal-dow" }, d)));
-  for (let i = 0; i < 42; i++) {
-    const cd = new Date(gridStart); cd.setDate(gridStart.getDate() + i);
-    const iso = dateToISO(cd);
-    const items = ev[iso] || [];
-    const dots = el("div", { class: "cal-dots" });
-    const kinds = new Set(items.map((x) => x.kind === "reminder" ? "reminder" : (x.kind === "gcal" ? "gcal" : (iso < today ? "late" : "task"))));
-    [...kinds].slice(0, 3).forEach((k) => dots.append(el("div", { class: "cal-dot " + k })));
-    const cls = ["cal-cell"];
-    if (cd.getMonth() !== month) cls.push("other");
-    if (iso === today) cls.push("today");
-    if (iso === agendaState.selected) cls.push("selected");
-    grid.append(el("div", { class: cls.join(" "), onclick: () => { agendaState.selected = iso; renderAgenda(); } }, [
-      el("div", { class: "num" }, String(cd.getDate())),
-      dots,
-    ]));
-  }
-
-  // agenda do dia selecionado
-  const selItems = (ev[agendaState.selected] || []).slice().sort((a, b) => (a.time || "99") < (b.time || "99") ? -1 : 1);
-  const selDate = new Date(agendaState.selected + "T00:00:00");
-  const dowCap = DOW[selDate.getDay()].charAt(0).toUpperCase() + DOW[selDate.getDay()].slice(1);
-  const diaLabel = `${dowCap}, ${selDate.getDate()} de ${MESES[selDate.getMonth()]}`;
-  const lista = selItems.length
-    ? el("div", { class: "list" }, selItems.map((it) => agendaItemRow(it)))
-    : el("div", { class: "empty" }, "Nada neste dia. Toque em + para adicionar.");
-
-  main.append(
-    el("div", {}, [el("h1", { class: "page-title" }, "Agenda 🗓️"), el("p", { class: "page-sub" }, "Compromissos, prazos e lembretes")]),
+  main.append(...[
+    el("div", {}, [el("h1", { class: "page-title" }, "Agenda 🗓️"), el("p", { class: "page-sub" }, "Semana e todos os compromissos")]),
     googleBar(gStatus),
-    el("div", { class: "card" }, [head, grid]),
-    el("div", { class: "agenda-day" }, diaLabel),
-    lista,
-  );
-  addFab(() => openAgendaAdd(agendaState.selected));
+    head,
+    el("div", { class: "wk-scroll" }, [wk]),
+    el("div", { class: "agenda-day" }, "Todos os compromissos"),
+    futuros.length ? chrono : el("div", { class: "empty" }, "Nenhum compromisso agendado."),
+  ].filter(Boolean));
+  addFab(() => openAgendaAdd(today));
+}
+
+function openEvent(e) {
+  if (e.kind === "gcal") { if (e.htmlLink) window.open(e.htmlLink, "_blank"); return; }
+  if (e.kind === "reminder") { navigate("reminders"); return; }
+  if (e.raw) openTaskEditModal(e.raw);
+}
+
+function chronoRow(e) {
+  const when = e.allDay ? el("span", { class: "agenda-time allday" }, "dia todo") : el("span", { class: "agenda-time" }, fmtMin(e.start));
+  const tag = e.kind === "reminder" ? "🔔 lembrete" : e.kind === "gcal" ? "📅 Google" : e.kind === "work" ? "💼 trabalho" : "🧑 pessoal";
+  return el("div", { class: "row agenda-item", onclick: () => openEvent(e) }, [
+    when,
+    el("div", { class: "grow" }, [el("div", { class: "t1" }, e.title), e.location ? el("div", { class: "t2" }, "📍 " + e.location) : null]),
+    el("span", { class: "pill" }, tag),
+  ]);
 }
 
 function googleBar(status) {
@@ -503,6 +575,7 @@ function agendaItemRow(it) {
 
 function openAgendaAdd(dateISO) {
   const title = el("input", { class: "form-control", placeholder: "O que é?", required: "" });
+  const date = el("input", { class: "form-control", type: "date", value: dateISO || todayISO() });
   const time = el("input", { class: "form-control", type: "time" });
   const tipo = el("select", { class: "form-control" });
   [["pessoal", "Tarefa pessoal"], ["profissional", "Tarefa de trabalho"], ["lembrete", "Lembrete"]].forEach(([v, l]) => tipo.append(el("option", { value: v }, l)));
@@ -511,8 +584,8 @@ function openAgendaAdd(dateISO) {
     ? el("label", { style: "flex-direction:row; align-items:center; gap:8px; font-size:13px; color:var(--text)" }, [gChk, "📅 Criar também no Google Agenda"])
     : null;
   const form = el("form", {}, [
-    el("label", {}, [`No dia ${prettyDate(dateISO)}`, title]),
-    el("div", { class: "cap-row" }, [lbl("Hora (opcional)", time), lbl("Tipo", tipo)]),
+    el("label", {}, ["O que é?", title]),
+    el("div", { class: "cap-row" }, [lbl("Data", date), lbl("Hora (opcional)", time), lbl("Tipo", tipo)]),
     gRow,
     el("div", { class: "modal-actions" }, [
       el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
@@ -522,10 +595,11 @@ function openAgendaAdd(dateISO) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!title.value.trim()) { title.focus(); return; }
-    if (tipo.value === "lembrete") await insert("reminders", { title: title.value.trim(), body: "", remind_on: dateISO });
-    else await insert("tasks", { title: title.value.trim(), area: tipo.value, priority: "media", due_date: dateISO, due_time: time.value || null, done: false });
+    const dISO = date.value || todayISO();
+    if (tipo.value === "lembrete") await insert("reminders", { title: title.value.trim(), body: "", remind_on: dISO });
+    else await insert("tasks", { title: title.value.trim(), area: tipo.value, priority: "media", due_date: dISO, due_time: time.value || null, done: false });
     if (gRow && gChk.checked) {
-      try { await gcal.createEvent({ title: title.value.trim(), date: dateISO, time: time.value || null }); toast("📅 Também criado no Google Agenda."); }
+      try { await gcal.createEvent({ title: title.value.trim(), date: dISO, time: time.value || null }); toast("📅 Também criado no Google Agenda."); }
       catch (err) { toast("Salvo aqui, mas falhou no Google: " + (err.message || "")); }
     }
     closeModal(); renderAgenda();
