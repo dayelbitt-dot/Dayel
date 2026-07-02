@@ -75,7 +75,8 @@ export async function listEvents(timeMinISO, timeMaxISO) {
 export function mapEvent(e) {
   const startDate = e.start?.date || (e.start?.dateTime ? e.start.dateTime.slice(0, 10) : null);
   const startTime = e.start?.dateTime ? e.start.dateTime.slice(11, 16) : null;
-  return { id: e.id, title: e.summary || "(sem título)", date: startDate, time: startTime, htmlLink: e.htmlLink };
+  const endTime = e.end?.dateTime ? e.end.dateTime.slice(11, 16) : null;
+  return { id: e.id, title: e.summary || "(sem título)", date: startDate, time: startTime, endTime, location: e.location || "", htmlLink: e.htmlLink };
 }
 
 export function addHour(dateISO, timeHHMM) {
