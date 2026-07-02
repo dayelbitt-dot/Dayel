@@ -90,6 +90,10 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:16p
 .refnote{margin-top:14px;background:#f7f1e4;border:1px solid var(--line-2);border-radius:12px;padding:12px 15px;
   font-size:12.5px;color:var(--ink-soft);display:flex;gap:10px}
 .refnote .ic{color:var(--gold-deep);font-size:16px}
+.keyrow{display:flex;gap:8px;margin:16px 0 6px}
+.keyrow input{flex:1}
+.keyhelp{display:block;color:var(--muted);font-size:11.5px;font-weight:300;line-height:1.5}
+.keyhelp strong{color:var(--ink-soft);font-weight:500}
 
 /* Question groups */
 .group{margin-bottom:24px;padding-bottom:22px;border-bottom:1px solid var(--line)}
@@ -182,25 +186,53 @@ pre.metaprompt{background:linear-gradient(180deg,#fffdf8,#faf4e6);border-color:v
   </header>
 
   <div class="modebar" id="modebar">
-    <button data-mode="images" class="active"><span class="n">1</span><span>Referências</span></button>
-    <button data-mode="guided"><span class="n">2</span><span>Perguntas</span></button>
+    <button data-mode="project" class="active"><span class="n">◈</span><span>Meu projeto</span></button>
+    <button data-mode="refs"><span class="n">◫</span><span>Referências</span></button>
+    <button data-mode="guided"><span class="n">◐</span><span>Perguntas</span></button>
     <button data-mode="describe"><span class="n">✎</span><span>Descrever</span></button>
-    <button data-mode="output"><span class="n">3</span><span>Metaprompt</span></button>
+    <button data-mode="output"><span class="n">✦</span><span>Metaprompt</span></button>
   </div>
 
-  <!-- ===== IMAGES ===== -->
-  <section id="mode-images" class="mode">
+  <!-- ===== MEU PROJETO ===== -->
+  <section id="mode-project" class="mode">
     <div class="panel">
-      <h2><span class="ic">◫</span> Imagens de referência</h2>
-      <p class="hint">Anexe fotos da maquete, croquis, plantas, fachadas ou referências de estilo. O metaprompt vai <strong>instruir a IA a replicar fielmente</strong> a geometria, os materiais e a composição dessas imagens — deixando o resultado o mais próximo possível do seu projeto real.</p>
-      <div class="drop" id="drop">
+      <h2><span class="ic">◈</span> Meu projeto</h2>
+      <p class="hint">Anexe a imagem do <strong>seu projeto</strong> (foto da maquete, render, fachada, planta). A IA pode <strong>ler a imagem, identificar os materiais</strong> e já deixar as perguntas respondidas — você muda o que quiser depois. O metaprompt também instrui a IA de imagem a <strong>replicar fielmente</strong> este projeto.</p>
+      <div class="drop" id="drop-project">
         <div class="big">◈</div>
-        <p>Arraste imagens aqui ou clique para escolher</p>
-        <small>PNG · JPG · WEBP — marque o que cada imagem representa</small>
-        <input type="file" id="file" accept="image/*" multiple hidden />
+        <p>Arraste a imagem do seu projeto aqui ou clique</p>
+        <small>PNG · JPG · WEBP</small>
+        <input type="file" id="file-project" accept="image/*" multiple hidden />
       </div>
-      <div class="thumbs" id="thumbs"></div>
-      <div class="refnote"><span class="ic">✦</span><div><strong>Importante:</strong> ao gerar a imagem, anexe estas <u>mesmas imagens</u> na IA (Gemini / Nano Banana aceitam imagens de referência) junto com o metaprompt. Assim o resultado replica o seu projeto.</div></div>
+      <div class="thumbs" id="thumbs-project"></div>
+
+      <div class="keyrow">
+        <input type="password" id="gemini-key" placeholder="Chave da API do Google Gemini (opcional, p/ leitura precisa)" autocomplete="off" />
+        <button class="btn sm" id="btn-savekey">Salvar</button>
+      </div>
+      <small class="keyhelp">Pegue grátis em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Fica salva <strong>só neste navegador</strong>. Sem chave, o app usa uma estimativa local aproximada.</small>
+
+      <div class="actionbar" style="margin-top:14px">
+        <button class="btn primary" id="btn-analyze-proj">✦ Ler meu projeto e responder as perguntas</button>
+        <button class="btn ghost" data-goto="refs">Adicionar referências →</button>
+      </div>
+      <div id="proj-hint" class="gsub" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <!-- ===== REFERÊNCIAS ===== -->
+  <section id="mode-refs" class="mode hidden">
+    <div class="panel">
+      <h2><span class="ic">◫</span> Referências de estilo</h2>
+      <p class="hint">Anexe imagens de <strong>como você quer que a renderização fique</strong> — clima, luz, acabamento, atmosfera. O metaprompt instrui a IA a <strong>imitar o estilo</strong> dessas referências (sem copiar o edifício delas). Marque o que cada imagem representa.</p>
+      <div class="drop" id="drop-refs">
+        <div class="big">◫</div>
+        <p>Arraste referências de estilo aqui ou clique</p>
+        <small>PNG · JPG · WEBP</small>
+        <input type="file" id="file-refs" accept="image/*" multiple hidden />
+      </div>
+      <div class="thumbs" id="thumbs-refs"></div>
+      <div class="refnote"><span class="ic">✦</span><div><strong>Importante:</strong> ao gerar a imagem, anexe estas <u>mesmas imagens</u> (projeto + referências) na IA de imagem junto com o metaprompt — Gemini / Nano Banana usam as imagens para chegar mais perto do que você quer.</div></div>
     </div>
     <div class="actionbar">
       <button class="btn primary" data-goto="guided">Continuar para as perguntas →</button>
@@ -533,7 +565,7 @@ const GROUPS = [
 ];
 
 /* ---- state ---- */
-const state = { sel:{}, free:{}, images:[] };
+const state = { sel:{}, free:{}, project:[], refs:[] };
 GROUPS.forEach(g=>{ state.sel[g.id] = g.type==="multi" ? [] : null; state.free[g.id]=""; });
 
 /* ---- helpers ---- */
@@ -595,25 +627,127 @@ function updateCount(){
 }
 
 /* =========================================================================
-   Images
+   Images (projeto + referências)
    ========================================================================= */
-const REF_TAGS = ["Fachada","Planta","Maquete","Croqui","Interior","Terreno","Referência de estilo","Material"];
-function addFiles(list){
+const REF_TAGS = ["Referência de estilo","Fachada","Interior","Material","Clima / luz","Atmosfera"];
+function addFiles(list, which){
+  const arr = which==="project" ? state.project : state.refs;
   [...list].filter(f=>f.type.startsWith("image/")).forEach(f=>{
-    state.images.push({url:URL.createObjectURL(f), name:f.name, tag:REF_TAGS[0]});
+    const url=URL.createObjectURL(f);
+    const rec={url, name:f.name, tag:REF_TAGS[0], mime:f.type};
+    arr.push(rec);
+    const rd=new FileReader(); rd.onload=()=>{ rec.b64=String(rd.result).split(",")[1]; }; rd.readAsDataURL(f);
+    const im=new Image(); im.onload=()=>{ rec.w=im.naturalWidth; rec.h=im.naturalHeight; }; im.src=url;
   });
-  renderThumbs();
+  renderThumbs(which);
 }
-function renderThumbs(){
-  const host=$("#thumbs");host.innerHTML="";
-  state.images.forEach((im,i)=>{
+function renderThumbs(which){
+  const arr = which==="project" ? state.project : state.refs;
+  const host = $(which==="project" ? "#thumbs-project" : "#thumbs-refs"); host.innerHTML="";
+  arr.forEach((im,i)=>{
     const d=document.createElement("div");d.className="thumb";
-    const opts=REF_TAGS.map(t=>`<option ${t===im.tag?"selected":""}>${t}</option>`).join("");
-    d.innerHTML=`<img src="${im.url}" alt=""><button class="rm" title="remover">×</button><select>${opts}</select>`;
-    d.querySelector(".rm").onclick=()=>{state.images.splice(i,1);renderThumbs();};
-    d.querySelector("select").onchange=e=>{im.tag=e.target.value;};
+    if(which==="refs"){
+      const opts=REF_TAGS.map(t=>`<option ${t===im.tag?"selected":""}>${t}</option>`).join("");
+      d.innerHTML=`<img src="${im.url}" alt=""><button class="rm" title="remover">×</button><select>${opts}</select>`;
+      d.querySelector("select").onchange=e=>{im.tag=e.target.value;};
+    } else {
+      d.innerHTML=`<img src="${im.url}" alt=""><button class="rm" title="remover">×</button>`;
+    }
+    d.querySelector(".rm").onclick=()=>{arr.splice(i,1);renderThumbs(which);};
     host.appendChild(d);
   });
+}
+
+/* =========================================================================
+   Ler a imagem do projeto → IA (Gemini) ou estimativa local
+   ========================================================================= */
+const AI_GROUPS = ["typology","viewpoint","style","materials","mood","palette","time","weather","focal","aperture","perspective","context","vegetation","elements"];
+function allowedForAI(){
+  const out={};
+  AI_GROUPS.forEach(id=>{const g=grp(id);const o={};g.options.forEach(op=>o[op.id]=op.en||op.pt);out[id]={type:g.type,options:o};});
+  return out;
+}
+function applyAnswers(obj){
+  let n=0;
+  AI_GROUPS.forEach(id=>{
+    if(!(id in obj))return;
+    const g=grp(id), val=obj[id], ids=g.options.map(o=>o.id);
+    if(g.type==="multi"){
+      const arr=(Array.isArray(val)?val:[val]).filter(v=>ids.includes(v));
+      if(arr.length){state.sel[id]=[...new Set(arr)];n+=arr.length;}
+    } else {
+      const v=Array.isArray(val)?val[0]:val;
+      if(ids.includes(v)){state.sel[id]=v;n++;}
+    }
+  });
+  return n;
+}
+function setAspectFromDims(w,h){
+  if(!w||!h)return;
+  const r=w/h, cand={"219":21/9,"169":16/9,"32":3/2,"11":1,"45":4/5};
+  let best="169",bd=1e9;
+  for(const k in cand){const d=Math.abs(r-cand[k]);if(d<bd){bd=d;best=k;}}
+  state.sel.aspect=best;
+}
+async function geminiAnalyze(rec,key){
+  const instruction="You are an expert architectural image analyst. Look at the attached image of an architectural project and choose the options that best match what is ACTUALLY VISIBLE. Reply with ONLY a compact JSON object whose keys are the group ids listed below. For a 'single' group give one option id (string); for a 'multi' group give an array of option ids. Use ONLY ids from the allowed lists. Omit any key you cannot determine from the image. Do not add commentary. Groups and allowed option ids (id: meaning): "+JSON.stringify(allowedForAI());
+  const body={contents:[{parts:[{text:instruction},{inline_data:{mime_type:rec.mime||"image/jpeg",data:rec.b64}}]}],generationConfig:{temperature:0.1,responseMimeType:"application/json"}};
+  const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(key);
+  const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(!res.ok){let t="";try{t=await res.text();}catch(_){}throw new Error("HTTP "+res.status+(t?(" — "+t.slice(0,160)):""));}
+  const data=await res.json();
+  const txt=(data&&data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts||[]).map(p=>p.text||"").join("");
+  if(!txt) throw new Error("resposta vazia da IA");
+  try{return JSON.parse(txt);}catch(_){const m=txt.match(/\{[\s\S]*\}/);if(m)return JSON.parse(m[0]);throw new Error("JSON inválido da IA");}
+}
+async function localEstimate(rec){
+  const im=new Image(); im.src=rec.url;
+  await (im.decode?im.decode().catch(()=>{}):new Promise(r=>{im.onload=r;im.onerror=r;}));
+  const S=48,c=document.createElement("canvas");c.width=S;c.height=S;
+  const ctx=c.getContext("2d");
+  try{ctx.drawImage(im,0,0,S,S);}catch(_){return {};}
+  let d;try{d=ctx.getImageData(0,0,S,S).data;}catch(_){return {};}
+  let r=0,g=0,b=0;const n=S*S;
+  for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2];}
+  r/=n;g/=n;b/=n;
+  const bright=(r+g+b)/3,mx=Math.max(r,g,b),mn=Math.min(r,g,b),sat=mx===0?0:(mx-mn)/mx;
+  const obj={materials:[]};
+  obj.time = bright>170?"midday":bright>95?"overcast":"night";
+  if(sat<0.12)obj.palette="neutral"; else if(r>=b)obj.palette=(r-b>28)?"warm":"earthy"; else obj.palette="cool";
+  if(sat<0.16&&bright>70&&bright<195)obj.materials.push("concrete");
+  if(r>g&&g>b&&sat>0.16)obj.materials.push("oak");
+  if(bright>205)obj.materials.push("glass");
+  if(!obj.materials.length)obj.materials.push("concrete");
+  return obj;
+}
+let analyzing=false;
+async function analyzeProject(){
+  if(analyzing)return;
+  if(!state.project.length){toast("Anexe a imagem do seu projeto primeiro 🙂");return;}
+  const rec=state.project[0];
+  const key=(localStorage.getItem("archp_gemini_key")||"").trim();
+  const btn=$("#btn-analyze-proj"), hint=$("#proj-hint");
+  analyzing=true; btn.disabled=true; btn.textContent="⏳ Lendo a imagem…";
+  hint.textContent = key?"Enviando ao Gemini para identificar materiais e estilo…":"Sem chave — usando estimativa local…";
+  try{
+    let obj, src;
+    if(key && rec.b64){ obj=await geminiAnalyze(rec,key); src="ia"; }
+    else { obj=await localEstimate(rec); src="local"; }
+    const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h);
+    renderGroups(); updateCount(); setMode("guided");
+    hint.textContent="";
+    toast(src==="ia" ? `✦ A IA leu seu projeto e preencheu ${n} respostas — ajuste o que quiser` : `Estimativa local: ${n} respostas (aproximado) — ajuste`);
+  }catch(e){
+    // fallback: estimativa local
+    try{
+      const obj=await localEstimate(rec); const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h);
+      renderGroups(); updateCount(); setMode("guided");
+      hint.innerHTML=`⚠ A IA não respondeu (${String(e.message||e).slice(0,90)}). Usei uma estimativa local — confira sua chave em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.`;
+      toast(`Estimativa local: ${n} respostas`);
+    }catch(_){ hint.textContent="Não consegui ler a imagem: "+String(e.message||e); }
+  }finally{
+    analyzing=false; btn.disabled=false; btn.textContent="✦ Ler meu projeto e responder as perguntas";
+  }
 }
 
 /* =========================================================================
@@ -653,14 +787,14 @@ function checkContradictions(){
    REFERENCE clause
    ========================================================================= */
 function referenceClause(){
-  if(!state.images.length) return "";
-  const tags=[...new Set(state.images.map(i=>i.tag))];
-  const map={ "Fachada":"the facade composition","Planta":"the floor plan layout and proportions","Maquete":"the massing and volumetric form",
-    "Croqui":"the design intent and geometry","Interior":"the interior layout","Terreno":"the site and surroundings",
-    "Referência de estilo":"the visual style and mood","Material":"the exact materials and finishes"};
-  const what=tags.map(t=>map[t]||t).join(", ");
-  return `Use the ${state.images.length} attached reference image(s) as the authoritative visual ground truth — faithfully replicate ${what}, matching the building's real geometry, proportions and design intent, while applying the photographic, material and lighting treatment described here.`;
+  const parts=[];
+  if(state.project.length)
+    parts.push(`Use the ${state.project.length} attached PROJECT image(s) as the authoritative ground truth for the building itself — faithfully replicate its exact geometry, proportions, materials and design; do not invent a different building.`);
+  if(state.refs.length)
+    parts.push(`Match the visual style, mood, lighting, palette and photographic treatment of the ${state.refs.length} attached STYLE reference image(s), without copying their buildings.`);
+  return parts.join(" ");
 }
+function imgCount(){return state.project.length+state.refs.length;}
 
 /* =========================================================================
    METAPROMPT GENERATION
@@ -822,7 +956,7 @@ function buildRational(){
   if(ap)bits.push(`<strong>Abertura ${ap}:</strong> controla a profundidade de campo e direciona o olhar.`);
   if(time)bits.push(`<strong>Iluminação (${time}):</strong> define a atmosfera e como a luz esculpe volumes e revela textura.`);
   if(mats.length)bits.push(`<strong>Materialidade:</strong> descrevi ${mats.slice(0,4).join(", ")}${mats.length>4?"…":""} com textura física (roughness, IOR, desgaste) — é o que separa render amador de fotorrealismo.`);
-  if(state.images.length)bits.push(`<strong>Referências:</strong> o metaprompt instrui a IA a replicar suas ${state.images.length} imagem(ns) anexada(s). Lembre de anexá-las também na IA.`);
+  if(imgCount())bits.push(`<strong>Imagens:</strong> o metaprompt instrui a IA a replicar seu projeto (${state.project.length}) e imitar o estilo das referências (${state.refs.length}). Lembre de anexá-las também na IA.`);
   bits.push(`<strong>Ultrarrealismo:</strong> o metaprompt força fotografia real (não CGI), com PBR, GI e micro-imperfeições sempre presentes.`);
   const note={"Nano Banana (Gemini)":"O Nano Banana entende <u>linguagem descritiva longa</u> e usa imagens anexadas como referência — por isso o metaprompt saiu em parágrafos ricos, não em tags soltas. Foi aqui que estava o problema do resultado ruim: prompt curto/estilo-tag rende mal no Gemini.",
     "Midjourney v6":"No Midjourney o negative vai em <code>--no</code>; referência entra como image prompt no início.",
@@ -936,16 +1070,28 @@ function setMode(m){
 }
 
 /* ---- Init ---- */
+function wireDrop(dropSel, fileSel, which){
+  const drop=$(dropSel), file=$(fileSel);
+  drop.addEventListener("click",()=>file.click());
+  file.addEventListener("change",e=>{addFiles(e.target.files,which);e.target.value="";});
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+  drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files,which));
+}
 function init(){
   renderGroups();updateCount();
   $$("#modebar button").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
   $$("[data-goto]").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.goto)));
-  const drop=$("#drop"),file=$("#file");
-  drop.addEventListener("click",()=>file.click());
-  file.addEventListener("change",e=>addFiles(e.target.files));
-  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
-  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
-  drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
+  wireDrop("#drop-project","#file-project","project");
+  wireDrop("#drop-refs","#file-refs","refs");
+  // API key
+  const keyInput=$("#gemini-key");
+  keyInput.value=localStorage.getItem("archp_gemini_key")||"";
+  $("#btn-savekey").addEventListener("click",()=>{
+    localStorage.setItem("archp_gemini_key",keyInput.value.trim());
+    toast(keyInput.value.trim()?"Chave salva neste navegador ✓":"Chave removida");
+  });
+  $("#btn-analyze-proj").addEventListener("click",analyzeProject);
   setupMic();
   $("#btn-analyze").addEventListener("click",analyzeText);
   $("#btn-generate").addEventListener("click",generate);
@@ -953,8 +1099,8 @@ function init(){
   $("#btn-reset").addEventListener("click",()=>{
     if(!confirm("Recomeçar do zero? Suas seleções serão apagadas."))return;
     GROUPS.forEach(g=>{state.sel[g.id]=g.type==="multi"?[]:null;state.free[g.id]="";});
-    state.images=[];$("#describe-text").value="";$("#detected").textContent="";
-    renderGroups();updateCount();renderThumbs();setMode("images");toast("Recomeçado ✓");
+    state.project=[];state.refs=[];$("#describe-text").value="";$("#detected").textContent="";$("#proj-hint").textContent="";
+    renderGroups();updateCount();renderThumbs("project");renderThumbs("refs");setMode("project");toast("Recomeçado ✓");
   });
 }
 init();
