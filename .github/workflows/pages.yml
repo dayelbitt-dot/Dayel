@@ -10,17 +10,22 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
 
-      - name: Configurar o Pages (ativa se necessário)
+      - name: Configurar o Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Empacotar o site
         uses: actions/upload-pages-artifact@v3
