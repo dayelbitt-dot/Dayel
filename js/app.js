@@ -263,17 +263,17 @@ function sortTasks(tasks) {
   });
 }
 
-function taskRow(t, compact = false) {
+function taskRow(t, compact = false, back) {
   const today = todayISO();
   const late = t.due_date && t.due_date < today && !t.done;
   const check = el("button", { class: "check" + (t.done ? " done" : ""), title: "Concluir" }, t.done ? "✓" : "");
-  check.onclick = async () => { await update("tasks", t.id, { done: !t.done, done_at: !t.done ? new Date().toISOString() : null }); refresh(); };
+  check.onclick = async (e) => { e.stopPropagation(); await update("tasks", t.id, { done: !t.done, done_at: !t.done ? new Date().toISOString() : null }); refresh(); };
 
   const meta = [];
   if (t.due_date) meta.push((late ? "⚠ atrasada · " : "") + prettyDate(t.due_date) + (t.due_time ? " " + t.due_time : ""));
   else if (t.due_time) meta.push("🕐 " + t.due_time);
   if (t.client_id || t.process_id) meta.push((t.area === "pessoal") ? "🔒 vínculo particular" : "🔗 cliente");
-  const grow = el("div", { class: "grow", onclick: () => openTaskEditModal(t) }, [
+  const grow = el("div", { class: "grow", onclick: () => openTask(t, back) }, [
     el("div", { class: "t1" }, t.title),
     t.description ? el("div", { class: "t2" }, t.description) : null,
     meta.length ? el("div", { class: "t2", style: late ? "color:var(--red)" : "" }, meta.join(" · ")) : null,
@@ -286,7 +286,7 @@ function taskRow(t, compact = false) {
   return el("div", { class: "row" + (t.done ? " task-done" : "") }, children);
 }
 
-async function openTaskEditModal(t) {
+async function openTaskEditModal(t, onDone) {
   const [clients, processes] = await Promise.all([list("clients", { orderBy: "nome", asc: true }), list("processes")]).catch(() => [[], []]);
   let area = t.area === "profissional" ? "profissional" : "pessoal";
   const title = el("input", { class: "form-control", value: t.title || "" });
@@ -344,10 +344,126 @@ async function openTaskEditModal(t) {
       due_date: date.value || null, due_time: time.value || null,
       client_id: cliSel.value || null, process_id: procSel.value || null,
     });
-    closeModal(); refresh();
+    closeModal(); if (onDone) onDone(); else refresh();
   };
   openModal(el("div", {}, [el("h3", {}, "Editar tarefa"), form]));
   setTimeout(() => title.focus(), 50);
+}
+
+// Página de visualização (só leitura) da tarefa, com TODAS as informações
+// vinculadas (cliente, processo, andamentos) e um botão Editar.
+async function openTask(tOrId, backFn) {
+  loading();
+  const id = typeof tOrId === "object" ? tOrId.id : tOrId;
+  const back = backFn || (() => navigate(state.route));
+  const [tasks, clients, processes] = await Promise.all([list("tasks"), list("clients"), list("processes")]).catch(() => [[], [], []]);
+  const t = tasks.find((x) => x.id === id) || (typeof tOrId === "object" ? tOrId : null);
+  if (!t) { back(); return; }
+  const cliente = t.client_id ? clients.find((c) => c.id === t.client_id) : null;
+  const processo = t.process_id ? processes.find((p) => p.id === t.process_id) : null;
+  const pessoal = (t.area || "pessoal") === "pessoal";
+  const today = todayISO();
+  const atrasada = t.due_date && t.due_date < today && !t.done;
+
+  const dtHora = (iso) => { if (!iso) return ""; const d = iso.slice(0, 10); const h = iso.length > 10 ? iso.slice(11, 16) : ""; return prettyDate(d) + (h ? " às " + h : ""); };
+
+  // ---- cabeçalho ----
+  const statusTxt = t.done ? "✅ Concluída" : atrasada ? "⚠ Atrasada" : "🕓 Aberta";
+  const statusCls = t.done ? "badge-encerrado" : atrasada ? "badge-suspenso" : "badge-ativo";
+
+  // ---- detalhes ----
+  const linhas = [
+    ["Área", pessoal ? "🧑 Pessoal" : "💼 Trabalho"],
+    ["Prazo", t.due_date ? prettyDate(t.due_date) + (t.due_time ? " às " + t.due_time : "") : (t.due_time ? "🕐 " + t.due_time : "")],
+    ["Prioridade", t.priority ? ({ alta: "🔴 Alta", media: "🟡 Média", baixa: "🟢 Baixa" }[t.priority] || t.priority) : ""],
+    ["Situação", t.done ? "Concluída" : "Em aberto"],
+    ["Criada em", dtHora(t.created_at)],
+    ["Concluída em", t.done ? dtHora(t.done_at) : ""],
+  ].filter(([, v]) => v);
+
+  // ---- cliente vinculado ----
+  let cliCard = null;
+  if (cliente) {
+    const cd = [
+      ["CPF", cliente.cpf], ["RG", cliente.rg], ["Telefone", cliente.tel], ["E-mail", cliente.email],
+      ["Nascimento", cliente.nasc ? prettyDate(cliente.nasc) : ""], ["Endereço", cliente.endereco],
+      ["Área", cliente.area], ["Origem", cliente.origem],
+    ].filter(([, v]) => v);
+    cliCard = el("div", { class: "card" }, [
+      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+        el("div", { class: "card-title", style: "margin:0" }, pessoal ? "🔒 Cliente vinculado (particular)" : "👤 Cliente vinculado"),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClient(cliente.id) }, "Abrir pasta →"),
+      ]),
+      el("div", { class: "detail-head", style: "margin-bottom:10px" }, [
+        avatar(cliente.nome),
+        el("div", {}, [el("div", { class: "t1", style: "font-weight:700" }, cliente.nome), pessoal ? el("div", { class: "t2" }, "Vínculo só seu — não aparece na pasta do cliente.") : null]),
+      ]),
+      cd.length ? el("dl", { class: "kv" }, cd.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+      cliente.obs ? el("div", { class: "t2", style: "margin-top:8px; white-space:pre-wrap" }, "📝 " + cliente.obs) : null,
+    ]);
+  }
+
+  // ---- processo vinculado ----
+  let procCard = null;
+  if (processo) {
+    const pl = [
+      ["Número", processo.num], ["Grau", processo.grau === "2" ? "2º grau" : "1º grau"],
+      ["Tipo de ação", processo.tipo], ["Vara / Juízo", processo.vara], ["Tribunal", processo.tribunal],
+      ["Partes contrárias", processo.partes], ["Fase atual", processo.fase],
+      ["Valor da causa", processo.valor != null ? BRLnum(processo.valor) : ""],
+      ["Status", processo.status || "Ativo"],
+    ].filter(([, v]) => v);
+    const ands = Array.isArray(processo.andamentos) ? processo.andamentos : [];
+    const tl = el("div", { class: "timeline" });
+    ands.slice(-3).reverse().forEach((a) => tl.append(el("div", { class: "and-item" }, [
+      el("div", { class: "and-dot" }),
+      el("div", { class: "and-body" }, [
+        el("div", { class: "and-when" }, (a.data ? prettyDate(a.data) : "") + (a.hora ? " às " + a.hora : "")),
+        el("div", { class: "and-text" }, a.texto || ""),
+      ]),
+    ])));
+    procCard = el("div", { class: "card" }, [
+      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+        el("div", { class: "card-title", style: "margin:0" }, "⚖️ Processo vinculado"),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openProcess(processo.id, () => openTask(id, back)) }, "Abrir processo →"),
+      ]),
+      el("div", { class: "t1", style: "font-weight:700; margin-bottom:6px" }, processo.nome),
+      pl.length ? el("dl", { class: "kv" }, pl.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+      processo.obs ? el("div", { class: "t2", style: "margin-top:8px; white-space:pre-wrap" }, "📝 " + processo.obs) : null,
+      ands.length ? el("div", { class: "card-title", style: "margin-top:12px" }, `Últimos andamentos (${ands.length})`) : null,
+      ands.length ? tl : null,
+    ]);
+  }
+
+  const toggleDone = async () => { await update("tasks", id, { done: !t.done, done_at: !t.done ? new Date().toISOString() : null }); openTask(id, back); };
+
+  const main = $("#main");
+  main.innerHTML = "";
+  main.append(...[
+    el("button", { class: "back-btn", onclick: back }, "← Voltar"),
+    el("div", { class: "section-head", style: "align-items:flex-start" }, [
+      el("div", {}, [
+        el("h1", { class: "page-title", style: "font-size:19px" }, t.title),
+        el("p", { class: "page-sub" }, pessoal ? "🧑 Tarefa pessoal" : "💼 Tarefa de trabalho"),
+      ]),
+      el("span", { class: "badge " + statusCls }, statusTxt),
+    ]),
+    el("div", { class: "card" }, [
+      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+        el("div", { class: "card-title", style: "margin:0" }, "Detalhes"),
+        el("button", { class: "btn btn-primary btn-sm", onclick: () => openTaskEditModal(t, () => openTask(id, back)) }, "✏️ Editar"),
+      ]),
+      t.description ? el("div", { class: "detail-desc", style: "white-space:pre-wrap; margin-bottom:12px" }, t.description) : el("div", { class: "t2", style: "margin-bottom:12px" }, "Sem descrição. Toque em Editar para adicionar."),
+      linhas.length ? el("dl", { class: "kv" }, linhas.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+    ]),
+    cliCard,
+    procCard,
+    el("div", { class: "detail-actions", style: "display:flex; gap:8px; margin-top:6px" }, [
+      el("button", { class: "btn btn-block " + (t.done ? "btn-ghost" : "btn-primary"), onclick: toggleDone }, t.done ? "↩ Reabrir" : "✓ Concluir"),
+      el("button", { class: "btn btn-danger btn-block", onclick: async () => { if (confirm("Excluir esta tarefa?")) { await remove("tasks", id); back(); } } }, "Excluir"),
+    ]),
+  ].filter(Boolean));
+  removeFab();
 }
 
 function openTaskModal(area) {
@@ -514,9 +630,30 @@ async function ensureGoogleEvents(gridStart, year, month) {
 }
 
 function openEvent(e) {
-  if (e.kind === "gcal") { if (e.htmlLink) window.open(e.htmlLink, "_blank"); return; }
+  if (e.kind === "gcal") { openGoogleEvent(e); return; }
   if (e.kind === "reminder") { navigate("reminders"); return; }
-  if (e.raw) openTaskEditModal(e.raw);
+  if (e.raw) openTask(e.raw, renderAgenda);
+}
+
+// Detalhes de um evento do Google Agenda (sem sair do app).
+// Só abre o Google se o usuário tocar em "Abrir no Google Agenda".
+function openGoogleEvent(e) {
+  const dd = e.date ? new Date(e.date + "T00:00:00") : null;
+  const dataTxt = dd ? `${DOW[dd.getDay()]}, ${dd.getDate()} de ${MESES[dd.getMonth()]} de ${dd.getFullYear()}` : "";
+  const horaTxt = e.allDay || !e.time ? "Dia todo" : (e.time + (e.endTime ? " – " + e.endTime : ""));
+  const linhas = [
+    ["Data", dataTxt], ["Horário", horaTxt], ["Local", e.location || ""],
+  ].filter(([, v]) => v);
+  const body = el("div", {}, [
+    el("h3", { style: "margin-bottom:4px" }, e.title || "(sem título)"),
+    el("p", { class: "page-sub", style: "margin-top:0" }, "📅 Google Agenda"),
+    linhas.length ? el("dl", { class: "kv" }, linhas.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Fechar"),
+      e.htmlLink ? el("button", { type: "button", class: "btn btn-primary", onclick: () => window.open(e.htmlLink, "_blank") }, "Abrir no Google Agenda ↗") : null,
+    ].filter(Boolean)),
+  ].filter(Boolean));
+  openModal(body);
 }
 
 function chronoRow(e) {
@@ -553,19 +690,6 @@ function googleBar(status) {
   ]);
 }
 
-function agendaItemRow(it) {
-  const isG = it.kind === "gcal";
-  const icon = it.kind === "reminder" ? "🔔" : isG ? "📅" : "✓";
-  const t = it.time ? el("span", { class: "agenda-time" }, it.time) : el("span", { class: "agenda-time allday" }, "dia todo");
-  const open = it.kind === "reminder" ? () => navigate("reminders")
-    : isG ? () => { if (it.htmlLink) window.open(it.htmlLink, "_blank"); }
-    : () => openTaskEditModal(it.raw);
-  return el("div", { class: "row agenda-item", onclick: open }, [
-    t,
-    el("div", { class: "grow" }, [el("div", { class: "t1" }, it.title)]),
-    el("span", { class: "pill" }, icon + (it.kind === "reminder" ? " lembrete" : isG ? " Google" : " tarefa")),
-  ]);
-}
 
 function openAgendaAdd(dateISO) {
   const title = el("input", { class: "form-control", placeholder: "O que é?", required: "" });
@@ -661,7 +785,7 @@ function reminderRow(r, compact = false) {
   const today = todayISO();
   const late = r.remind_on && r.remind_on < today;
   const children = [
-    el("div", { class: "grow" }, [
+    el("div", { class: "grow", onclick: compact ? undefined : () => openReminderModal(r) }, [
       el("div", { class: "t1" }, r.title || "Lembrete"),
       r.body ? el("div", { class: "t2", style: "white-space:pre-wrap; margin-top:2px" }, r.body) : null,
       r.remind_on
@@ -670,32 +794,37 @@ function reminderRow(r, compact = false) {
     ]),
   ];
   if (!compact) {
-    children.push(el("button", { class: "del", title: "Excluir", onclick: async () => { await remove("reminders", r.id); renderReminders(); } }, "×"));
+    children.push(el("button", { class: "del", title: "Excluir", onclick: async (e) => { e.stopPropagation(); if (confirm("Excluir este lembrete?")) { await remove("reminders", r.id); renderReminders(); } } }, "×"));
   }
   return el("div", { class: "row reminder-row" }, children);
 }
 
-function openReminderModal() {
-  const title = el("input", { type: "text", placeholder: "Sobre o que é o lembrete?", required: "" });
-  const body = el("textarea", { rows: "4", placeholder: "Detalhes importantes (opcional)…" });
-  const date = el("input", { type: "date", value: todayISO() });
+function openReminderModal(existing) {
+  const r = existing || {};
+  const title = el("input", { type: "text", placeholder: "Sobre o que é o lembrete?", required: "", value: r.title || "" });
+  const body = el("textarea", { rows: "4", placeholder: "Detalhes importantes (opcional)…" }, r.body || "");
+  const date = el("input", { type: "date", value: r.remind_on || todayISO() });
+
+  const actions = [];
+  if (existing) actions.push(el("button", { type: "button", class: "btn btn-danger", onclick: async () => { if (confirm("Excluir este lembrete?")) { await remove("reminders", existing.id); closeModal(); renderReminders(); } } }, "Excluir"));
+  else actions.push(el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"));
+  actions.push(el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"));
 
   const form = el("form", {}, [
     el("label", {}, ["Título", title]),
     el("label", {}, ["Data", date]),
     el("label", {}, ["Informações (opcional)", body]),
-    el("div", { class: "modal-actions" }, [
-      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
-      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
-    ]),
+    el("div", { class: "modal-actions" }, actions),
   ]);
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!title.value.trim()) { title.focus(); return; }
-    await insert("reminders", { title: title.value.trim(), body: body.value.trim(), remind_on: date.value || null });
+    const data = { title: title.value.trim(), body: body.value.trim(), remind_on: date.value || null };
+    if (existing) await update("reminders", existing.id, data);
+    else await insert("reminders", data);
     closeModal(); renderReminders();
   };
-  openModal(el("div", {}, [el("h3", {}, "Novo lembrete"), form]));
+  openModal(el("div", {}, [el("h3", {}, existing ? "Editar lembrete" : "Novo lembrete"), form]));
   setTimeout(() => title.focus(), 50);
 }
 
@@ -1033,7 +1162,7 @@ async function openClient(id) {
     el("div", { class: "card" }, [
       el("div", { class: "card-title" }, `Tarefas do cliente (${minhasTarefas.length})`),
       minhasTarefas.length
-        ? el("div", { class: "list" }, minhasTarefas.map((t) => taskRow(t)))
+        ? el("div", { class: "list" }, minhasTarefas.map((t) => taskRow(t, false, () => openClient(id))))
         : el("div", { class: "empty" }, "Nenhuma tarefa vinculada. Use a Captura rápida no Início."),
     ]),
     el("div", { style: "text-align:center;margin-top:6px" }, [
