@@ -54,6 +54,25 @@ export function closeModal() {
   $("#modal-backdrop").classList.add("hidden");
 }
 
+// ---- Toast (aviso com ação opcional) ----
+let toastTimer = null;
+export function toast(message, { action, duration = 5000 } = {}) {
+  let host = $("#toast-host");
+  if (!host) {
+    host = el("div", { id: "toast-host", class: "toast-host" });
+    document.body.append(host);
+  }
+  host.innerHTML = "";
+  clearTimeout(toastTimer);
+  const t = el("div", { class: "toast" }, [
+    el("span", { class: "toast-msg" }, message),
+    action ? el("button", { class: "toast-action", onclick: () => { clearTimeout(toastTimer); host.innerHTML = ""; action.onClick(); } }, action.label) : null,
+    el("button", { class: "toast-close", onclick: () => { clearTimeout(toastTimer); host.innerHTML = ""; } }, "×"),
+  ]);
+  host.append(t);
+  toastTimer = setTimeout(() => { host.innerHTML = ""; }, duration);
+}
+
 // ---- Donut chart em SVG ----
 export function donut(data, size = 130) {
   const total = data.reduce((s, d) => s + d.value, 0);

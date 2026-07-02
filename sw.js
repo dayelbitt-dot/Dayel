@@ -1,5 +1,5 @@
 // Service worker simples: cache do "casco" do app para abrir offline.
-const CACHE = "assistente-v1";
+const CACHE = "assistente-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,9 @@ const ASSETS = [
   "./js/store.js",
   "./js/auth.js",
   "./js/config.js",
+  "./js/nlp.js",
+  "./js/capture.js",
+  "./js/files.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
 ];

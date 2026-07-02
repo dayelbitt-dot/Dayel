@@ -1,6 +1,7 @@
 import { initSupabase, isCloud, list, insert, update, remove } from "./store.js";
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
-import { $, $$, el, todayISO, prettyDate, openModal, closeModal } from "./ui.js";
+import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast } from "./ui.js";
+import { mountCapture } from "./capture.js";
 
 let state = { route: "dashboard" };
 
@@ -131,6 +132,7 @@ async function renderDashboard() {
         el("p", { class: "page-sub" }, resumoLinha(pending.length, overdue.length)),
       ]),
     ]),
+    captureCard(),
     el("div", { class: "stat-grid" }, [
       stat("Abertas", String(pending.length)),
       stat("Atrasadas", String(overdue.length), overdue.length ? "neg" : ""),
@@ -168,6 +170,19 @@ function resumoLinha(abertas, atrasadas) {
   if (abertas === 0) return "Tudo em dia! Nenhuma tarefa aberta. 🎉";
   const base = `${abertas} tarefa${abertas > 1 ? "s" : ""} aberta${abertas > 1 ? "s" : ""}`;
   return atrasadas ? `${base} · ${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}` : base;
+}
+
+function captureCard() {
+  const onCreate = async (task) => {
+    const saved = await insert("tasks", task);
+    renderDashboard();
+    return saved;
+  };
+  // permite desfazer o último cadastro
+  onCreate.__undo = async (saved) => {
+    if (saved && saved.id) { await remove("tasks", saved.id); renderDashboard(); toast("Cadastro desfeito."); }
+  };
+  return mountCapture(state.route === "professional" ? "profissional" : "pessoal", onCreate);
 }
 
 function dashCard(title, linkLabel, route, body) {

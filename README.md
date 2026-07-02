@@ -6,10 +6,34 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 
 ## O que já tem
 
+- ✨ **Captura rápida** — descreva a tarefa em linguagem natural e o sistema cadastra sozinho
 - 🏠 **Início** — painel com resumo das tarefas do dia, pendências e notas recentes
 - 🧑 **Pessoal** — tarefas, prioridades e prazos
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
 - 📝 **Notas** — anotações rápidas
+
+### ✨ Captura rápida (texto, voz e arquivos)
+
+No topo do **Início** há uma caixa onde você pode:
+
+- **Escrever** em linguagem natural — ex: *"ligar para o cliente amanhã de manhã, urgente"*
+- **Falar** (🎤) — grava o áudio e transcreve para texto (reconhecimento de voz do navegador, em português)
+- **Subir um arquivo** (📎) — o sistema extrai o texto e preenche a caixa:
+  - `.txt`, `.md`, `.csv` — leitura direta (funciona offline)
+  - **PDF** com texto — extraído com pdf.js
+  - **Imagem / foto / print** — texto reconhecido por OCR (Tesseract.js, em português)
+
+O interpretador entende automaticamente:
+
+| O que reconhece | Exemplos |
+|-----------------|----------|
+| **Prazo** | "hoje", "amanhã", "depois de amanhã", "sexta que vem", "em 3 dias", "dia 15", "10/07" |
+| **Prioridade** | "urgente", "importante" → Alta · "sem pressa", "quando puder" → Baixa |
+| **Área** | palavras como "reunião", "cliente", "relatório", "chefe" → Trabalho; senão Pessoal |
+
+Antes de salvar, um **preview ao vivo** mostra o que foi entendido; depois de cadastrar, aparece um aviso com botão **Desfazer**.
+
+> Voz, digitação e arquivos de texto funcionam offline. A leitura de **PDF** e **imagem (OCR)** baixa a biblioteca de uma CDN pública na primeira vez (precisa de internet).
 
 Funciona em **dois modos**:
 
