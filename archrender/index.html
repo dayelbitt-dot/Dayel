@@ -818,12 +818,13 @@ function checkContradictions(){
 /* =========================================================================
    REFERENCE clause
    ========================================================================= */
+const FIDELITY_LOCK = "ABSOLUTE FIDELITY — DO NOT REDESIGN. The attached PROJECT image is the single source of truth and must be reproduced with 100% accuracy. You must NOT add, remove, move, resize, duplicate, hide or redesign ANY element: keep the exact same windows (same count, size, position, subdivisions and framing), the exact same doors and openings, the exact same walls, columns, beams, railings, stairs, balconies, roof shape and slope, the exact same volumes, setbacks, number of floors and floor heights, and the exact same overall facade composition and proportions. Do not invent new architectural elements, furniture, decoration or objects that are not visible in the project image, and do not remove any that are. Do not change the design, geometry, layout or the materials of the building. You may ONLY change the photographic treatment — lighting, time of day, sky, atmosphere, camera angle within reason, and the photorealistic quality of the SAME existing materials. The building's design must remain byte-for-byte the same as the project image.";
 function referenceClause(){
   const parts=[];
   if(state.project.length)
-    parts.push(`Use the ${state.project.length} attached PROJECT image(s) as the authoritative ground truth for the building itself — faithfully replicate its exact geometry, proportions, materials and design; do not invent a different building.`);
+    parts.push(FIDELITY_LOCK);
   if(state.refs.length)
-    parts.push(`Match the visual style, mood, lighting, palette and photographic treatment of the ${state.refs.length} attached STYLE reference image(s), without copying their buildings.`);
+    parts.push(`Use the ${state.refs.length} attached STYLE reference image(s) ONLY as inspiration for lighting, mood, palette and photographic treatment — never copy their buildings, geometry or elements, and never let them alter the project's design.`);
   return parts.join(" ");
 }
 function imgCount(){return state.project.length+state.refs.length;}
@@ -831,7 +832,7 @@ function imgCount(){return state.project.length+state.refs.length;}
 /* =========================================================================
    METAPROMPT GENERATION
    ========================================================================= */
-const ULTRA = "Render as genuine photography, never illustration, painting, cartoon or obvious 3D CGI: strictly ultra-photorealistic and indistinguishable from a professional architectural photograph. 8K resolution, razor-sharp micro-detail, physically-based global illumination, ray-traced reflections and refractions, accurate ambient occlusion and contact shadows, realistic depth of field, high dynamic range, subtle natural photographic grain, and true material imperfections and micro-variation on every surface.";
+const ULTRA = "100% ULTRA-PHOTOREALISTIC — the ENTIRE image, without a single exception, must look like a real photograph shot on a full-frame camera, never a 3D render, never CGI, never a video-game look. Absolutely no robotic, plastic, waxy, rubbery, over-smooth or artificially clean surfaces anywhere. EVERY material must show real-world physical behaviour and micro-imperfections: concrete with pores, stains, form marks and subtle patina; wood with real grain, knots and slight tonal variation; metal with fine brushing, micro-scratches and real anisotropic reflections; glass with realistic reflections, faint smudges, dust and true refraction; stone and marble with natural veining and honed micro-relief; fabric and vegetation with fibrous detail. Add subtle real-world touches everywhere — dust, tiny dirt, weathering, edge wear, uneven aging, contact shadows, ambient occlusion in crevices — so no surface looks freshly-generated or synthetic. Physically-based global illumination, ray-traced reflections and refractions, accurate soft shadows, realistic depth of field, high dynamic range and subtle natural photographic grain and lens characteristics. Sky, ground, background, people and vegetation must be equally photorealistic — 8K, razor-sharp, indistinguishable from a professional architectural photograph.";
 
 function subjectPhrase(){
   const typ=enOf("typology")[0], style=enOf("style")[0], view=enOf("viewpoint")[0];
@@ -895,7 +896,7 @@ function enginePhrase(model){
   return bits.length?(bits.join(", ")+"."):"";
 }
 function negativeList(){
-  const base=["illustration","painting","drawing","cartoon","3D game look","plastic or waxy textures","flat or dull lighting","blown-out highlights","low detail","blurry","distorted proportions","warped or leaning vertical lines","extra floors","duplicated or misaligned windows","melting geometry","oversaturated colors","HDR halos","text","watermark","signature","jpeg artifacts"];
+  const base=["3D render look","CGI","video-game graphics","robotic surfaces","plastic or waxy textures","rubbery materials","over-smooth surfaces","artificially clean surfaces","synthetic materials","illustration","painting","drawing","cartoon","flat or dull lighting","blown-out highlights","low detail","blurry","distorted proportions","warped or leaning vertical lines","added or removed windows","added or removed doors","extra floors","duplicated or misaligned windows","invented elements","redesigned building","melting geometry","oversaturated colors","HDR halos","text","watermark","signature","jpeg artifacts"];
   if(!(state.sel.elements||[]).includes("people"))base.push("people","crowds");
   if(!(state.sel.elements||[]).includes("cars"))base.push("cars","traffic");
   if(state.sel.mood==="clean"||state.sel.mood==="serene")base.push("visual clutter","noise");
@@ -1039,12 +1040,12 @@ async function nanoBananaGenerate(){
   const brief=buildNarrative("nano");
   let imgNote="";
   if(state.project.length && state.refs.length)
-    imgNote=`IMPORTANT: the first ${state.project.length} attached image(s) are THE PROJECT — replicate that exact building, its geometry, proportions and materials faithfully; do NOT invent a different building. The remaining ${state.refs.length} attached image(s) are STYLE references — imitate only their lighting, mood, palette and photographic look, never their buildings.`;
+    imgNote=`The first ${state.project.length} attached image(s) are THE PROJECT. ${FIDELITY_LOCK} The remaining ${state.refs.length} attached image(s) are STYLE references ONLY — imitate their lighting, mood, palette and photographic look, but NEVER copy their buildings, elements or geometry, and never let them change the project's design.`;
   else if(state.project.length)
-    imgNote=`IMPORTANT: the attached image(s) show THE PROJECT — replicate that exact building and its materials faithfully; do not invent a different building.`;
+    imgNote=`The attached image(s) are THE PROJECT. ${FIDELITY_LOCK}`;
   else if(state.refs.length)
-    imgNote=`IMPORTANT: the attached image(s) are STYLE references — imitate only their look and treatment, not their buildings.`;
-  const parts=[{text:`Generate ONE single ultra-photorealistic architectural photograph based on the brief below.\n${imgNote}\n\nBrief:\n${brief}`}];
+    imgNote=`The attached image(s) are STYLE references — imitate only their look and treatment, never their buildings.`;
+  const parts=[{text:`Photorealistic architectural photography task. Take the attached PROJECT image and re-photograph the SAME building exactly as designed, only improving the photographic realism and lighting — keep every element identical.\n${imgNote}\n\n${ULTRA}\n\nBrief:\n${brief}`}];
   [...state.project, ...state.refs].forEach(im=>{ if(im.b64) parts.push({inline_data:{mime_type:im.mime||"image/jpeg", data:im.b64}}); });
 
   generatingImg=true; btn.disabled=true;
