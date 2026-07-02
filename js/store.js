@@ -7,10 +7,20 @@ let sb = null;
 
 export async function initSupabase() {
   if (!CLOUD_ENABLED) return null;
-  const { createClient } = await import(
-    "https://esm.sh/@supabase/supabase-js@2"
-  );
-  sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const cdns = [
+    "https://esm.sh/@supabase/supabase-js@2",
+    "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm",
+    "https://cdn.skypack.dev/@supabase/supabase-js@2",
+  ];
+  let createClient, lastErr;
+  for (const url of cdns) {
+    try { ({ createClient } = await import(url)); break; }
+    catch (e) { lastErr = e; }
+  }
+  if (!createClient) throw lastErr || new Error("Falha ao carregar o Supabase");
+  sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true },
+  });
   return sb;
 }
 
