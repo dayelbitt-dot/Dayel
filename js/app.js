@@ -7,7 +7,15 @@ let state = { route: "dashboard" };
 
 // ==================== BOOTSTRAP ====================
 async function boot() {
-  if (isCloud()) await initSupabase();
+  try {
+    if (isCloud()) await initSupabase();
+  } catch (err) {
+    $("#splash").classList.add("hidden");
+    showAuth();
+    const msg = $("#auth-msg");
+    if (msg) { msg.className = "auth-msg error"; msg.textContent = "Não foi possível conectar à nuvem. Verifique sua internet e recarregue a página."; }
+    return;
+  }
 
   const session = await getSession();
   $("#splash").classList.add("hidden");
