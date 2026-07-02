@@ -107,7 +107,7 @@ function navigate(route) {
   state.route = route;
   $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === route));
   removeFab();
-  const routes = { dashboard: renderDashboard, clients: renderClients, processes: renderProcesses, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
+  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
   (routes[route] || renderDashboard)();
 }
 
@@ -369,6 +369,120 @@ function openTaskModal(area) {
     closeModal(); renderTasksPage();
   };
   openModal(el("div", {}, [el("h3", {}, area === "profissional" ? "Nova tarefa de trabalho" : "Nova tarefa"), form]));
+  setTimeout(() => title.focus(), 50);
+}
+
+// ==================== AGENDA / CALENDÁRIO ====================
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const DOW = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+let agendaState = null; // { year, month, selected }
+
+function dateToISO(d) {
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
+
+async function renderAgenda() {
+  loading();
+  const [tasks, reminders, procs] = await Promise.all([list("tasks"), list("reminders"), list("processes")]);
+  const today = todayISO();
+  if (!agendaState) {
+    const d = new Date();
+    agendaState = { year: d.getFullYear(), month: d.getMonth(), selected: today };
+  }
+
+  // eventos por data
+  const ev = {};
+  const add = (iso, item) => { if (!iso) return; (ev[iso] = ev[iso] || []).push(item); };
+  tasks.filter((t) => !t.done).forEach((t) => add(t.due_date, { kind: "task", title: t.title, time: t.due_time, raw: t }));
+  reminders.forEach((r) => add(r.remind_on, { kind: "reminder", title: r.title, raw: r }));
+
+  const { year, month } = agendaState;
+  const first = new Date(year, month, 1);
+  const gridStart = new Date(year, month, 1 - first.getDay());
+
+  const main = $("#main");
+  main.innerHTML = "";
+
+  const title = el("div", { class: "cal-title" }, `${MESES[month]} ${year}`);
+  const go = (delta) => { const d = new Date(year, month + delta, 1); agendaState.year = d.getFullYear(); agendaState.month = d.getMonth(); renderAgenda(); };
+  const head = el("div", { class: "cal-head" }, [
+    title,
+    el("div", { class: "cal-nav" }, [
+      el("button", { onclick: () => go(-1), title: "Mês anterior" }, "‹"),
+      el("button", { onclick: () => { const d = new Date(); agendaState = { year: d.getFullYear(), month: d.getMonth(), selected: todayISO() }; renderAgenda(); }, title: "Hoje", style: "width:auto;padding:0 10px;font-size:13px;font-weight:700" }, "Hoje"),
+      el("button", { onclick: () => go(1), title: "Próximo mês" }, "›"),
+    ]),
+  ]);
+
+  const grid = el("div", { class: "cal-grid" }, DOW.map((d) => el("div", { class: "cal-dow" }, d)));
+  for (let i = 0; i < 42; i++) {
+    const cd = new Date(gridStart); cd.setDate(gridStart.getDate() + i);
+    const iso = dateToISO(cd);
+    const items = ev[iso] || [];
+    const dots = el("div", { class: "cal-dots" });
+    const kinds = new Set(items.map((x) => x.kind === "reminder" ? "reminder" : (iso < today ? "late" : "task")));
+    [...kinds].slice(0, 3).forEach((k) => dots.append(el("div", { class: "cal-dot " + k })));
+    const cls = ["cal-cell"];
+    if (cd.getMonth() !== month) cls.push("other");
+    if (iso === today) cls.push("today");
+    if (iso === agendaState.selected) cls.push("selected");
+    grid.append(el("div", { class: cls.join(" "), onclick: () => { agendaState.selected = iso; renderAgenda(); } }, [
+      el("div", { class: "num" }, String(cd.getDate())),
+      dots,
+    ]));
+  }
+
+  // agenda do dia selecionado
+  const selItems = (ev[agendaState.selected] || []).slice().sort((a, b) => (a.time || "99") < (b.time || "99") ? -1 : 1);
+  const selDate = new Date(agendaState.selected + "T00:00:00");
+  const dowCap = DOW[selDate.getDay()].charAt(0).toUpperCase() + DOW[selDate.getDay()].slice(1);
+  const diaLabel = `${dowCap}, ${selDate.getDate()} de ${MESES[selDate.getMonth()]}`;
+  const lista = selItems.length
+    ? el("div", { class: "list" }, selItems.map((it) => agendaItemRow(it)))
+    : el("div", { class: "empty" }, "Nada neste dia. Toque em + para adicionar.");
+
+  main.append(
+    el("div", {}, [el("h1", { class: "page-title" }, "Agenda 🗓️"), el("p", { class: "page-sub" }, "Compromissos, prazos e lembretes")]),
+    el("div", { class: "card" }, [head, grid]),
+    el("div", { class: "agenda-day" }, diaLabel),
+    lista,
+  );
+  addFab(() => openAgendaAdd(agendaState.selected));
+}
+
+function agendaItemRow(it) {
+  const icon = it.kind === "reminder" ? "🔔" : "✓";
+  const t = it.time ? el("span", { class: "agenda-time" }, it.time) : el("span", { class: "agenda-time allday" }, "dia todo");
+  const open = it.kind === "reminder" ? () => navigate("reminders") : () => openTaskEditModal(it.raw);
+  return el("div", { class: "row agenda-item", onclick: open }, [
+    t,
+    el("div", { class: "grow" }, [el("div", { class: "t1" }, it.title)]),
+    el("span", { class: "pill" }, icon + (it.kind === "reminder" ? " lembrete" : " tarefa")),
+  ]);
+}
+
+function openAgendaAdd(dateISO) {
+  const title = el("input", { class: "form-control", placeholder: "O que é?", required: "" });
+  const time = el("input", { class: "form-control", type: "time" });
+  const tipo = el("select", { class: "form-control" });
+  [["pessoal", "Tarefa pessoal"], ["profissional", "Tarefa de trabalho"], ["lembrete", "Lembrete"]].forEach(([v, l]) => tipo.append(el("option", { value: v }, l)));
+  const form = el("form", {}, [
+    el("label", {}, [`No dia ${prettyDate(dateISO)}`, title]),
+    el("div", { class: "cap-row" }, [lbl("Hora (opcional)", time), lbl("Tipo", tipo)]),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Adicionar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!title.value.trim()) { title.focus(); return; }
+    if (tipo.value === "lembrete") await insert("reminders", { title: title.value.trim(), body: "", remind_on: dateISO });
+    else await insert("tasks", { title: title.value.trim(), area: tipo.value, priority: "media", due_date: dateISO, due_time: time.value || null, done: false });
+    closeModal(); renderAgenda();
+  };
+  openModal(el("div", {}, [el("h3", {}, "Novo compromisso"), form]));
   setTimeout(() => title.focus(), 50);
 }
 

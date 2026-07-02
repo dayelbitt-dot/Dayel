@@ -130,6 +130,31 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 
 .empty { text-align: center; color: var(--muted); padding: 26px 10px; font-size: 14px; }
 
+/* ---- Calendário / Agenda ---- */
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.cal-title { font-size: 17px; font-weight: 800; text-transform: capitalize; }
+.cal-nav { display: flex; gap: 6px; align-items: center; }
+.cal-nav button { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 16px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); padding: 4px 0; text-transform: uppercase; }
+.cal-cell { aspect-ratio: 1 / 1; border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 5px; gap: 3px; cursor: pointer; position: relative; }
+.cal-cell .num { font-size: 13px; font-weight: 600; }
+.cal-cell.other { opacity: .38; }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.today .num { color: var(--accent); font-weight: 800; }
+.cal-cell.selected { background: var(--accent); border-color: var(--accent); }
+.cal-cell.selected .num { color: #fff; }
+.cal-dots { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
+.cal-dot { width: 6px; height: 6px; border-radius: 50%; }
+.cal-dot.task { background: var(--accent); }
+.cal-dot.reminder { background: var(--amber); }
+.cal-dot.late { background: var(--red); }
+.cal-cell.selected .cal-dot { outline: 1px solid rgba(255,255,255,.6); }
+.agenda-day { font-size: 14px; font-weight: 800; margin: 4px 2px; }
+.agenda-item { display: flex; align-items: center; gap: 10px; }
+.agenda-time { font-size: 12px; font-weight: 800; color: var(--accent); min-width: 46px; }
+.agenda-time.allday { color: var(--muted); font-weight: 600; }
+
 /* Cabeçalho de grupo (lembretes por data) */
 .group-head { font-size: 13px; font-weight: 800; color: var(--muted); margin: 6px 2px -2px; letter-spacing: .2px; }
 .reminder-row { align-items: flex-start; }
