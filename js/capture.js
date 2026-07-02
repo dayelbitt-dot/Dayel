@@ -110,7 +110,10 @@ export function mountCapture(defaultArea, onCreate) {
       segT.classList.toggle("active", area === "profissional");
       updateLabels();
     };
-    segP.onclick = () => { area = "pessoal"; paintSeg(); };
+    segP.onclick = () => {
+      if (area !== "pessoal") { cliSel.value = ""; fillProcs(); procSel.value = ""; } // zera vínculos ao virar pessoal
+      area = "pessoal"; paintSeg();
+    };
     segT.onclick = () => { area = "profissional"; paintSeg(); };
     paintSeg();
 
