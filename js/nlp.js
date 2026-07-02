@@ -26,9 +26,19 @@ export function shortTitle(text) {
   // primeira frase / linha
   const m = t.match(/^(.+?)(?:[.!?\n]|$)/);
   let s = (m ? m[1] : t).trim();
-  const words = s.split(" ");
-  if (words.length > 8) s = words.slice(0, 8).join(" ") + "…";
-  s = s.replace(/[\s,;:–-]+$/, "");
+
+  // corta no primeiro limite natural (vírgula ou verbo/preposição que introduz detalhe)
+  const nWords = (x) => x.trim().split(/\s+/).filter(Boolean).length;
+  const comma = s.indexOf(",");
+  if (comma > 0 && nWords(s.slice(0, comma)) >= 2) s = s.slice(0, comma);
+  const bm = noAccent(s.toLowerCase()).match(/\b(sera|serao|foi|foram|estara|estarao|vai|vao|acontecer[a]?|ocorrer[a]?|ocorre|realizad[ao]|marcad[ao]|agendad[ao]|para|sobre|referente|no dia|dia|[àa]s)\b/);
+  if (bm && bm.index > 0 && nWords(s.slice(0, bm.index)) >= 2) s = s.slice(0, bm.index);
+
+  // remove artigo inicial e limita o tamanho
+  s = s.replace(/^(a|o|as|os|um|uma|uns|umas)\s+/i, "").trim();
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length > 9) s = words.slice(0, 9).join(" ") + "…";
+  s = s.replace(/[\s,;:–-]+$/, "").trim();
   if (!s) s = (text || "").trim().slice(0, 60);
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

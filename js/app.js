@@ -298,7 +298,16 @@ async function openTaskEditModal(t) {
   const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
   const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
   const seg = el("div", { class: "seg" }, [segP, segT]);
-  const paint = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); };
+  const cliLabel = el("span"), procLabel = el("span");
+  const cliHint = el("div", { class: "t2", style: "margin-top:-4px" });
+  const updateLabels = () => {
+    const pessoal = area === "pessoal";
+    cliLabel.textContent = pessoal ? "🔒 Vincular a um cliente (opcional, só seu)" : "Cliente";
+    procLabel.textContent = pessoal ? "🔒 Processo (opcional, só seu)" : "Processo";
+    cliHint.textContent = pessoal ? "Vínculo só para seu controle — NÃO aparece na pasta do cliente." : "";
+    cliHint.style.display = pessoal ? "block" : "none";
+  };
+  const paint = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); updateLabels(); };
   segP.onclick = () => { area = "pessoal"; paint(); };
   segT.onclick = () => { area = "profissional"; paint(); };
   paint();
@@ -317,7 +326,7 @@ async function openTaskEditModal(t) {
   const form = el("form", {}, [
     lbl("Título", title), lbl("Descrição", desc), lbl("Área (mover)", seg),
     el("div", { class: "cap-row" }, [lbl("Data", date), lbl("Hora", time), lbl("Prioridade", prio)]),
-    lbl("Cliente", cliSel), lbl("Processo", procSel),
+    lbl(cliLabel, cliSel), cliHint, lbl(procLabel, procSel),
     el("div", { class: "modal-actions" }, [
       el("button", { type: "button", class: "btn btn-danger", onclick: async () => { if (confirm("Excluir esta tarefa?")) { await remove("tasks", t.id); closeModal(); refresh(); } } }, "Excluir"),
       el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
