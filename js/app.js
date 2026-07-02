@@ -1101,17 +1101,38 @@ async function importarPlanilha(file) {
   const ordenadas = rows.map((r, i) => ({ r, i, g: inferGrau(r, cols) }))
     .sort((a, b) => (a.g === b.g ? a.i - b.i : (a.g < b.g ? -1 : 1))).map((x) => x.r);
   const known = processes.slice();
-  let ok = 0, sem = 0;
+  const onlyDigits = (s) => (s || "").toString().replace(/\D/g, "");
+  // Índice dos processos já cadastrados por (número + grau), para ATUALIZAR no lugar
+  // em vez de duplicar — assim reimportar corrige o vínculo errado.
+  const idx = new Map();
+  for (const p of processes) { const k = onlyDigits(p.num) + "|" + (p.grau || "1"); if (onlyDigits(p.num)) idx.set(k, p); }
+
+  let novos = 0, corrigidos = 0, sem = 0;
   for (const row of ordenadas) {
     try {
       const { client } = matchClient(row, cols, clients, known);
       const base = buildProcessFromRow(row, cols, client);
-      await insert("processes", { ...base, client_id: client ? client.id : null, status: "Ativo", andamentos: [] });
+      const cid = client ? client.id : null;
+      const key = onlyDigits(base.num) + "|" + (base.grau || "1");
+      const existente = onlyDigits(base.num) ? idx.get(key) : null;
+      if (existente) {
+        // atualiza vínculo e dados, preservando andamentos e status
+        await update("processes", existente.id, { ...base, client_id: cid });
+        existente.client_id = cid; // reflete no índice em memória
+        corrigidos++;
+      } else {
+        const saved = await insert("processes", { ...base, client_id: cid, status: "Ativo", andamentos: [] });
+        if (saved && onlyDigits(base.num)) idx.set(key, { ...saved, client_id: cid, grau: base.grau });
+        novos++;
+      }
       if (client && base.num) known.push({ num: base.num, client_id: client.id });
-      ok++; if (!client) sem++;
+      if (!client) sem++;
     } catch {}
   }
-  toast(`✅ ${ok} processos importados${sem ? " · ⚠️ " + sem + " sem cliente identificado (abra e vincule)" : ""}.`, { duration: 9000 });
+  const partes = [];
+  if (novos) partes.push(`${novos} novo(s)`);
+  if (corrigidos) partes.push(`${corrigidos} atualizado(s)/corrigido(s)`);
+  toast(`✅ ${partes.join(" · ") || "0 processos"}${sem ? " · ⚠️ " + sem + " sem cliente identificado (abra e vincule)" : ""}.`, { duration: 9000 });
   renderClients();
 }
 
