@@ -224,7 +224,7 @@ async function renderTasksPage() {
   const area = state.route === "professional" ? "profissional" : "pessoal";
   const meta = area === "profissional"
     ? { title: "Trabalho 💼", sub: "Projetos, prazos e compromissos" }
-    : { title: "Pessoal 🧑", sub: "Tarefas, metas e lembretes" };
+    : { title: "Meu cadastro pessoal 🧑", sub: "Suas tarefas e prazos pessoais — só seus, fora das pastas de clientes" };
   const all = await list("tasks", { orderBy: "created_at", asc: true });
   const tasks = all.filter((t) => (t.area || "pessoal") === area);
   const open = tasks.filter((t) => !t.done);
@@ -271,7 +271,7 @@ function taskRow(t, compact = false) {
   const meta = [];
   if (t.due_date) meta.push((late ? "⚠ atrasada · " : "") + prettyDate(t.due_date) + (t.due_time ? " " + t.due_time : ""));
   else if (t.due_time) meta.push("🕐 " + t.due_time);
-  if (t.process_id || t.client_id) meta.push("🔗 vinculada");
+  if (t.client_id || t.process_id) meta.push((t.area === "pessoal") ? "🔒 vínculo particular" : "🔗 cliente");
   const grow = el("div", { class: "grow", onclick: () => openTaskEditModal(t) }, [
     el("div", { class: "t1" }, t.title),
     t.description ? el("div", { class: "t2" }, t.description) : null,
@@ -712,7 +712,9 @@ async function openClient(id) {
   const c = clients.find((x) => x.id === id);
   if (!c) { renderClients(); return; }
   const meus = procs.filter((p) => p.client_id === id);
-  const minhasTarefas = tasks.filter((t) => t.client_id === id && !t.done);
+  // Só tarefas profissionais aparecem na pasta do cliente.
+  // As pessoais vinculadas a um cliente são referência privada (ficam só no cadastro pessoal).
+  const minhasTarefas = tasks.filter((t) => t.client_id === id && t.area === "profissional" && !t.done);
 
   const dados = [
     ["CPF", c.cpf], ["RG", c.rg], ["Telefone", c.tel], ["E-mail", c.email],

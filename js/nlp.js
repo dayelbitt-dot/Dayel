@@ -13,6 +13,32 @@ const WEEKDAYS = {
 // remove acentos só para comparação de palavras-chave
 const noAccent = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+// Gera um título curto a partir de um texto longo (ex: mensagem colada).
+export function shortTitle(text) {
+  let t = (text || "").trim().replace(/\s+/g, " ");
+  const saudacoes = /^(prezad[oa]s?( senhor[ea]s?)?( cond[oô]min[oa]s?)?|senhor[ea]s?( cond[oô]min[oa]s?)?|cond[oô]min[oa]s?|ol[áa]|oi+|bom dia|boa tarde|boa noite|pessoal|gente|caro[as]?|srs?\.?|comunicado|aviso)[\s,!.:;–-]+/i;
+  const aberturas = /^(venho( por meio desta| informar( que)?| comunicar( que)?)?|informo( a todos)?( que)?|informamos( que)?|comunico( que)?|comunicamos( que)?|gostar[íi]a de( informar)?( que)?|gostar[íi]amos( de)?( informar)?( que)?|pe[çc]o( que| a gentileza de)?|solicito( que)?|segue|lembr(o|amos)( que)?)[\s,:–-]+/i;
+  for (let k = 0; k < 4; k++) {
+    const before = t;
+    t = t.replace(saudacoes, "").replace(aberturas, "");
+    if (t === before) break;
+  }
+  // primeira frase / linha
+  const m = t.match(/^(.+?)(?:[.!?\n]|$)/);
+  let s = (m ? m[1] : t).trim();
+  const words = s.split(" ");
+  if (words.length > 8) s = words.slice(0, 8).join(" ") + "…";
+  s = s.replace(/[\s,;:–-]+$/, "");
+  if (!s) s = (text || "").trim().slice(0, 60);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Decide se o texto é longo o bastante para separar título + descrição.
+export function isLongText(text) {
+  const t = (text || "").trim();
+  return t.length > 60 || t.split(/\s+/).length > 12 || /\n/.test(t);
+}
+
 export function parseNaturalTask(input, defaultArea = "pessoal") {
   const original = (input || "").trim().replace(/\s+/g, " ");
   if (!original) return null;
