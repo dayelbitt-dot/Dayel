@@ -1,39 +1,26 @@
-# ✦ ArchRender Master
+# ✦ ArchPrompter
 
-Aplicativo web (uma única página, 100% no navegador) que **gera prompts de renderização ultra-realistas para projetos arquitetônicos**, seguindo o metaprompt do *ArchRender Master*.
+Aplicativo web (página única, 100% no navegador) que **gera metaprompts ultrarrealistas** para renderizar imagens de projetos arquitetônicos em IAs de imagem.
 
-Abra `archrender/index.html` no navegador — não precisa de servidor nem internet. Nada é enviado para fora do aparelho.
+Abra `archrender/index.html` no navegador. Nada é enviado para fora do aparelho (a leitura de voz e as fontes usam a rede quando disponível).
+
+> É um app **independente** do "Meu Assistente" — não há vínculo entre os dois.
 
 ## Como funciona
 
-O app tem 4 abas:
+Visual em **tons claros com estética de luxo**, feito para arquitetos. Quatro abas:
 
-1. **Imagens de referência** — anexe fotos da maquete, croquis, plantas, fachadas ou referências de estilo (arraste ou clique). Marque o que cada imagem representa. Ficam só no navegador.
-2. **Perguntas objetivas** — uma bateria completa de perguntas **só de clicar**, cobrindo:
-   - Tipologia · ponto de vista · estilo arquitetônico
-   - Materiais (concreto, madeira, corten, mármore, vidro…)
-   - Atmosfera e paleta de cores
-   - Iluminação, horário e clima
-   - Lente, abertura, perspectiva e altura de câmera
-   - Entorno, paisagismo e elementos de cena
-   - Estética de render e **motor-alvo** (Midjourney, Stable Diffusion, DALL·E 3, Unreal Engine 5, V-Ray/Corona, Octane)
-   - Proporção da imagem
+1. **Referências** — anexe fotos da maquete, croquis, plantas, fachadas ou referências de estilo. O metaprompt **instrui a IA a replicar fielmente** a geometria, os materiais e a composição dessas imagens.
+2. **Perguntas** — bateria completa **só de clicar**: tipologia, ponto de vista, estilo, materiais (com textura), atmosfera, paleta, luz/clima, lente/abertura/perspectiva, entorno, paisagismo, elementos, acabamento técnico, **motor-alvo** e proporção. Cada bloco tem campo livre.
+3. **Descrever** — escreva livremente em português **ou grave um áudio** (transcrição por voz em pt-BR) e o app **pré-seleciona as perguntas**, inclusive o motor-alvo.
+4. **Metaprompt** — a saída pronta.
 
-   Cada bloco tem também um **campo de texto livre** para o que não estiver nas opções.
-3. **Descrever em texto** — se preferir, escreva livremente em português como quer a imagem; o app lê as palavras e **pré-seleciona as perguntas** para você só refinar.
-4. **Prompt gerado** — a saída padronizada:
-   - **PROMPT** em inglês (idioma de maior acurácia dos modelos de difusão), montado pela fórmula
-     `Tipologia + Estilo + Materiais + Câmera/Lente + Iluminação/Clima + Entorno/Paisagismo + Render`,
-     já formatado para o motor escolhido (ex.: `--ar 16:9 --v 6.0` no Midjourney).
-   - **NEGATIVE PROMPT** (crucial para Stable Diffusion; adaptado às escolhas).
-   - **PARÂMETROS SUGERIDOS** (steps, CFG, sampler, exposição etc., conforme o motor).
-   - **RACIONAL TÉCNICO** em português, justificando lente, luz e materiais — e **alertando sobre incoerências físicas** (ex.: sol de meio-dia com neblina densa, verticais distorcidas em ultra-wide).
+## Motores-alvo
 
-Botões de **copiar** por seção e **copiar tudo**.
+- **Nano Banana (Gemini 2.5 Flash Image)** — metaprompt narrativo longo e detalhado (formato que o Gemini entende melhor).
+- **Midjourney v6**, **Stable Diffusion / Flux**, **DALL·E 3 / ChatGPT**, **Unreal Engine 5**, **V-Ray / Corona**, **Octane / Redshift**.
 
-## Diretrizes seguidas (do metaprompt)
+## Saída
 
-- Prompt sempre em **inglês** com precisão técnica (sem termos amadores como *beautiful*, *masterpiece*).
-- Uso de vocabulário de **PBR, iluminação, fotografia e história da arquitetura**.
-- **Diagnóstico → estruturação → output padronizado** em 3 seções.
-- **Detecção de contradições físicas** antes de entregar o prompt.
+- **Metaprompt** em inglês, ultra-detalhado, com materiais **texturizados fisicamente** (roughness, IOR, desgaste) e **ultrarrealismo sempre embutido**.
+- **Negative prompt**, **Como usar / parâmetros** e **Racional técnico** em português (com alertas de incoerência física).
