@@ -309,7 +309,10 @@ async function openTaskEditModal(t) {
     cliHint.style.display = pessoal ? "block" : "none";
   };
   const paint = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); updateLabels(); };
-  segP.onclick = () => { area = "pessoal"; paint(); };
+  segP.onclick = () => {
+    if (area !== "pessoal") { cliSel.value = ""; fillProcs(); procSel.value = ""; } // zera vínculos ao virar pessoal
+    area = "pessoal"; paint();
+  };
   segT.onclick = () => { area = "profissional"; paint(); };
   paint();
 
