@@ -485,19 +485,22 @@ async function renderNotes() {
 }
 
 function noteRow(n) {
-  return el("div", { class: "card", style: "padding:14px" }, [
+  const del = el("button", { class: "del", title: "Excluir" }, "×");
+  del.onclick = async (e) => { e.stopPropagation(); if (confirm("Excluir esta nota?")) { await remove("notes", n.id); renderNotes(); } };
+  return el("div", { class: "card", style: "padding:14px; cursor:pointer", onclick: () => openNoteModal(n) }, [
     el("div", { class: "section-head" }, [
       el("div", { class: "t1", style: "font-weight:700" }, n.title || "Sem título"),
-      el("button", { class: "del", onclick: async () => { await remove("notes", n.id); renderNotes(); } }, "×"),
+      del,
     ]),
     n.body ? el("div", { class: "t2", style: "margin-top:6px; white-space:pre-wrap; line-height:1.5" }, n.body) : null,
-    el("div", { class: "t2", style: "margin-top:8px; opacity:.7" }, prettyDate(n.created_at)),
+    el("div", { class: "t2", style: "margin-top:8px; opacity:.7" }, "🖊 toque para editar · " + prettyDate(n.created_at)),
   ]);
 }
 
-function openNoteModal() {
-  const title = el("input", { type: "text", placeholder: "Título" });
-  const body = el("textarea", { rows: "6", placeholder: "Escreva aqui…" });
+function openNoteModal(existing) {
+  const f = existing || {};
+  const title = el("input", { type: "text", placeholder: "Título", value: f.title || "" });
+  const body = el("textarea", { rows: "6", placeholder: "Escreva aqui…" }, f.body || "");
   const form = el("form", {}, [
     el("label", {}, ["Título", title]),
     el("label", {}, ["Conteúdo", body]),
@@ -509,10 +512,12 @@ function openNoteModal() {
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!title.value.trim() && !body.value.trim()) { closeModal(); return; }
-    await insert("notes", { title: title.value.trim(), body: body.value.trim() });
+    const data = { title: title.value.trim(), body: body.value.trim() };
+    if (existing) await update("notes", existing.id, data);
+    else await insert("notes", data);
     closeModal(); renderNotes();
   };
-  openModal(el("div", {}, [el("h3", {}, "Nova nota"), form]));
+  openModal(el("div", {}, [el("h3", {}, existing ? "Editar nota" : "Nova nota"), form]));
   setTimeout(() => title.focus(), 50);
 }
 
