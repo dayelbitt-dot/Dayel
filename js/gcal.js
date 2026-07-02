@@ -61,6 +61,35 @@ export async function connect(interactive = true) {
   });
 }
 
+// Mantém o Google conectado sozinho: renova o token ANTES de expirar e
+// também quando o app volta a ficar visível. Assim você conecta uma vez e
+// não precisa clicar em "Conectar" de novo. Não abre pop-up (prompt:'none').
+let keepAliveStarted = false;
+let lastSilentAt = 0;
+export function startAutoConnect(onChange) {
+  if (!GOOGLE_CLIENT_ID) return;
+  const notify = () => { try { onChange && onChange(isConnected()); } catch {} };
+
+  const trySilent = async (force) => {
+    if (!wasLinked()) return;
+    // token ainda válido por mais de 5 min? não precisa renovar (a não ser forçado)
+    if (!force && isConnected() && Date.now() < tokenExpiry - 5 * 60 * 1000) return;
+    if (Date.now() - lastSilentAt < 15000) return; // evita repetir demais
+    lastSilentAt = Date.now();
+    const was = isConnected();
+    try { await connect(false); } catch {}
+    if (isConnected() !== was) notify();
+  };
+
+  if (keepAliveStarted) return;
+  keepAliveStarted = true;
+  trySilent(true);                                   // tenta assim que o app abre
+  setInterval(() => trySilent(false), 4 * 60 * 1000); // renova ~5 min antes de expirar
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") trySilent(false); });
+  window.addEventListener("focus", () => trySilent(false));
+  window.addEventListener("online", () => trySilent(true));
+}
+
 export function disconnect() {
   try { if (accessToken && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(accessToken, () => {}); } catch {}
   accessToken = null; tokenExpiry = 0;

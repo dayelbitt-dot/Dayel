@@ -46,6 +46,13 @@ async function showApp(session) {
   $("#user-chip").textContent = email;
   wireShell();
   navigate(state.route);
+  // Mantém o Google Agenda conectado sozinho (renova o token em segundo plano).
+  try {
+    gcal.startAutoConnect((connected) => {
+      if (connected) { googleLoadedKey = null; } // token novo → rebuscar eventos
+      if (state.route === "agenda") renderAgenda();
+    });
+  } catch {}
 }
 
 // ==================== AUTH UI ====================
