@@ -539,12 +539,56 @@ async function renderClients() {
     rows.forEach((c) => listWrap.append(clientCard(c)));
   };
   search.addEventListener("input", () => draw(search.value));
+  const importInput = el("input", { type: "file", class: "hidden", accept: ".json,application/json" });
+  importInput.addEventListener("change", async () => { const f = importInput.files[0]; importInput.value = ""; if (f) await importarBackup(f); });
   main.append(
-    el("div", {}, [el("h1", { class: "page-title" }, "Clientes 👤"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
-    search, listWrap,
+    el("div", { class: "section-head" }, [
+      el("div", {}, [el("h1", { class: "page-title" }, "Clientes 👤"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
+      el("button", { class: "btn btn-ghost btn-sm", onclick: () => importInput.click() }, "⬆ Importar"),
+    ]),
+    importInput, search, listWrap,
   );
   draw();
   addFab(() => openClientModal());
+}
+
+// Importa um backup .json exportado do sistema DB Advocacia
+async function importarBackup(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { toast("Arquivo inválido — envie o backup .json do DB Advocacia."); return; }
+
+  const clientes = data.clientes || data.clients || [];
+  const processos = data.processos || data.processes || [];
+  if (!clientes.length && !processos.length) { toast("Nenhum cliente ou processo encontrado no arquivo."); return; }
+
+  const nn = (v) => { const s = (v ?? "").toString().trim(); return s || null; };
+  toast(`Importando ${clientes.length} clientes e ${processos.length} processos… aguarde.`, { duration: 120000 });
+
+  const idMap = {}; let okC = 0, okP = 0;
+  for (const c of clientes) {
+    try {
+      const saved = await insert("clients", {
+        nome: nn(c.nome) || "(sem nome)", cpf: nn(c.cpf), rg: nn(c.rg), tel: nn(c.tel), email: nn(c.email),
+        nasc: nn(c.nasc), endereco: nn(c.end) || nn(c.endereco), area: nn(c.area), origem: nn(c.origem), obs: nn(c.obs),
+      });
+      if (saved) { idMap[c.id] = saved.id; okC++; }
+    } catch {}
+  }
+  for (const p of processos) {
+    try {
+      await insert("processes", {
+        num: nn(p.num), nome: nn(p.nome) || "(sem descrição)", client_id: idMap[p.clienteId] || null,
+        tipo: nn(p.tipo), vara: nn(p.vara), tribunal: nn(p.tribunal), partes: nn(p.partes),
+        data_distribuicao: nn(p.data) || nn(p.data_distribuicao), fase: nn(p.fase), status: nn(p.status) || "Ativo",
+        valor: p.valor ? (parseFloat(p.valor) || null) : null, obs: nn(p.obs),
+        andamentos: Array.isArray(p.andamentos) ? p.andamentos : [],
+      });
+      okP++;
+    } catch {}
+  }
+  toast(`✅ Importado: ${okC} clientes e ${okP} processos.`);
+  renderClients();
 }
 
 function clientCard(c) {
