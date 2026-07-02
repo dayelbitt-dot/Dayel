@@ -317,7 +317,7 @@ async function openTaskEditModal(t, onDone) {
   };
   const paint = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); updateLabels(); };
   segP.onclick = () => {
-    if (area !== "pessoal") { cliSel.value = ""; fillProcs(); procSel.value = ""; } // zera vínculos ao virar pessoal
+    cliSel.value = ""; procSel.value = ""; fillProcs(); // zera vínculos ao virar pessoal
     area = "pessoal"; paint();
   };
   segT.onclick = () => { area = "profissional"; paint(); };
@@ -328,11 +328,15 @@ async function openTaskEditModal(t, onDone) {
   clients.forEach((c) => cliSel.append(el("option", { value: c.id, ...(t.client_id === c.id ? { selected: "" } : {}) }, c.nome)));
   const procSel = el("select", { class: "form-control" });
   const fillProcs = () => {
-    const cid = cliSel.value; procSel.innerHTML = ""; procSel.append(el("option", { value: "" }, "— nenhum —"));
-    processes.filter((p) => !cid || p.client_id === cid).forEach((p) => procSel.append(el("option", { value: p.id, ...(t.process_id === p.id ? { selected: "" } : {}) }, p.nome)));
+    const cid = cliSel.value; const atual = procSel.value;
+    procSel.innerHTML = ""; procSel.append(el("option", { value: "" }, "— nenhum —"));
+    const avail = processes.filter((p) => !cid || p.client_id === cid);
+    avail.forEach((p) => procSel.append(el("option", { value: p.id }, p.nome)));
+    procSel.value = avail.some((p) => p.id === atual) ? atual : ""; // preserva a escolha do usuário
   };
   cliSel.addEventListener("change", fillProcs);
   fillProcs();
+  if (t.process_id && processes.some((p) => p.id === t.process_id)) procSel.value = t.process_id; // seleção inicial
 
   // ---- anexos ----
   let atts = Array.isArray(t.attachments) ? t.attachments.slice() : [];

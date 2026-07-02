@@ -111,7 +111,8 @@ export function mountCapture(defaultArea, onCreate) {
       updateLabels();
     };
     segP.onclick = () => {
-      if (area !== "pessoal") { cliSel.value = ""; fillProcs(); procSel.value = ""; } // zera vínculos ao virar pessoal
+      // zera vínculos ao virar pessoal (cliente, processo e o box de info)
+      cliSel.value = ""; procSel.value = ""; fillProcs();
       area = "pessoal"; paintSeg();
     };
     segT.onclick = () => { area = "profissional"; paintSeg(); };
@@ -122,25 +123,33 @@ export function mountCapture(defaultArea, onCreate) {
     clients.forEach((c) => cliSel.append(el("option", { value: c.id, ...(det.client && det.client.id === c.id ? { selected: "" } : {}) }, c.nome)));
     const procSel = el("select", { class: "form-control" });
     const procInfo = el("div", { class: "cap-procinfo" });
+    // Reconstrói a lista de processos PRESERVANDO a escolha atual do usuário.
+    // Nunca "re-crava" o processo detectado — só usamos ele como sugestão inicial.
     const fillProcs = () => {
       const cid = cliSel.value;
+      const atual = procSel.value; // respeita o que o usuário escolheu (inclusive "nenhum")
       procSel.innerHTML = "";
       procSel.append(el("option", { value: "" }, "— nenhum —"));
-      processes.filter((p2) => !cid || p2.client_id === cid).forEach((p2) =>
-        procSel.append(el("option", { value: p2.id, ...(det.process && det.process.id === p2.id ? { selected: "" } : {}) }, p2.nome)));
+      const avail = processes.filter((p2) => !cid || p2.client_id === cid);
+      avail.forEach((p2) => procSel.append(el("option", { value: p2.id }, p2.nome)));
+      procSel.value = avail.some((p2) => p2.id === atual) ? atual : "";
       showProcInfo();
     };
     const showProcInfo = () => {
-      const p2 = processes.find((x) => x.id === procSel.value);
+      const p2 = procSel.value ? processes.find((x) => x.id === procSel.value) : null;
       procInfo.innerHTML = "";
       if (p2) {
         const bits = [p2.num ? "Nº " + p2.num : "", p2.vara || "", p2.fase || ""].filter(Boolean);
         if (bits.length) procInfo.append(el("div", { class: "t2" }, "⚖️ " + bits.join(" · ")));
       }
     };
-    cliSel.addEventListener("change", fillProcs);  // não força mais a área — respeita sua escolha
+    cliSel.addEventListener("change", fillProcs);  // respeita a área e a escolha do usuário
     procSel.addEventListener("change", showProcInfo);
     fillProcs();
+    // sugestão inicial: processo detectado (só uma vez, e o usuário pode trocar/limpar)
+    if (det.process && (!area || area === "profissional") && processes.some((p2) => p2.id === det.process.id)) {
+      procSel.value = det.process.id; showProcInfo();
+    }
 
     const gerar = el("button", { type: "button", class: "btn btn-primary btn-block" }, "✓ Gerar tarefa");
     const cancelar = el("button", { type: "button", class: "btn btn-ghost btn-block" }, "Cancelar");
