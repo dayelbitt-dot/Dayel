@@ -155,6 +155,11 @@ pre.code{
 }
 pre.metaprompt{background:linear-gradient(180deg,#fffdf8,#faf4e6);border-color:var(--gold-soft);
   font-family:var(--sans);font-size:14px;line-height:1.68;color:#332e26}
+textarea.code{display:block;width:100%;resize:vertical;min-height:180px;
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;background:#fbf7ee;border:1px solid var(--line-2);
+  border-radius:12px;padding:16px;font-size:13px;line-height:1.6;color:#37312a}
+textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min-height:300px;
+  background:linear-gradient(180deg,#fffdf8,#faf4e6);border-color:var(--gold-soft);color:#332e26}
 .rational{background:#faf5ea;border:1px solid var(--line-2);border-radius:12px;padding:17px;font-size:13.5px;color:var(--ink-soft);font-weight:300}
 .rational strong{color:var(--gold-deep);font-weight:600}
 .rational ul{margin:9px 0 0;padding-left:18px}
@@ -303,31 +308,28 @@ pre.metaprompt{background:linear-gradient(180deg,#fffdf8,#faf4e6);border-color:v
   <section id="mode-output" class="mode hidden">
     <div class="panel">
       <h2><span class="ic">✦</span> Seu metaprompt</h2>
-      <p class="hint">Ultra-detalhado e no idioma técnico (inglês) para máxima acurácia. Formatado para o motor escolhido. Cole na IA — e, se tiver referências, anexe as imagens junto.</p>
-
-      <div class="gen-hero">
-        <div class="gh-kick">Gere a imagem sem sair daqui</div>
-        <button class="btn-gen" id="btn-gen-img"><span class="gi">✦</span> Gerar imagem agora <span class="gsub2">Nano Banana</span></button>
-        <div class="gen-status" id="gen-status">Usa sua chave do Gemini · replica o seu projeto e imita o estilo das referências</div>
-        <div class="gen-result" id="gen-result"></div>
-      </div>
+      <p class="hint">Em <strong>português</strong> e <strong>editável</strong> — ajuste o texto como quiser. Quando terminar, clique em <strong>Traduzir para inglês</strong> (os modelos de imagem entendem inglês com mais precisão) e cole na IA. Se tiver imagens, anexe-as junto.</p>
 
       <div id="warn-slot"></div>
 
       <div class="out-block">
         <div class="out-head">
           <h3><span class="dot" style="background:var(--gold)"></span> <span id="prompt-label">Metaprompt</span></h3>
-          <button class="btn sm" data-copy="prompt">⧉ Copiar</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn sm" id="btn-translate">🌐 Traduzir para inglês</button>
+            <button class="btn sm" data-copy="prompt">⧉ Copiar</button>
+          </div>
         </div>
-        <pre class="code metaprompt" id="out-prompt"></pre>
+        <textarea class="code metaprompt" id="out-prompt" spellcheck="false"></textarea>
+        <div id="translate-note" class="gsub" style="margin-top:7px"></div>
       </div>
 
       <div class="out-block" id="neg-block">
         <div class="out-head">
-          <h3><span class="dot" style="background:var(--bad)"></span> Negative prompt</h3>
+          <h3><span class="dot" style="background:var(--bad)"></span> Negative prompt <span style="text-transform:none;letter-spacing:0;font-weight:400">(editável)</span></h3>
           <button class="btn sm" data-copy="neg">⧉ Copiar</button>
         </div>
-        <pre class="code" id="out-neg"></pre>
+        <textarea class="code" id="out-neg" spellcheck="false"></textarea>
       </div>
 
       <div class="out-block" id="params-block">
@@ -748,17 +750,17 @@ Return ONLY a JSON object with EXACTLY these two keys:
 
 "choices": an object where, for EVERY group id in the list below, you give the option id(s) that best match what you actually see. ALWAYS pick the single closest option for every group using your best professional judgment — do NOT leave groups empty and do NOT default everything to the same generic answer; only omit a group if it is truly impossible to tell from the image. For a "single" group give one id string; for a "multi" group give an array of ids. Use ONLY ids from the allowed lists.
 
-"notes": an object that gives a SHORT, SPECIFIC written answer (in English) for as many of the group ids as make sense, to be used as the free-text detail of each question. Be concrete about exactly what is visible, never generic, never invent things. Especially fill these:
-  - "materials": real materials with colors/finishes, e.g. "warm travertine cladding, black anodized aluminium window frames, fluted reeded glass";
-  - "typology": what the building specifically is, e.g. "two-storey hillside single-family house with a cantilevered upper volume";
-  - "style": precise style read, e.g. "warm contemporary minimalism with tropical-modernist influence";
-  - "context": specific site, e.g. "gently sloped garden over light gravel with a low stone wall";
-  - "vegetation": specific plants, e.g. "mature olive trees and ornamental grasses";
-  - "elements": notable scene elements, e.g. "reflecting lap pool along the facade";
-  - "palette": dominant colors, e.g. "warm beige, charcoal, natural oak";
-  - "viewpoint": camera read, e.g. "three-quarter frontal view of the main facade";
-  - "time": light read, e.g. "late-afternoon warm sun from the left".
-Keep each note under ~20 words.
+"notes": an object with a SHORT, SPECIFIC written answer IN BRAZILIAN PORTUGUESE (pt-BR) for as many group ids as make sense, to be used as the free-text detail of each question. Be concrete about exactly what is visible, never generic, never invent things. Especially fill these (examples in Portuguese):
+  - "materials": os materiais reais com cores/acabamentos, ex.: "revestimento de travertino quente, caixilhos de alumínio preto anodizado, vidro canelado";
+  - "typology": o que o edifício é especificamente, ex.: "casa de dois pavimentos em encosta com volume superior em balanço";
+  - "style": leitura precisa do estilo, ex.: "minimalismo contemporâneo quente com influência do modernismo tropical";
+  - "context": o sítio específico, ex.: "jardim em leve declive sobre brita clara com muro baixo de pedra";
+  - "vegetation": plantas específicas, ex.: "oliveiras maduras e gramíneas ornamentais";
+  - "elements": elementos notáveis da cena, ex.: "piscina de raia espelhando a fachada";
+  - "palette": cores dominantes, ex.: "bege quente, grafite, madeira natural";
+  - "viewpoint": leitura da câmera, ex.: "vista frontal em três quartos da fachada principal";
+  - "time": leitura da luz, ex.: "sol quente de fim de tarde vindo da esquerda".
+Cada nota deve ter no máximo ~20 palavras, em português.
 
 Groups and allowed option ids (id: meaning): `+JSON.stringify(allowedForAI());
   const parts=[{text:instruction}];
@@ -891,13 +893,13 @@ function checkContradictions(){
 /* =========================================================================
    REFERENCE clause
    ========================================================================= */
-const FIDELITY_LOCK = "ABSOLUTE FIDELITY — DO NOT REDESIGN. The attached PROJECT image is the single source of truth and must be reproduced with 100% accuracy. You must NOT add, remove, move, resize, duplicate, hide or redesign ANY element: keep the exact same windows (same count, size, position, subdivisions and framing), the exact same doors and openings, the exact same walls, columns, beams, railings, stairs, balconies, roof shape and slope, the exact same volumes, setbacks, number of floors and floor heights, and the exact same overall facade composition and proportions. Do not invent new architectural elements, furniture, decoration or objects that are not visible in the project image, and do not remove any that are. Do not change the design, geometry, layout or the materials of the building. You may ONLY change the photographic treatment — lighting, time of day, sky, atmosphere, camera angle within reason, and the photorealistic quality of the SAME existing materials. The building's design must remain byte-for-byte the same as the project image.";
+const FIDELITY_LOCK = "FIDELIDADE ABSOLUTA — NÃO REDESENHE. A imagem do PROJETO anexada é a única fonte da verdade e deve ser reproduzida com 100% de precisão. NÃO adicione, remova, mova, redimensione, duplique, oculte nem redesenhe NENHUM elemento: mantenha exatamente as mesmas janelas (mesma quantidade, tamanho, posição, subdivisões e caixilhos), as mesmas portas e aberturas, as mesmas paredes, pilares, vigas, guarda-corpos, escadas e varandas, o mesmo formato e inclinação do telhado, os mesmos volumes, recuos, número de pavimentos e pés-direitos, e a mesma composição e proporções da fachada. Não invente elementos, mobiliário, decoração ou objetos que não aparecem na imagem do projeto, e não remova nenhum que apareça. Não mude o desenho, a geometria, o layout nem os materiais do edifício. Você só pode alterar o tratamento fotográfico — iluminação, horário, céu, atmosfera, ângulo de câmera com moderação e a qualidade fotorrealista dos MESMOS materiais existentes. O desenho do edifício deve permanecer idêntico ao da imagem do projeto.";
 function referenceClause(){
   const parts=[];
   if(state.project.length)
     parts.push(FIDELITY_LOCK);
   if(state.refs.length)
-    parts.push(`Use the ${state.refs.length} attached STYLE reference image(s) ONLY as inspiration for lighting, mood, palette and photographic treatment — never copy their buildings, geometry or elements, and never let them alter the project's design.`);
+    parts.push(`Use as ${state.refs.length} imagem(ns) de REFERÊNCIA DE ESTILO anexadas APENAS como inspiração de iluminação, clima, paleta e tratamento fotográfico — nunca copie os edifícios, a geometria ou os elementos delas, e nunca deixe que alterem o desenho do projeto.`);
   return parts.join(" ");
 }
 function imgCount(){return state.project.length+state.refs.length;}
@@ -905,82 +907,114 @@ function imgCount(){return state.project.length+state.refs.length;}
 /* =========================================================================
    METAPROMPT GENERATION
    ========================================================================= */
-const EDITORIAL = "EDITORIAL, MAGAZINE-QUALITY ARCHITECTURAL PHOTOGRAPHY — frame and light it like a full-page hero shot in a top design magazine (Dezeen, ArchDaily, Wallpaper*, Architectural Digest) documenting an award-winning building. It must feel curated, cinematic and three-dimensional, NEVER flat, hard, dull or snapshot-like. Use dimensional, sculptural lighting: a soft directional key light with gentle fill and a hint of rim/backlight so volumes and materials read with rich tonal gradation and depth; layered composition with a clear foreground, midground and background; genuine atmospheric depth (subtle haze, light falloff, believable ambient occlusion); a refined filmic color grade with smooth highlight roll-off, gentle contrast and deep-but-open shadows; elegant negative space and a confident, intentional viewpoint. The scene should feel alive and inhabited, with soft natural light shaping every surface. ";
-const ULTRA = "100% ULTRA-PHOTOREALISTIC — the ENTIRE image, without a single exception, must look like a real photograph shot on a full-frame camera, never a 3D render, never CGI, never a video-game look. Absolutely no robotic, plastic, waxy, rubbery, over-smooth or artificially clean surfaces anywhere. EVERY material must show real-world physical behaviour and micro-imperfections: concrete with pores, stains, form marks and subtle patina; wood with real grain, knots and slight tonal variation; metal with fine brushing, micro-scratches and real anisotropic reflections; glass with realistic reflections, faint smudges, dust and true refraction; stone and marble with natural veining and honed micro-relief; fabric and vegetation with fibrous detail. Add subtle real-world touches everywhere — dust, tiny dirt, weathering, edge wear, uneven aging, contact shadows, ambient occlusion in crevices — so no surface looks freshly-generated or synthetic. Physically-based global illumination, ray-traced reflections and refractions, accurate soft shadows, realistic depth of field, high dynamic range and subtle natural photographic grain and lens characteristics. Sky, ground, background, people and vegetation must be equally photorealistic — 8K, razor-sharp, indistinguishable from a professional architectural photograph.";
+const EDITORIAL = "FOTOGRAFIA DE ARQUITETURA EDITORIAL, QUALIDADE DE REVISTA — enquadre e ilumine como a foto de destaque de página inteira de uma grande revista de arquitetura (Dezeen, ArchDaily, Wallpaper*, Architectural Digest) documentando uma obra premiada. Deve parecer curada, cinematográfica e tridimensional, NUNCA chapada, dura, sem graça ou com cara de foto casual. Use iluminação dimensional e escultural: luz principal suave e direcional, com preenchimento sutil e um leve contraluz, para que os volumes e materiais tenham rica gradação tonal e profundidade; composição em camadas com primeiro plano, plano médio e fundo bem definidos; profundidade atmosférica real (leve névoa, queda de luz, oclusão de ambiente crível); tratamento de cor fílmico e refinado, com transição suave nas altas-luzes, contraste gentil e sombras profundas porém abertas; uso elegante de espaço negativo e um ponto de vista seguro e intencional. A cena deve parecer viva, com luz natural suave modelando cada superfície.";
+const ULTRA = "100% ULTRARREALISTA — a imagem INTEIRA, sem uma única exceção, deve parecer uma fotografia real feita em câmera full-frame, nunca um render 3D, nunca CGI, nunca cara de videogame. Absolutamente nenhuma superfície robótica, plástica, emborrachada, cerosa, lisa demais ou artificialmente limpa. CADA material deve mostrar comportamento físico real e microimperfeições: concreto com poros, manchas, marcas de fôrma e leve pátina; madeira com veios reais, nós e variação de tom; metal com escovação fina, micro-riscos e reflexos anisotrópicos reais; vidro com reflexos realistas, marcas leves, poeira e refração verdadeira; pedra e mármore com veios naturais e micro-relevo; tecidos e vegetação com detalhe fibroso. Adicione toques reais em tudo — poeira, sujeira mínima, desgaste, marcas de uso, envelhecimento irregular, sombras de contato, oclusão de ambiente nas frestas — para que nada pareça recém-gerado ou sintético. Iluminação global fisicamente correta, reflexos e refrações com ray tracing, sombras suaves precisas, profundidade de campo realista, alta faixa dinâmica e grão fotográfico natural sutil. Céu, chão, fundo, pessoas e vegetação igualmente fotorrealistas — 8K, nítido, indistinguível de uma fotografia profissional de arquitetura.";
+
+function ptListOf(gid){const g=grp(gid);const s=state.sel[gid];const a=Array.isArray(s)?s:(s?[s]:[]);return a.map(id=>{const o=optById(g,id);return o?o.pt.replace(/\s*\(.*?\)/g,"").replace(/\s*\/\s*.*/,"").trim():null;}).filter(Boolean);}
+function joinPt(a){a=a.filter(Boolean);if(a.length<=1)return a[0]||"";if(a.length===2)return a[0]+" e "+a[1];return a.slice(0,-1).join(", ")+" e "+a[a.length-1];}
 
 function subjectPhrase(){
-  const typ=enOf("typology")[0], style=enOf("style")[0], view=enOf("viewpoint")[0];
-  let s = style ? `a ${style} ${typ||"architectural project"}` : `a ${typ||"contemporary architectural project"}`;
-  if(view) s += `, ${view}`;
+  const typ=ptListOf("typology")[0], style=ptListOf("style")[0], view=ptListOf("viewpoint")[0];
+  let s = style ? `${(typ||"projeto arquitetônico")} em estilo ${style.toLowerCase()}` : (typ||"projeto arquitetônico contemporâneo");
+  if(view) s += `, ${view.toLowerCase()}`;
   const extra=[freeOf("typology"),freeOf("style"),freeOf("viewpoint")].filter(Boolean).join(", ");
   if(extra) s += `, ${extra}`;
   return s;
 }
+const MATPT={concrete:"concreto aparente moldado in loco, com marcas da fôrma de madeira, furos de ancoragem, poros finos e leve pátina cinza",
+ "concrete-polish":"concreto polido acetinado, com leves marcas de desempenadeira e reflexos discretos",
+ microcement:"microcimento contínuo, aveludado e fosco, com leve nuvem tonal",
+ oak:"madeira clara de carvalho, com veio aberto e tátil, acabamento fosco e tons de mel",
+ walnut:"madeira escura de nogueira, com veio profundo, acabamento acetinado e brilho sutil",
+ slats:"ripado vertical de madeira, com frestas nítidas e veio bem visível",
+ brick:"tijolo aparente artesanal, com faces irregulares, textura arenosa e juntas de argamassa rebaixadas",
+ marble:"mármore com veios naturais, profundidade translúcida e polimento especular",
+ travertine:"pedra travertino, com poros abertos, superfície acetinada e tom marfim",
+ corten:"aço corten, com pátina de ferrugem granulada em tons alaranjados mesclados e superfície fosca",
+ blacksteel:"aço preto fosco, com microtextura fina e reflexos direcionais suaves",
+ glass:"vidro extra-claro do piso ao teto, com reflexos precisos, leve verde na borda e refração real",
+ smokedglass:"vidro fumê espelhado, com reflexos do entorno e gradiente esfumaçado",
+ stucco:"reboco de cal branco aplicado à mão, com ondulações suaves e acabamento fosco",
+ metalpanel:"painéis metálicos perfurados, com furos precisos, microtextura escovada e brilho metálico suave",
+ bamboo:"bambu e palha trançados, com textura fibrosa natural e irregularidade orgânica",
+ terracotta:"cerâmica de terracota, com acabamento terroso fosco e leve variação de esmalte"};
 function materialsPhrase(){
-  const tex=[...texOf("materials"),freeOf("materials")].filter(Boolean);
-  if(!tex.length) return "All materials are rendered with physically accurate PBR response, tactile microtexture, correct roughness and specular behavior, and natural imperfections so nothing looks synthetic.";
-  return `The design is built from ${joinNice(tex)}. Every surface must read with physically accurate material response — correct roughness, specular falloff, index of refraction and fine microtexture, with realistic weathering, subtle imperfections and micro-variation so the materials feel truly tactile and real.`;
+  const list=(state.sel.materials||[]).map(id=>MATPT[id]||(optById(grp("materials"),id)||{}).pt).filter(Boolean);
+  if(freeOf("materials"))list.push(freeOf("materials"));
+  if(!list.length) return "Todos os materiais devem ter resposta física correta (PBR), microtextura tátil, rugosidade e reflexo corretos, com imperfeições naturais para nada parecer sintético.";
+  return `O projeto é composto por ${joinPt(list)}. Cada superfície deve ter resposta física precisa — rugosidade, reflexo e refração corretos, microtextura fina, desgaste realista e micro-variação, para que os materiais pareçam realmente táteis e reais.`;
 }
+const TIMEPT={golden:"luz dourada de fim de tarde, rasante e quente, com sombras longas e suaves e contraluz nas bordas",
+ blue:"blue hour (crepúsculo), equilibrando o céu azul profundo com a luz quente e acesa do interior",
+ midday:"sol de meio-dia limpo, com sombras curtas e nítidas e iluminação clara e uniforme",
+ overcast:"luz difusa de céu nublado, sem sombras duras, com cor neutra e fiel",
+ night:"cena noturna iluminada por luz artificial arquitetônica quente e em camadas, com contraste controlado",
+ natside:"luz natural entrando de lado pelas aberturas, rasando as superfícies e revelando a textura",
+ volumetric:"raios de luz volumétricos atravessando uma leve névoa atmosférica"};
+const WEATHERPT={clear:"céu limpo",partly:"céu parcialmente nublado com nuvens dinâmicas",cloudy:"céu encoberto",fog:"neblina baixa e névoa da manhã",rain:"superfícies molhadas e reflexivas depois da chuva",snow:"cena de inverno coberta de neve"};
 function lightingPhrase(){
-  const t=enOf("time")[0], wx=enOf("weather")[0];
-  let s = t ? `The scene is lit by ${t}` : "The scene uses realistic natural lighting";
-  if(wx) s += `, under ${wx}`;
-  s += ". Light behaves physically, with accurate soft shadows, realistic bounce and global illumination and true-to-life color temperature.";
+  const t=state.sel.time, wx=state.sel.weather;
+  let s = (t&&TIMEPT[t]) ? `A cena é iluminada por ${TIMEPT[t]}` : "A cena usa iluminação natural realista";
+  if(wx&&WEATHERPT[wx]) s += `, sob ${WEATHERPT[wx]}`;
+  s += ". A luz se comporta fisicamente, com sombras suaves precisas, rebatimento realista, iluminação global e temperatura de cor fiel.";
   const fw=[freeOf("time"),freeOf("weather")].filter(Boolean).join(", ");
   if(fw) s += ` ${fw}.`;
   return s;
 }
+const FOCALPT={"12mm":"lente ultra grande-angular 12mm","24mm":"lente grande-angular 24mm de arquitetura","35mm":"lente 35mm","50mm":"lente normal 50mm","85mm":"teleobjetiva 85mm",tilt:"lente tilt-shift com as verticais perfeitamente corrigidas"};
+const APPT={f14:"abertura f/1.4 com pouca profundidade de campo e fundo desfocado",f28:"abertura f/2.8 com profundidade de campo moderada",f8:"abertura f/8 com foco profundo e nitidez de ponta a ponta",f16:"abertura f/16 com profundidade de campo máxima"};
 function cameraPhrase(){
-  const f=enOf("focal")[0]||"a 24mm wide-angle architectural lens";
-  const ap=enOf("aperture")[0]||"a deep-focus aperture";
-  const persp=enOf("perspective").length?joinNice(enOf("perspective")):"a balanced two-point perspective";
-  let s=`Captured on a full-frame camera with ${f} and ${ap}, using ${persp}, with perfectly straight, corrected vertical lines and a professional architectural framing.`;
+  const f=FOCALPT[state.sel.focal]||"lente grande-angular 24mm de arquitetura";
+  const ap=APPT[state.sel.aperture]||"foco profundo";
+  const persp=ptListOf("perspective").length?joinPt(ptListOf("perspective").map(x=>x.toLowerCase())):"perspectiva equilibrada de dois pontos de fuga";
+  let s=`Fotografada em câmera full-frame com ${f} e ${ap}, usando ${persp}, com as linhas verticais perfeitamente retas e corrigidas e um enquadramento profissional de arquitetura.`;
   const fw=[freeOf("focal"),freeOf("aperture"),freeOf("perspective")].filter(Boolean).join(", ");
   if(fw) s+=` ${fw}.`;
   return s;
 }
 function surroundPhrase(){
-  const ctx=enOf("context")[0];
-  const veg=[...enOf("vegetation"),...enOf("elements")];
+  const ctx=ptListOf("context")[0];
+  const veg=[...ptListOf("vegetation"),...ptListOf("elements")].map(x=>x.toLowerCase());
   let parts=[];
-  if(ctx) parts.push(`set within ${ctx}`);
-  if(veg.length) parts.push(`with ${joinNice(veg)}`);
+  if(ctx) parts.push(`inserido em ${ctx.toLowerCase()}`);
+  if(veg.length) parts.push(`com ${joinPt(veg)}`);
   const fw=[freeOf("context"),freeOf("vegetation"),freeOf("elements")].filter(Boolean).join(", ");
   if(fw) parts.push(fw);
-  return parts.length?("The building is "+parts.join(", ")+"."):"";
+  return parts.length?("O edifício está "+parts.join(", ")+"."):"";
 }
 function moodPhrase(){
-  const m=enOf("mood")[0],p=enOf("palette")[0];
+  const m=ptListOf("mood")[0],p=ptListOf("palette")[0];
   if(!m&&!p&&!freeOf("mood")&&!freeOf("palette"))return "";
-  let s="The overall atmosphere is "+(m||"refined and photographic");
-  if(p)s+=`, in a ${p} color palette`;
+  let s="A atmosfera geral é "+(m?m.toLowerCase():"refinada e fotográfica");
+  if(p)s+=`, em paleta de cores ${p.toLowerCase()}`;
   s+=".";
   const fw=[freeOf("mood"),freeOf("palette")].filter(Boolean).join(", ");
   if(fw)s+=` ${fw}.`;
   return s;
 }
 function enginePhrase(model){
-  const eng=[...enOf("engine"),freeOf("engine")].filter(Boolean);
-  const names={ue5:"as if rendered in Unreal Engine 5 with Lumen real-time global illumination and Nanite micro-detail",
-    vray:"as if rendered with V-Ray / Corona using physically accurate global illumination and a real physical camera",
-    octane:"as if rendered in Octane with unbiased spectral path tracing"};
+  const eng=ptListOf("engine").map(x=>x.toLowerCase());
+  const names={ue5:"como se renderizado em Unreal Engine 5 com iluminação global Lumen em tempo real e micro-detalhe Nanite",
+    vray:"como se renderizado em V-Ray / Corona com iluminação global fisicamente correta e câmera física real",
+    octane:"como se renderizado em Octane com path tracing espectral unbiased"};
   const bits=[];
   if(names[model])bits.push(names[model]);
-  if(eng.length)bits.push("using "+joinNice(eng));
+  if(eng.length)bits.push("usando "+joinPt(eng));
+  if(freeOf("engine"))bits.push(freeOf("engine"));
   return bits.length?(bits.join(", ")+"."):"";
 }
 function negativeList(){
-  const base=["flat lighting","flat lifeless image","dull","hard harsh lighting","evenly-lit","lack of depth","two-dimensional","snapshot","amateur photo","3D render look","CGI","video-game graphics","robotic surfaces","plastic or waxy textures","rubbery materials","over-smooth surfaces","artificially clean surfaces","synthetic materials","illustration","painting","drawing","cartoon","blown-out highlights","low detail","blurry","distorted proportions","warped or leaning vertical lines","added or removed windows","added or removed doors","extra floors","duplicated or misaligned windows","invented elements","redesigned building","melting geometry","oversaturated colors","HDR halos","text","watermark","signature","jpeg artifacts"];
-  if(!(state.sel.elements||[]).includes("people"))base.push("people","crowds");
-  if(!(state.sel.elements||[]).includes("cars"))base.push("cars","traffic");
-  if(state.sel.mood==="clean"||state.sel.mood==="serene")base.push("visual clutter","noise");
+  const base=["iluminação chapada","imagem sem vida","sem graça","luz dura e agressiva","iluminação uniforme","falta de profundidade","aparência bidimensional","foto casual","foto amadora","cara de render 3D","CGI","gráficos de videogame","superfícies robóticas","texturas plásticas ou cerosas","materiais emborrachados","superfícies lisas demais","superfícies limpas demais","materiais sintéticos","ilustração","pintura","desenho","cartoon","altas-luzes estouradas","pouco detalhe","desfocado","proporções distorcidas","verticais tortas","janelas adicionadas ou removidas","portas adicionadas ou removidas","pavimentos a mais","janelas duplicadas ou desalinhadas","elementos inventados","edifício redesenhado","geometria derretida","cores saturadas demais","halos de HDR","texto","marca d'água","assinatura","artefatos de compressão"];
+  if(!(state.sel.elements||[]).includes("people"))base.push("pessoas","multidões");
+  if(!(state.sel.elements||[]).includes("cars"))base.push("carros","trânsito");
+  if(state.sel.mood==="clean"||state.sel.mood==="serene")base.push("bagunça visual","ruído");
   return base;
 }
 
 function buildNarrative(model){
   const ar=enOf("aspect")[0]||"16:9";
   const paras=[];
-  paras.push(`Ultra-photorealistic architectural photograph of ${subjectPhrase()}, in a ${ar} aspect ratio.`);
+  paras.push(`Fotografia de arquitetura ultrarrealista de ${subjectPhrase()}, na proporção ${ar}.`);
   paras.push(materialsPhrase());
   paras.push(lightingPhrase());
   paras.push(cameraPhrase());
@@ -988,23 +1022,23 @@ function buildNarrative(model){
   const mp=moodPhrase(); if(mp)paras.push(mp);
   paras.push(EDITORIAL);
   const eng=enginePhrase(model);
-  paras.push(ULTRA+(eng?(" Finish it "+eng):""));
+  paras.push(ULTRA+(eng?(" Finalize "+eng):""));
   const ref=referenceClause(); if(ref)paras.push(ref);
-  paras.push("Avoid: "+negativeList().join(", ")+".");
+  paras.push("Evite: "+negativeList().join(", ")+".");
   return paras.join("\n\n");
 }
 
 function buildTags(model){
   const ar=enOf("aspect")[0]||"16:9";
+  const mats=(state.sel.materials||[]).map(id=>MATPT[id]||(optById(grp("materials"),id)||{}).pt);
   const parts=[
-    subjectPhrase().replace(/^a /,""),
-    ...texOf("materials"), freeOf("materials"),
-    enOf("time")[0], enOf("weather")[0], freeOf("time"),
-    enOf("focal")[0], enOf("aperture")[0], ...enOf("perspective"),
-    enOf("context")[0], ...enOf("vegetation"), ...enOf("elements"),
-    enOf("mood")[0], enOf("palette")[0]?`${enOf("palette")[0]} palette`:"",
-    ...enOf("engine"),
-    "ultra-photorealistic architectural photography, physically-based PBR materials, ray-traced global illumination, accurate reflections, tactile micro-detail, natural material imperfections, sharp 8K detail, professional architectural photograph"
+    subjectPhrase(),
+    ...mats, freeOf("materials"),
+    state.sel.time&&TIMEPT[state.sel.time], state.sel.weather&&WEATHERPT[state.sel.weather], freeOf("time"),
+    FOCALPT[state.sel.focal], APPT[state.sel.aperture], ...ptListOf("perspective").map(x=>x.toLowerCase()),
+    ptListOf("context")[0], ...ptListOf("vegetation").map(x=>x.toLowerCase()), ...ptListOf("elements").map(x=>x.toLowerCase()),
+    ptListOf("mood")[0], ptListOf("palette")[0]?`paleta ${ptListOf("palette")[0].toLowerCase()}`:"",
+    "fotografia de arquitetura ultrarrealista, qualidade editorial de revista, materiais PBR físicos, iluminação global com ray tracing, reflexos precisos, micro-detalhe tátil, imperfeições naturais dos materiais, nitidez 8K, fotografia profissional de arquitetura"
   ].filter(Boolean);
   let core=parts.join(", ").replace(/\s+,/g,",").replace(/,\s*,/g,", ");
   const ref=referenceClause();
@@ -1027,7 +1061,7 @@ function buildPrompt(){
     }
   } else if(model==="mj"){
     const {core,ref}=buildTags(model);
-    const noList=["text","watermark","distorted vertical lines","warped geometry","blurry","cartoon","3d render look"];
+    const noList=["texto","marca d'água","verticais tortas","geometria distorcida","desfocado","cartoon","cara de render 3D"];
     if(!(state.sel.elements||[]).includes("people"))noList.push("people");
     if(!(state.sel.elements||[]).includes("cars"))noList.push("cars");
     prompt=`${core} --ar ${ar} --v 6.0 --style raw --stylize 200 --quality 2 --no ${noList.join(", ")}`;
@@ -1087,87 +1121,59 @@ function generate(){
   if(!anySel&&!anyFree){toast("Selecione ao menos uma opção 🙂");return;}
   if(!state.sel.model)state.sel.model="nano";
   const b=buildPrompt();
-  $("#out-prompt").textContent=b.prompt;
+  $("#out-prompt").value=b.prompt;
   $("#prompt-label").textContent=b.label;
-  $("#out-neg").textContent=b.neg;
+  $("#out-neg").value=b.neg;
   $("#out-params").textContent=b.params;
   $("#neg-block").classList.toggle("hidden",!b.negVisible);
   $("#params-block").classList.toggle("hidden",!b.paramsVisible);
   $("#out-rational").innerHTML=buildRational();
+  const tn=$("#translate-note"); if(tn)tn.textContent="";
   setMode("output");
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
-/* =========================================================================
-   Gerar a imagem com Nano Banana (Gemini 2.5 Flash Image)
-   ========================================================================= */
-let generatingImg=false;
-async function nanoBananaGenerate(){
-  if(generatingImg)return;
+/* ---- Traduzir o prompt (editado) para inglês via Gemini ---- */
+let translating=false;
+async function translateToEnglish(){
+  if(translating)return;
+  const ta=$("#out-prompt"), note=$("#translate-note"), btn=$("#btn-translate");
+  const txt=(ta.value||"").trim();
+  if(!txt){toast("Gere o prompt primeiro 🙂");return;}
   const key=(localStorage.getItem("archp_gemini_key")||"").trim();
-  const btn=$("#btn-gen-img"), st=$("#gen-status"), out=$("#gen-result");
   if(!key){
-    st.innerHTML=`⚠ Para gerar a imagem, cole sua chave do Gemini na aba <strong>Meu projeto</strong> (grátis em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>).`;
-    toast("Falta a chave do Gemini");
-    return;
+    note.innerHTML=`Para traduzir, cole sua chave do Gemini na aba <strong>Meu projeto</strong> (grátis em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>).`;
+    toast("Falta a chave do Gemini");return;
   }
-  // brief sempre narrativo (melhor para o Nano Banana), independente do motor escolhido
-  const brief=buildNarrative("nano");
-  let imgNote="";
-  if(state.project.length && state.refs.length)
-    imgNote=`The first ${state.project.length} attached image(s) are THE PROJECT. ${FIDELITY_LOCK} The remaining ${state.refs.length} attached image(s) are STYLE references ONLY — imitate their lighting, mood, palette and photographic look, but NEVER copy their buildings, elements or geometry, and never let them change the project's design.`;
-  else if(state.project.length)
-    imgNote=`The attached image(s) are THE PROJECT. ${FIDELITY_LOCK}`;
-  else if(state.refs.length)
-    imgNote=`The attached image(s) are STYLE references — imitate only their look and treatment, never their buildings.`;
-  const parts=[{text:`Photorealistic architectural photography task. Take the attached PROJECT image and re-photograph the SAME building exactly as designed, only improving the photographic realism and lighting — keep every element identical.\n${imgNote}\n\n${ULTRA}\n\nBrief:\n${brief}`}];
-  [...state.project, ...state.refs].forEach(im=>{ if(im.b64) parts.push({inline_data:{mime_type:im.mime||"image/jpeg", data:im.b64}}); });
-
-  generatingImg=true; btn.disabled=true;
-  btn.innerHTML=`<span class="spin"></span> Gerando imagem…`;
-  st.textContent="Enviando ao Nano Banana… pode levar de 10 a 40 segundos.";
-  out.innerHTML="";
+  translating=true; btn.disabled=true; const old=btn.textContent; btn.textContent="⏳ Traduzindo…"; note.textContent="";
   try{
-    const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key="+encodeURIComponent(key);
-    const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts}]})});
-    if(!res.ok){let t="";try{t=await res.text();}catch(_){ } throw new Error("HTTP "+res.status+(t?(" — "+t.slice(0,220)):""));}
-    const data=await res.json();
-    const rparts=((((data.candidates||[])[0]||{}).content)||{}).parts||[];
-    let img=null, txt="";
-    rparts.forEach(p=>{const d=p.inlineData||p.inline_data; if(d&&d.data)img=d; else if(p.text)txt+=p.text;});
-    if(!img) throw new Error(txt?("o modelo respondeu texto em vez de imagem: "+txt.slice(0,200)):"nenhuma imagem foi retornada");
-    const mime=img.mimeType||img.mime_type||"image/png";
-    const srcData=`data:${mime};base64,${img.data}`;
-    out.innerHTML=`<img src="${srcData}" alt="imagem gerada pelo Nano Banana">
-      <div class="gen-actions">
-        <a class="btn primary sm" href="${srcData}" download="archprompter-nano-banana.png">⬇ Baixar imagem</a>
-        <button class="btn sm" id="btn-gen-again">↻ Gerar variação</button>
-      </div>`;
-    $("#btn-gen-again").addEventListener("click",nanoBananaGenerate);
-    st.textContent="Imagem gerada ✓ — gere variações ou baixe.";
-    toast("Imagem gerada ✓");
-  }catch(e){
-    const msg=String(e.message||e);
-    let hint=msg;
-    if(/HTTP 400/.test(msg)) hint="requisição inválida (verifique se a chave tem acesso ao modelo de imagem). "+msg;
-    else if(/HTTP 403/.test(msg)) hint="acesso negado — sua chave pode não ter permissão/ cota para gerar imagens. "+msg;
-    else if(/HTTP 429/.test(msg)) hint="cota excedida no Gemini — tente novamente mais tarde. "+msg;
-    st.innerHTML=`⚠ Não consegui gerar a imagem: ${hint.slice(0,240)}`;
-  }finally{
-    generatingImg=false; btn.disabled=false;
-    btn.innerHTML=`<span class="gi">✦</span> Gerar imagem agora <span class="gsub2">Nano Banana</span>`;
-  }
+    const body={contents:[{parts:[{text:"Translate the following architectural image-generation prompt to ENGLISH. Keep it as a precise prompt with the same structure and paragraphs. Reply with ONLY the translation, no comments.\n\n"+txt}]}],generationConfig:{temperature:0.1,maxOutputTokens:2048}};
+    let out="",lastErr;
+    for(const model of AI_MODELS){
+      const url="https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+encodeURIComponent(key);
+      const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!res.ok){let t="";try{t=await res.text();}catch(_){}const e=new Error("HTTP "+res.status+(t?(" — "+t.slice(0,120)):""));if(res.status===404||res.status===400){lastErr=e;continue;}throw e;}
+      const cand=(await res.json()).candidates||[];
+      out=(((cand[0]||{}).content||{}).parts||[]).map(p=>p.text||"").join("").trim();
+      if(out)break;
+    }
+    if(!out)throw lastErr||new Error("tradução vazia");
+    ta.value=out;
+    note.textContent="✓ Traduzido para inglês. Você pode editar e copiar. (Gere de novo para voltar ao português.)";
+    toast("Traduzido para inglês ✓");
+  }catch(e){ note.textContent="Não consegui traduzir: "+String(e.message||e).slice(0,150); }
+  finally{ translating=false; btn.disabled=false; btn.textContent=old; }
 }
 
 /* ---- Copy ---- */
 function copyText(kind){
   let txt="";
-  if(kind==="prompt")txt=$("#out-prompt").textContent;
-  else if(kind==="neg")txt=$("#out-neg").textContent;
+  if(kind==="prompt")txt=$("#out-prompt").value;
+  else if(kind==="neg")txt=$("#out-neg").value;
   else if(kind==="params")txt=$("#out-params").textContent;
   else if(kind==="all"){
-    const p=$("#out-prompt").textContent;
-    const n=$("#neg-block").classList.contains("hidden")?"":`\n\n— NEGATIVE PROMPT —\n${$("#out-neg").textContent}`;
+    const p=$("#out-prompt").value;
+    const n=$("#neg-block").classList.contains("hidden")?"":`\n\n— NEGATIVE PROMPT —\n${$("#out-neg").value}`;
     const pa=$("#params-block").classList.contains("hidden")?"":`\n\n— COMO USAR —\n${$("#out-params").textContent}`;
     txt=`${p}${n}${pa}`;
   }
@@ -1261,7 +1267,7 @@ function init(){
     toast(keyInput.value.trim()?"Chave salva neste navegador ✓":"Chave removida");
   });
   $("#btn-analyze-proj").addEventListener("click",analyzeProject);
-  $("#btn-gen-img").addEventListener("click",nanoBananaGenerate);
+  $("#btn-translate").addEventListener("click",translateToEnglish);
   setupMic();
   $("#btn-analyze").addEventListener("click",analyzeText);
   $("#btn-generate").addEventListener("click",generate);
