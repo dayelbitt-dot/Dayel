@@ -1296,8 +1296,6 @@ function openClientModal(existing) {
   const origem = inp("Ex: Indicação, Instagram…", f.origem);
   const obs = el("textarea", { rows: "3", placeholder: "Resumo do caso, histórico…" }, f.obs || "");
   // Qualificação (usada para gerar procuração/declaração)
-  const sexoSel = el("select", { class: "form-control" });
-  [["", "—"], ["F", "Mulher"], ["M", "Homem"]].forEach(([v, l]) => sexoSel.append(el("option", { value: v, ...(v === (f.sexo || "") ? { selected: "" } : {}) }, l)));
   const nacionalidade = inp("brasileira / brasileiro", f.nacionalidade);
   const estadoCivil = inp("Ex: casada, solteiro…", f.estado_civil);
   const profissao = inp("Ex: professora, empresário…", f.profissao);
@@ -1305,8 +1303,7 @@ function openClientModal(existing) {
   const form = el("form", {}, [
     lbl("Nome *", nome), lbl("CPF", cpf), lbl("RG", rg), lbl("Telefone / WhatsApp", tel),
     lbl("E-mail", email), lbl("Nascimento", nasc), lbl("Endereço", endereco),
-    el("div", { class: "cap-row" }, [lbl("Sexo", sexoSel), lbl("Nacionalidade", nacionalidade)]),
-    el("div", { class: "cap-row" }, [lbl("Estado civil", estadoCivil), lbl("Profissão", profissao)]),
+    el("div", { class: "cap-row" }, [lbl("Nacionalidade", nacionalidade), lbl("Estado civil", estadoCivil), lbl("Profissão", profissao)]),
     lbl("Área", area), lbl("Origem", origem), lbl("Observações", obs),
     el("div", { class: "modal-actions" }, [
       el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
@@ -1316,7 +1313,7 @@ function openClientModal(existing) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!nome.value.trim()) { nome.focus(); return; }
-    const data = { nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim(), sexo: sexoSel.value || null, nacionalidade: nacionalidade.value.trim(), estado_civil: estadoCivil.value.trim(), profissao: profissao.value.trim() };
+    const data = { nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim(), nacionalidade: nacionalidade.value.trim(), estado_civil: estadoCivil.value.trim(), profissao: profissao.value.trim() };
     if (existing) { await update("clients", existing.id, data); closeModal(); openClient(existing.id); }
     else { const saved = await insert("clients", data); closeModal(); if (saved) openClient(saved.id); else renderClients(); }
   };
@@ -1565,18 +1562,14 @@ function parseValor(s) {
 // partir dos modelos .docx, preenchendo com os dados da parte. Os dados podem
 // vir de um cliente já cadastrado, de documentos anexados (CNH/RG/comprovante) ou
 // digitados. O arquivo gerado sai igual ao modelo e é baixado.
-const EST_CIVIL = {
-  M: ["solteiro", "casado", "divorciado", "viúvo", "separado", "em união estável"],
-  F: ["solteira", "casada", "divorciada", "viúva", "separada", "em união estável"],
-};
 async function renderGerarDocs() {
   loading();
   const clients = await list("clients", { orderBy: "nome", asc: true });
   const main = $("#main");
   main.innerHTML = "";
 
-  // ---- estado do formulário ----
-  const dados = { nome: "", sexo: "F", nacionalidade: "", estadoCivil: "", profissao: "", cpf: "", rg: "", endereco: "", objeto: "", situacao: "", dataISO: todayISO() };
+  // ---- estado do formulário (só o que consta na procuração modelo) ----
+  const dados = { nome: "", nacionalidade: "", estadoCivil: "", profissao: "", cpf: "", rg: "", endereco: "", objeto: "", situacao: "", dataISO: todayISO() };
 
   const inp = (ph, key, attrs = {}) => { const e = el("input", { class: "form-control", placeholder: ph, value: dados[key] || "", ...attrs }); e.addEventListener("input", () => { dados[key] = e.value; }); return e; };
   const nome = inp("Nome completo *", "nome");
@@ -1584,23 +1577,8 @@ async function renderGerarDocs() {
   const rg = inp("RG", "rg");
   const endereco = inp("Rua, nº, bairro, cidade — UF", "endereco");
   const nacionalidade = inp("brasileira / brasileiro", "nacionalidade");
+  const estadoCivil = inp("Ex: casada, solteiro, divorciado…", "estadoCivil");
   const profissao = inp("Ex: professora, empresário…", "profissao");
-  const estadoCivilSel = el("select", { class: "form-control" });
-  const fillEstadoCivil = () => {
-    const atual = dados.estadoCivil;
-    estadoCivilSel.innerHTML = "";
-    estadoCivilSel.append(el("option", { value: "" }, "—"));
-    EST_CIVIL[dados.sexo].forEach((v) => estadoCivilSel.append(el("option", { value: v, ...(v === atual ? { selected: "" } : {}) }, v)));
-  };
-  estadoCivilSel.addEventListener("change", () => { dados.estadoCivil = estadoCivilSel.value; });
-  fillEstadoCivil();
-
-  const segF = el("button", { type: "button", class: "seg-p" }, "♀ Mulher");
-  const segM = el("button", { type: "button", class: "seg-t" }, "♂ Homem");
-  const paintSexo = () => { segF.classList.toggle("active", dados.sexo === "F"); segM.classList.toggle("active", dados.sexo === "M"); };
-  const setSexo = (s) => { const ec = EST_CIVIL[dados.sexo].indexOf(dados.estadoCivil); dados.sexo = s; if (ec >= 0) { dados.estadoCivil = EST_CIVIL[s][ec]; } fillEstadoCivil(); paintSexo(); };
-  segF.onclick = () => setSexo("F"); segM.onclick = () => setSexo("M");
-  paintSexo();
 
   const data = el("input", { class: "form-control", type: "date", value: dados.dataISO }); data.addEventListener("input", () => { dados.dataISO = data.value; });
   const objeto = el("textarea", { class: "form-control", rows: "2", placeholder: "Ex: à ação de cobrança, ajuizada em desfavor de Fulano de Tal." }); objeto.addEventListener("input", () => { dados.objeto = objeto.value; });
@@ -1611,19 +1589,13 @@ async function renderGerarDocs() {
   cliSel.append(el("option", { value: "" }, "— preencher manualmente / por documento —"));
   clients.forEach((c) => cliSel.append(el("option", { value: c.id }, c.nome)));
   const aplicarCliente = (c) => {
-    dados.nome = c.nome || ""; dados.cpf = c.cpf || ""; dados.rg = c.rg || ""; dados.endereco = c.endereco || "";
-    nome.value = dados.nome; cpf.value = dados.cpf; rg.value = dados.rg; endereco.value = dados.endereco;
-    // qualificação: campos próprios do cadastro (com fallback nas observações antigas)
     const obs = c.obs || "";
     const fromObs = (re) => { const m = obs.match(re); return m ? m[1].trim() : ""; };
+    dados.nome = c.nome || ""; dados.cpf = c.cpf || ""; dados.rg = c.rg || ""; dados.endereco = c.endereco || "";
     dados.nacionalidade = c.nacionalidade || fromObs(/nacionalidade\/?\w*:\s*([^·\n]+)/i);
     dados.profissao = c.profissao || fromObs(/profiss[ãa]o:\s*([^·\n]+)/i);
     dados.estadoCivil = c.estado_civil || fromObs(/estado civil:\s*([^·\n]+)/i);
-    nacionalidade.value = dados.nacionalidade; profissao.value = dados.profissao;
-    if (c.sexo === "M" || c.sexo === "F") setSexo(c.sexo);       // ajusta o seg e reconstrói estado civil
-    else { const g = /a$/i.test(dados.estadoCivil) || /a$/i.test(dados.nacionalidade); setSexo(g ? "F" : dados.sexo || "F"); }
-    dados.estadoCivil = c.estado_civil || dados.estadoCivil;      // setSexo pode ter mexido; reafirma
-    fillEstadoCivil();
+    [[nome, "nome"], [cpf, "cpf"], [rg, "rg"], [endereco, "endereco"], [nacionalidade, "nacionalidade"], [estadoCivil, "estadoCivil"], [profissao, "profissao"]].forEach(([node, k]) => { node.value = dados[k]; });
   };
   cliSel.addEventListener("change", () => { const c = clients.find((x) => x.id === cliSel.value); if (c) aplicarCliente(c); });
 
@@ -1645,6 +1617,7 @@ async function renderGerarDocs() {
     if (!ex) ex = extractClient(texto);
     const set = (key, node, val) => { if (val) { dados[key] = val; node.value = val; } };
     set("nome", nome, ex.nome); set("cpf", cpf, ex.cpf); set("rg", rg, ex.rg); set("endereco", endereco, ex.endereco);
+    set("nacionalidade", nacionalidade, ex.nacionalidade); set("estadoCivil", estadoCivil, ex.estado_civil); set("profissao", profissao, ex.profissao);
     docStatus.textContent = "✅ Dados lidos do documento. Confira e complete abaixo.";
   };
 
@@ -1684,8 +1657,7 @@ async function renderGerarDocs() {
       lbl("Usar um cliente já cadastrado", cliSel),
       el("div", { style: "margin:8px 0" }, [upBtn, docStatus, fileInput]),
       lbl("Nome completo *", nome),
-      lbl("Sexo (para concordância: brasileiro/a, inscrito/a…)", el("div", { class: "seg" }, [segF, segM])),
-      el("div", { class: "cap-row" }, [lbl("Nacionalidade", nacionalidade), lbl("Estado civil", estadoCivilSel), lbl("Profissão", profissao)]),
+      el("div", { class: "cap-row" }, [lbl("Nacionalidade", nacionalidade), lbl("Estado civil", estadoCivil), lbl("Profissão", profissao)]),
       el("div", { class: "cap-row" }, [lbl("CPF", cpf), lbl("RG", rg)]),
       lbl("Endereço", endereco),
     ]),
