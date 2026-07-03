@@ -87,6 +87,21 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   let attachments = []; // {name,type,size,data}
   let cards = [];       // controladores dos cartões ({ key, node, collect })
 
+  // Rascunho persistente: o que você escreve/dita e os destinos escolhidos ficam
+  // salvos NESTE aparelho, então dá para sair, fechar o app e continuar de onde
+  // parou. O texto/destinos vão numa chave e os anexos noutra (best-effort), para
+  // um anexo grande nunca impedir de salvar o texto (limite do localStorage).
+  const DRAFT_KEY = "assist:capture_draft";
+  const FILES_KEY = "assist:capture_files";
+  function saveDraft() {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ text: textarea.value, types: [...selected] })); } catch {}
+    try {
+      if (attachments.length) localStorage.setItem(FILES_KEY, JSON.stringify(attachments));
+      else localStorage.removeItem(FILES_KEY);
+    } catch { /* sem espaço para os anexos: preserva ao menos o texto */ }
+  }
+  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); localStorage.removeItem(FILES_KEY); } catch {} }
+
   const textarea = el("textarea", {
     class: "capture-input", rows: "2",
     placeholder: "Descreva ou cole aqui… ex: “Recurso de Agravo Simone amanhã 14h” — ou os dados do cliente/processo",
@@ -99,7 +114,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   const paintTypes = () => TYPES.forEach((t) => typeBtns[t.key].classList.toggle("active", selected.has(t.key)));
   TYPES.forEach((t) => {
     const b = el("button", { type: "button", class: "cap-type", "data-k": t.key }, [icon(t.ico), t.label]);
-    b.onclick = () => { selected.has(t.key) ? selected.delete(t.key) : selected.add(t.key); paintTypes(); };
+    b.onclick = () => { selected.has(t.key) ? selected.delete(t.key) : selected.add(t.key); paintTypes(); saveDraft(); };
     typeBtns[t.key] = b;
     typesRow.append(b);
   });
@@ -133,9 +148,27 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       el("span", { class: "att-ico" }, iconForType(a.type, a.name)),
       el("span", { class: "att-name grow", onclick: () => openAttachment(a) }, a.name),
       el("span", { class: "att-size t2" }, fmtBytes(a.size)),
-      el("button", { type: "button", class: "del", title: "Remover", onclick: () => { attachments.splice(i, 1); drawAtts(); } }, "×"),
+      el("button", { type: "button", class: "del", title: "Remover", onclick: () => { attachments.splice(i, 1); drawAtts(); saveDraft(); } }, "×"),
     ])));
   };
+
+  // Restaura o rascunho salvo (texto + destinos + anexos), se houver.
+  (function restoreDraft() {
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (d) {
+        if (typeof d.text === "string") textarea.value = d.text;
+        if (Array.isArray(d.types) && d.types.length) { selected.clear(); d.types.forEach((k) => selected.add(k)); }
+      }
+      const f = JSON.parse(localStorage.getItem(FILES_KEY) || "null");
+      if (Array.isArray(f) && f.length) attachments = f;
+    } catch {}
+    paintTypes();
+    drawAtts();
+    if (textarea.value.trim() || attachments.length) status.textContent = "↩️ Rascunho recuperado — continue de onde parou.";
+  })();
+  // Salva a cada tecla digitada (e colagem).
+  textarea.addEventListener("input", saveDraft);
 
   // ---------- preparar ----------
   async function prepare() {
@@ -257,6 +290,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
 
   function reset() {
     textarea.value = ""; attachments = []; cards = [];
+    clearDraft();
     drawAtts();
     cardsWrap.innerHTML = ""; cardsWrap.classList.add("hidden");
     prepBtn.classList.remove("hidden"); status.textContent = "";
@@ -279,6 +313,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       }
       if (final) base += final;
       textarea.value = (base + interim).replace(/\s+/g, " ").trimStart();
+      saveDraft();
     };
     const stop = () => { rec = null; micBtn.classList.remove("recording"); micBtn.innerHTML = ""; micBtn.append(icon("🎤"), "Falar"); status.textContent = ""; };
     rec.onend = stop;
@@ -301,6 +336,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
         if (text && text.trim()) { textarea.value = (textarea.value.trim() + "\n" + text.trim()).trim(); status.textContent = `✅ Texto lido de “${file.name}”. Escolha os destinos e toque em Preparar.`; }
         else status.textContent = `📎 “${file.name}” anexado (sem texto reconhecido).`;
       } catch (err) { status.textContent = `⚠️ Erro ao ler “${file.name}”: ${err.message || err}`; }
+      saveDraft();
     }
   });
 
