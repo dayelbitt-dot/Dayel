@@ -1428,7 +1428,7 @@ function buildPrompt(){
     params=`Use o texto acima como descritivo de cena, materiais e luz para montar o setup em ${toolName}.\nSaída: 8K, proporção ${ar}.\nCâmera física (ISO/obturador/abertura reais) · tone mapping filmic/AgX · eleve o sampling até a GI ficar limpa (denoise no fim).`;
   }
   // Negative prompt sempre presente e separado (após o prompt), para todos os motores
-  neg=negativeList().join(", ");
+  neg="NEGATIVE PROMPT: "+negativeList().join(", ");
   negVisible=true;
   return {prompt,neg,params,negVisible,paramsVisible,label,ar,model};
 }
@@ -1622,7 +1622,7 @@ function copyText(kind){
   else if(kind==="all"){
     const o=$("#out-order").value?`${$("#out-order").value}\n\n`:"";
     const p=$("#out-prompt").value;
-    const n=$("#neg-block").classList.contains("hidden")?"":`\n\n— NEGATIVE PROMPT (não incluir / do not include) —\n${$("#out-neg").value}`;
+    const n=$("#neg-block").classList.contains("hidden")?"":`\n\n${$("#out-neg").value}`;
     const pa=$("#params-block").classList.contains("hidden")?"":`\n\n— COMO USAR —\n${$("#out-params").textContent}`;
     txt=`${o}${p}${n}${pa}`;
   }
