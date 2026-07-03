@@ -1107,6 +1107,16 @@ function showAISummary(obj){
     <div class="foot">Cada item já foi escrito no campo livre da pergunta correspondente e entra no metaprompt. Ajuste qualquer resposta como quiser.</div>`;
   box.classList.remove("hidden");
 }
+function apiErrMsg(e){
+  const m=String((e&&e.message)||e||"");
+  if(/HTTP 429|RESOURCE_EXHAUSTED|quota/i.test(m))
+    return `Cota do Gemini excedida (429). A chave gratuita tem limite <strong>por minuto</strong> e <strong>por dia</strong>. Espere ~1 minuto e tente de novo; se persistir, você atingiu o limite diário — tente mais tarde, gere uma nova chave em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> ou ative faturamento no Google.`;
+  if(/HTTP 403|PERMISSION_DENIED|API_KEY_INVALID/i.test(m))
+    return `Acesso negado (403) — verifique se a chave é válida e se a API "Generative Language" está ativada em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.`;
+  if(/HTTP 400/i.test(m)) return "Requisição inválida (400) — confira a chave do Gemini.";
+  if(/Failed to fetch|NetworkError|ERR_/i.test(m)) return "Sem conexão com o Gemini — verifique a internet.";
+  return "A IA não respondeu: "+m.slice(0,120);
+}
 let analyzing=false;
 async function analyzeProject(){
   if(analyzing)return;
@@ -1136,9 +1146,9 @@ async function analyzeProject(){
     try{
       const obj=await localEstimate(rec); const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h);
       renderGroups(); updateCount(); setMode("guided");
-      hint.innerHTML=`⚠ A IA não respondeu (${String(e.message||e).slice(0,90)}). Usei uma estimativa local — confira sua chave em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.`;
+      hint.innerHTML=`⚠ ${apiErrMsg(e)} Enquanto isso, usei uma estimativa local — você pode ajustar as respostas manualmente.`;
       toast(`Estimativa local: ${n} respostas`);
-    }catch(_){ hint.textContent="Não consegui ler a imagem: "+String(e.message||e); }
+    }catch(_){ hint.innerHTML="⚠ "+apiErrMsg(e); }
   }finally{
     analyzing=false; btn.disabled=false; btn.textContent="✦ Ler meu projeto e responder as perguntas";
   }
@@ -1598,7 +1608,7 @@ async function translateToEnglish(){
     const ob=$("#out-order"); if(ob&&ob.value.trim()) ob.value=buildOrderEN();
     note.textContent="✓ Traduzido para inglês (instrução + prompt). Você pode editar e copiar. (Gere de novo para voltar ao português.)";
     toast("Traduzido para inglês ✓");
-  }catch(e){ note.textContent="Não consegui traduzir: "+String(e.message||e).slice(0,150); }
+  }catch(e){ note.innerHTML="⚠ "+apiErrMsg(e)+" (seu texto em português foi mantido — você pode traduzir no Google Tradutor).";  }
   finally{ translating=false; btn.disabled=false; btn.textContent=old; }
 }
 
