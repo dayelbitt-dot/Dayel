@@ -219,6 +219,21 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
 .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(64,45,16,.35);border-top-color:#402d10;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-3px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:560px){.wrap{padding:18px 13px 76px}.brand h1{font-size:24px}.modebar button span:not(.n){display:none}.modebar button{min-width:0}.panel{padding:18px}.btn-gen{font-size:18px}}
+
+/* Seletor de cena: exterior vs interior */
+.scene-pick{background:rgba(232,237,255,.5);border:1px solid var(--line-2);border-radius:14px;padding:15px 16px;margin:2px 0 16px;
+  display:flex;flex-direction:column;gap:10px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.scene-pick.compact{background:transparent;border:0;padding:0;margin:0 0 16px;flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap;-webkit-backdrop-filter:none;backdrop-filter:none}
+.scene-q{font-size:14px;color:var(--ink-soft);font-weight:500}
+.scene-q strong{color:var(--gold-deep);font-weight:600}
+.scene-help{font-size:12px;color:var(--muted);font-weight:300;line-height:1.5}
+.seg{display:inline-flex;gap:4px;background:rgba(255,255,255,.6);border:1px solid var(--line-2);border-radius:12px;padding:4px;align-self:flex-start}
+.seg button{border:0;background:transparent;color:var(--muted);font-family:var(--sans);font-weight:500;font-size:13.5px;
+  padding:9px 16px;border-radius:9px;cursor:pointer;transition:.16s;white-space:nowrap;min-height:40px}
+.seg button:hover{color:var(--ink-soft)}
+.seg button.active{background:linear-gradient(140deg,#8ab4ff,#c79bff);color:#fff;box-shadow:0 6px 16px rgba(150,160,255,.35)}
+.seg button:focus-visible{outline:2px solid var(--gold-deep);outline-offset:2px}
+@media (max-width:560px){.seg button{padding:9px 12px;font-size:12.5px}}
 </style>
 </head>
 <body>
@@ -251,6 +266,15 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
     <div class="panel">
       <h2><span class="ic">◈</span> Meu projeto</h2>
       <p class="hint">Anexe a imagem do <strong>seu projeto</strong> (foto da maquete, render, fachada, planta). A IA pode <strong>ler a imagem, identificar os materiais</strong> e já deixar as perguntas respondidas — você muda o que quiser depois. O metaprompt também instrui a IA de imagem a <strong>replicar fielmente</strong> este projeto.</p>
+      <div class="scene-pick" id="scene-pick">
+        <span class="scene-q">Seu projeto é de <strong>área externa</strong> ou de <strong>interior</strong>?</span>
+        <div class="seg" id="scene-seg" role="group" aria-label="Tipo de projeto">
+          <button type="button" data-scene="exterior" class="active">☀ Exterior / Fachada</button>
+          <button type="button" data-scene="interior">🛋 Interior / Ambiente</button>
+        </div>
+        <small class="scene-help">Isso ajusta as perguntas da aba <strong>Perguntas</strong> para o seu caso — some o que não faz sentido (céu, entorno, paisagismo no interior) e aparecem cômodo e iluminação do ambiente.</small>
+      </div>
+
       <div class="drop" id="drop-project">
         <div class="big">◈</div>
         <p>Arraste a imagem do seu projeto aqui ou clique</p>
@@ -313,6 +337,13 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
     <div class="panel">
       <h2><span class="ic">◐</span> Defina cada detalhe da imagem</h2>
       <p class="hint">Clique nas opções. Quanto mais específico, mais rico e fiel o metaprompt. Cada bloco tem também um campo livre para o que faltar.</p>
+      <div class="scene-pick compact">
+        <span class="scene-q">Perguntas para: <strong id="scene-badge">Exterior / Fachada</strong></span>
+        <div class="seg" role="group" aria-label="Tipo de projeto">
+          <button type="button" data-scene="exterior" class="active">☀ Exterior</button>
+          <button type="button" data-scene="interior">🛋 Interior</button>
+        </div>
+      </div>
       <div id="ai-summary" class="hidden"></div>
       <div id="groups"></div>
     </div>
@@ -434,6 +465,41 @@ const GROUPS = [
       {id:"cabin", pt:"Cabana / refúgio", en:"secluded cabin retreat", k:["cabana","refugio","refúgio","chale","chalé","cabin"]},
       {id:"kiosk", pt:"Quiosque / food", en:"compact kiosk pavilion", k:["quiosque","kiosk","food truck","banca"]},
       {id:"coworking", pt:"Coworking / criativo", en:"creative coworking space", k:["coworking","cowork","criativo","startup"]},
+    ]
+  },
+  {
+    id:"room", part:"subject", type:"single", badge:"Ambiente", scene:"interior",
+    title:"Ambiente / cômodo", sub:"Qual espaço interno é este?",
+    options:[
+      {id:"living", pt:"Sala de estar", en:"living room", k:["sala de estar","living","estar"]},
+      {id:"dining", pt:"Sala de jantar", en:"dining room", k:["sala de jantar","jantar","copa"]},
+      {id:"livingdining", pt:"Living integrado", en:"open-plan living and dining room", k:["living integrado","sala integrada","conceito aberto"]},
+      {id:"kitchen", pt:"Cozinha", en:"kitchen interior", k:["cozinha","kitchen"]},
+      {id:"kitchenisland", pt:"Cozinha gourmet c/ ilha", en:"gourmet kitchen with island", k:["cozinha gourmet","ilha","cooktop"]},
+      {id:"bedroom", pt:"Quarto / dormitório", en:"bedroom interior", k:["quarto","dormitorio","dormitório","bedroom"]},
+      {id:"suite", pt:"Suíte master", en:"master suite", k:["suite","suíte","suite master"]},
+      {id:"kidsroom", pt:"Quarto infantil", en:"children's bedroom", k:["quarto infantil","quarto de bebe","quarto de criança"]},
+      {id:"bathroom", pt:"Banheiro / lavabo", en:"bathroom interior", k:["banheiro","lavabo","banho","toalete"]},
+      {id:"closet", pt:"Closet / vestíbulo", en:"walk-in closet", k:["closet","vestiario","guarda-roupa"]},
+      {id:"homeoffice", pt:"Home office", en:"home office", k:["home office","escritorio em casa","escritório em casa"]},
+      {id:"hall", pt:"Hall / entrada", en:"entrance hall and foyer", k:["hall","entrada interna","foyer","vestibulo"]},
+      {id:"corridor", pt:"Corredor / circulação", en:"interior corridor", k:["corredor","circulacao interna","circulação"]},
+      {id:"stairhall", pt:"Escada / vão interno", en:"interior stairwell", k:["escada interna","vao de escada","vão de escada"]},
+      {id:"laundry", pt:"Área de serviço / lavanderia", en:"laundry room", k:["area de serviço","lavanderia","serviço"]},
+      {id:"homecinema", pt:"Home theater / cinema", en:"home cinema room", k:["home theater","home cinema","sala de cinema"]},
+      {id:"gourmet", pt:"Espaço / varanda gourmet", en:"gourmet balcony interior", k:["espaco gourmet","varanda gourmet","area gourmet"]},
+      {id:"office", pt:"Escritório corporativo", en:"corporate office interior", k:["escritorio corporativo","escritório","open office"]},
+      {id:"reception", pt:"Recepção / lobby", en:"reception lobby interior", k:["recepcao","recepção","lobby","saguao","saguão"]},
+      {id:"meeting", pt:"Sala de reunião", en:"meeting room", k:["sala de reuniao","reunião","board room"]},
+      {id:"retail", pt:"Loja / showroom", en:"retail showroom interior", k:["loja","showroom","varejo interno"]},
+      {id:"restaurant", pt:"Salão de restaurante", en:"restaurant dining hall interior", k:["restaurante","salao","salão","refeitorio"]},
+      {id:"cafebar", pt:"Café / bar", en:"café and bar interior", k:["cafe","café","bar","bistro interno"]},
+      {id:"hotelroom", pt:"Quarto de hotel", en:"hotel room interior", k:["quarto de hotel","apartamento de hotel"]},
+      {id:"spa", pt:"Spa / sauna", en:"spa interior", k:["spa","sauna","area molhada"]},
+      {id:"gym", pt:"Academia / fitness", en:"gym interior", k:["academia","fitness","sala de treino"]},
+      {id:"library", pt:"Biblioteca / estúdio", en:"library or studio interior", k:["biblioteca","estudio","estúdio","ateliê"]},
+      {id:"clinic", pt:"Consultório / clínica", en:"clinic interior", k:["consultorio","consultório","clinica","clínica"]},
+      {id:"winecellar", pt:"Adega / cave", en:"wine cellar interior", k:["adega","cave","cave de vinhos"]},
     ]
   },
   {
@@ -622,7 +688,28 @@ const GROUPS = [
     ]
   },
   {
-    id:"weather", part:"light", type:"single", badge:"Clima",
+    id:"intlight", part:"light", type:"multi", badge:"Luz interna", scene:"interior",
+    title:"Iluminação do ambiente", sub:"Como o espaço interno é iluminado — selecione as fontes presentes.",
+    options:[
+      {id:"daylight-window", pt:"Luz natural pela janela", en:"soft natural daylight through the windows", k:["luz natural","janela","luz da janela"]},
+      {id:"spots", pt:"Spots embutidos no forro", en:"recessed ceiling spotlights", k:["spots","spots embutidos","luz embutida"]},
+      {id:"cove", pt:"Sanca com luz indireta", en:"cove indirect ceiling lighting", k:["sanca","luz indireta","cove"]},
+      {id:"ledstrip", pt:"Fita de LED / rasgo de luz", en:"concealed LED strip lighting in reveals", k:["fita de led","led","rasgo de luz","perfil de led"]},
+      {id:"pendants", pt:"Pendentes decorativos", en:"decorative pendant lights", k:["pendente","pendentes","luminaria pendente"]},
+      {id:"chandelier", pt:"Lustre / plafon central", en:"a central chandelier or ceiling fixture", k:["lustre","plafon","luminaria central"]},
+      {id:"sconces", pt:"Arandelas de parede", en:"wall sconces", k:["arandela","arandelas","luz de parede"]},
+      {id:"floorlamp", pt:"Luminária de piso / abajur", en:"floor and table lamps", k:["abajur","luminaria de piso","luminaria de mesa"]},
+      {id:"track", pt:"Trilho / foco cênico", en:"track accent lighting", k:["trilho","spot de trilho","foco cenico","foco cênico"]},
+      {id:"backlit", pt:"Painel retroiluminado", en:"a backlit feature panel", k:["retroiluminado","painel de luz","backlight"]},
+      {id:"underlight", pt:"Iluminação sob marcenaria", en:"under-cabinet and furniture lighting", k:["luz sob armario","iluminacao de marcenaria","sob bancada"]},
+      {id:"warm", pt:"Luz quente acolhedora (2700 K)", en:"warm 2700K ambient lighting", k:["luz quente","2700k","aconchegante","amarelada"]},
+      {id:"neutral", pt:"Luz neutra (4000 K)", en:"neutral 4000K lighting", k:["luz neutra","4000k","luz branca"]},
+      {id:"layered", pt:"Iluminação em camadas", en:"layered general, task and accent lighting", k:["camadas de luz","geral tarefa destaque","iluminacao em camadas"]},
+      {id:"candle", pt:"Velas / lareira (luz quente)", en:"warm candle and fireplace light", k:["velas","lareira","luz de fogo"]},
+    ]
+  },
+  {
+    id:"weather", part:"light", type:"single", badge:"Clima", scene:"exterior",
     title:"Clima / céu", sub:"Coerente com o horário escolhido.",
     options:[
       {id:"clear", pt:"Céu limpo", en:"a clear sky", k:["ceu limpo","céu limpo","limpo","sem nuvens"]},
@@ -729,7 +816,7 @@ const GROUPS = [
     ]
   },
   {
-    id:"context", part:"surround", type:"single", badge:"Entorno",
+    id:"context", part:"surround", type:"single", badge:"Entorno", scene:"exterior",
     title:"Entorno / contexto", sub:"Onde o projeto está inserido.",
     options:[
       {id:"urban", pt:"Urbano denso", en:"a dense urban context", k:["urbano","cidade","centro","urban"]},
@@ -758,7 +845,7 @@ const GROUPS = [
     ]
   },
   {
-    id:"vegetation", part:"surround", type:"multi", badge:"Paisagismo",
+    id:"vegetation", part:"surround", type:"multi", badge:"Paisagismo", scene:"exterior",
     title:"Vegetação / paisagismo", sub:"Espécies e elementos naturais integrados.",
     options:[
       {id:"lawn", pt:"Gramado", en:"a manicured lawn", k:["grama","gramado","lawn"]},
@@ -899,8 +986,36 @@ const GROUPS = [
 ];
 
 /* ---- state ---- */
-const state = { sel:{}, free:{}, project:[], refs:[] };
+const state = { sel:{}, free:{}, project:[], refs:[], scene:"exterior" };
 GROUPS.forEach(g=>{ state.sel[g.id] = g.type==="multi" ? [] : null; state.free[g.id]=""; });
+
+/* ---- Cena: exterior vs interior (define quais perguntas aparecem) ---- */
+function groupApplies(g){ return !g.scene || g.scene===state.scene; }
+function visibleGroups(){ return GROUPS.filter(groupApplies); }
+function setScene(s){
+  if(s!=="exterior" && s!=="interior") return;
+  if(state.scene===s){ updateSceneUI(); return; }
+  state.scene=s;
+  // limpa seleções/campos livres dos grupos que não pertencem à cena escolhida
+  GROUPS.forEach(g=>{ if(g.scene && g.scene!==s){ state.sel[g.id]=g.type==="multi"?[]:null; state.free[g.id]=""; } });
+  updateSceneUI();
+  if($("#groups")){ renderGroups(); updateCount(); }
+}
+function updateSceneUI(){
+  $$("[data-scene]").forEach(b=>b.classList.toggle("active", b.dataset.scene===state.scene));
+  const badge=$("#scene-badge"); if(badge) badge.textContent = state.scene==="interior" ? "Interior / Ambiente" : "Exterior / Fachada";
+}
+const INT_SCENE_KW=["interior","cozinha","sala de estar","sala de jantar","living","quarto","dormitorio","suite","banheiro","lavabo","closet","home office","home theater","corredor","recepcao","lobby","sala de reuniao","showroom","salao de restaurante","forro","sanca","marcenaria","pe-direito","ambiente interno","dentro da casa","por dentro"];
+const EXT_SCENE_KW=["fachada","exterior","frente da casa","facade","jardim","paisagismo","entorno","de rua","aerea","drone","cobertura","rooftop","piscina","quintal","telhado","volumetria","implantacao"];
+function detectSceneFromText(t){
+  const intHits=INT_SCENE_KW.reduce((a,k)=>a+(t.includes(norm(k))?1:0),0);
+  const extHits=EXT_SCENE_KW.reduce((a,k)=>a+(t.includes(norm(k))?1:0),0);
+  if(intHits>0 && intHits>=extHits) setScene("interior");
+  else if(extHits>0) setScene("exterior");
+}
+function autoSceneFromSelections(){
+  if(state.sel.room || state.sel.typology==="interior" || state.sel.viewpoint==="int-view") setScene("interior");
+}
 
 /* ---- helpers ---- */
 const $ = s=>document.querySelector(s);
@@ -920,7 +1035,7 @@ function joinNice(a){a=a.filter(Boolean);if(a.length<=1)return a[0]||"";if(a.len
    ========================================================================= */
 function renderGroups(){
   const host = $("#groups"); host.innerHTML="";
-  GROUPS.forEach(g=>{
+  visibleGroups().forEach(g=>{
     const box = document.createElement("div"); box.className="group";
     box.innerHTML = `
       <div class="gtitle"><span class="badge">${g.badge}</span> ${g.title}</div>
@@ -956,7 +1071,7 @@ function refreshChips(){
   });
 }
 function updateCount(){
-  let n=0;GROUPS.forEach(g=>{const s=state.sel[g.id];n+=Array.isArray(s)?s.length:(s?1:0);});
+  let n=0;visibleGroups().forEach(g=>{const s=state.sel[g.id];n+=Array.isArray(s)?s.length:(s?1:0);});
   $("#sel-count").textContent=`${n} ${n===1?"opção selecionada":"opções selecionadas"}`;
 }
 
@@ -995,7 +1110,7 @@ function renderThumbs(which){
 /* =========================================================================
    Ler a imagem do projeto → IA (Gemini) ou estimativa local
    ========================================================================= */
-const AI_GROUPS = ["typology","viewpoint","style","materials","mood","palette","time","weather","focal","aperture","perspective","context","vegetation","elements"];
+const AI_GROUPS = ["typology","room","viewpoint","style","materials","mood","palette","time","intlight","weather","focal","aperture","perspective","context","vegetation","elements"];
 function allowedForAI(){
   const out={};
   AI_GROUPS.forEach(id=>{const g=grp(id);const o={};g.options.forEach(op=>o[op.id]=op.en||op.pt);out[id]={type:g.type,options:o};});
@@ -1136,7 +1251,7 @@ async function analyzeProject(){
     let obj, src;
     if(key){ obj=await geminiAnalyze(state.project.filter(x=>x.b64), key); src="ia"; }
     else { obj=await localEstimate(rec); src="local"; }
-    const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h);
+    const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h); autoSceneFromSelections();
     renderGroups(); updateCount(); setMode("guided");
     const nn=(obj&&obj.notes)?obj.notes:((obj&&obj.details)?obj.details:{});
     const dm=nn.materials?(Array.isArray(nn.materials)?nn.materials.join(", "):nn.materials):"";
@@ -1150,7 +1265,7 @@ async function analyzeProject(){
   }catch(e){
     // fallback: estimativa local
     try{
-      const obj=await localEstimate(rec); const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h);
+      const obj=await localEstimate(rec); const n=applyAnswers(obj); setAspectFromDims(rec.w,rec.h); autoSceneFromSelections();
       renderGroups(); updateCount(); setMode("guided");
       hint.innerHTML=`⚠ ${apiErrMsg(e)} Enquanto isso, usei uma estimativa local — você pode ajustar as respostas manualmente.`;
       toast(`Estimativa local: ${n} respostas`);
@@ -1166,8 +1281,9 @@ async function analyzeProject(){
 function analyzeText(){
   const t=norm($("#describe-text").value);
   if(!t.trim()){toast("Escreva algo primeiro 🙂");return;}
+  detectSceneFromText(t);
   let hits=0;
-  GROUPS.forEach(g=>{
+  visibleGroups().forEach(g=>{
     g.options.forEach(o=>{
       const kws=(o.k||[]).concat([o.pt]);
       if(kws.some(k=>k&&t.includes(norm(k)))){
@@ -1217,10 +1333,16 @@ function ptListOf(gid){const g=grp(gid);const s=state.sel[gid];const a=Array.isA
 function joinPt(a){a=a.filter(Boolean);if(a.length<=1)return a[0]||"";if(a.length===2)return a[0]+" e "+a[1];return a.slice(0,-1).join(", ")+" e "+a[a.length-1];}
 
 function subjectPhrase(){
-  const typ=ptListOf("typology")[0], style=ptListOf("style")[0], view=ptListOf("viewpoint")[0];
-  let s = style ? `${(typ||"projeto arquitetônico")} em estilo ${style.toLowerCase()}` : (typ||"projeto arquitetônico contemporâneo");
+  const typ=ptListOf("typology")[0], style=ptListOf("style")[0], view=ptListOf("viewpoint")[0], room=ptListOf("room")[0];
+  let base;
+  if(state.scene==="interior"){
+    base = room ? `interior de ${room.toLowerCase()}` : (typ ? `interior de ${typ.toLowerCase()}` : "espaço interior arquitetônico contemporâneo");
+  } else {
+    base = typ || "projeto arquitetônico contemporâneo";
+  }
+  let s = style ? `${base} em estilo ${style.toLowerCase()}` : base;
   if(view) s += `, ${view.toLowerCase()}`;
-  const extra=[freeOf("typology"),freeOf("style"),freeOf("viewpoint")].filter(Boolean).join(", ");
+  const extra=[freeOf("typology"),freeOf("room"),freeOf("style"),freeOf("viewpoint")].filter(Boolean).join(", ");
   if(extra) s += `, ${extra}`;
   return s;
 }
@@ -1309,6 +1431,14 @@ function cameraPhrase(){
   return s;
 }
 function surroundPhrase(){
+  if(state.scene==="interior"){
+    const el=ptListOf("elements").map(x=>x.toLowerCase());
+    let parts=[];
+    if(el.length) parts.push(`ambientado com ${joinPt(el)}`);
+    const fw=freeOf("elements");
+    if(fw) parts.push(fw);
+    return parts.length?("O ambiente aparece "+parts.join(", ")+"."):"";
+  }
   const ctx=ptListOf("context")[0];
   const veg=[...ptListOf("vegetation"),...ptListOf("elements")].map(x=>x.toLowerCase());
   let parts=[];
@@ -1317,6 +1447,14 @@ function surroundPhrase(){
   const fw=[freeOf("context"),freeOf("vegetation"),freeOf("elements")].filter(Boolean).join(", ");
   if(fw) parts.push(fw);
   return parts.length?("O edifício está "+parts.join(", ")+"."):"";
+}
+function interiorLightPhrase(){
+  const l=ptListOf("intlight").map(x=>x.toLowerCase());
+  if(!l.length && !freeOf("intlight")) return "";
+  let s = l.length ? `A iluminação do ambiente combina ${joinPt(l)}` : "A iluminação do ambiente é cuidadosamente planejada";
+  s += ", com comportamento físico realista da luz, sombras suaves, rebatimento nas superfícies e temperatura de cor coerente.";
+  if(freeOf("intlight")) s += ` ${freeOf("intlight")}.`;
+  return s;
 }
 function moodPhrase(){
   const m=ptListOf("mood")[0],p=ptListOf("palette")[0];
@@ -1353,8 +1491,10 @@ function buildNarrative(model){
   const S=[];
   S.push(`Fotografia de arquitetura ultrarrealista, registro técnico editorial, na proporção ${ar}.`);
 
-  // 1 · INPUT ARQUITETÔNICO — construção, volumetria, aberturas e estrutura (fiel ao projeto)
-  let p1=`Representação técnica de ${subjectPhrase()} — construção, volumetria, sistema de aberturas e elementos estruturais rigorosamente conforme o projeto.`;
+  // 1 · INPUT ARQUITETÔNICO — fiel ao projeto (fachada/volumetria OU layout/superfícies internas)
+  let p1 = state.scene==="interior"
+    ? `Representação técnica de ${subjectPhrase()} — layout espacial, superfícies de piso, parede e forro, aberturas e marcenaria/mobiliário fixo rigorosamente conforme o projeto.`
+    : `Representação técnica de ${subjectPhrase()} — construção, volumetria, sistema de aberturas e elementos estruturais rigorosamente conforme o projeto.`;
   const ref=referenceClause(); if(ref) p1+=" "+ref;
   S.push("1 · INPUT ARQUITETÔNICO\n"+p1);
 
@@ -1362,14 +1502,18 @@ function buildNarrative(model){
   S.push("2 · CÂMERA E COMPOSIÇÃO\n"+cameraPhrase());
 
   // 3 · SISTEMA DE LUZ
-  S.push("3 · SISTEMA DE LUZ\n"+lightingPhrase());
+  const il = state.scene==="interior" ? interiorLightPhrase() : "";
+  S.push("3 · SISTEMA DE LUZ\n"+lightingPhrase()+(il?(" "+il):""));
 
   // 4 · MATERIAIS E TEXTURAS
   S.push("4 · MATERIAIS E TEXTURAS\n"+materialsPhrase());
 
   // 5 · VIDA E ATMOSFERA
   const life=[surroundPhrase(), moodPhrase()].filter(Boolean).join(" ");
-  S.push("5 · VIDA E ATMOSFERA\n"+(life?life+" ":"")+"Contextualização da cena com vegetação, mobiliário, iluminação cênica, entorno e efeitos atmosféricos coerentes, que completam a composição sem competir com a arquitetura.");
+  const closing = state.scene==="interior"
+    ? "Complemente o ambiente com mobiliário, têxteis, vegetação interna e iluminação cênica coerentes, que dão vida ao espaço sem competir com a arquitetura."
+    : "Contextualização da cena com vegetação, mobiliário, iluminação cênica, entorno e efeitos atmosféricos coerentes, que completam a composição sem competir com a arquitetura.";
+  S.push("5 · VIDA E ATMOSFERA\n"+(life?life+" ":"")+closing);
 
   // Acabamento fotográfico geral
   const eng=enginePhrase(model);
@@ -1384,6 +1528,7 @@ function buildTags(model){
     subjectPhrase(),
     ...mats, freeOf("materials"),
     state.sel.time&&TIMEPT[state.sel.time], state.sel.weather&&WEATHERPT[state.sel.weather], freeOf("time"),
+    ...ptListOf("intlight").map(x=>x.toLowerCase()), freeOf("intlight"),
     FOCALPT[state.sel.focal], APPT[state.sel.aperture], ...ptListOf("perspective").map(x=>x.toLowerCase()),
     ptListOf("context")[0], ...ptListOf("vegetation").map(x=>x.toLowerCase()), ...ptListOf("elements").map(x=>x.toLowerCase()),
     ptListOf("mood")[0], ptListOf("palette")[0]?`paleta ${ptListOf("palette")[0].toLowerCase()}`:"",
@@ -1498,8 +1643,8 @@ function buildOrderEN(){
   ].join("\n");
 }
 function generate(){
-  const anySel=GROUPS.some(g=>{const s=state.sel[g.id];return Array.isArray(s)?s.length:s;});
-  const anyFree=Object.values(state.free).some(v=>v&&v.trim());
+  const anySel=visibleGroups().some(g=>{const s=state.sel[g.id];return Array.isArray(s)?s.length:s;});
+  const anyFree=visibleGroups().some(g=>{const v=state.free[g.id];return v&&v.trim();});
   if(!anySel&&!anyFree){toast("Selecione ao menos uma opção 🙂");return;}
   if(!state.sel.model)state.sel.model="nano";
   const b=buildPrompt();
@@ -1714,6 +1859,9 @@ function init(){
   $$("[data-goto]").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.goto)));
   wireDrop("#drop-project","#file-project","project");
   wireDrop("#drop-refs","#file-refs","refs");
+  // Seletor de cena (exterior/interior) — vale para os botões das duas abas
+  $$("[data-scene]").forEach(b=>b.addEventListener("click",()=>setScene(b.dataset.scene)));
+  updateSceneUI();
   // API key
   const keyInput=$("#gemini-key");
   keyInput.value=localStorage.getItem("archp_gemini_key")||"";
@@ -1736,9 +1884,9 @@ function init(){
   $("#btn-reset").addEventListener("click",()=>{
     if(!confirm("Recomeçar do zero? Suas seleções serão apagadas."))return;
     GROUPS.forEach(g=>{state.sel[g.id]=g.type==="multi"?[]:null;state.free[g.id]="";});
-    state.project=[];state.refs=[];$("#describe-text").value="";$("#detected").textContent="";$("#proj-hint").textContent="";
+    state.project=[];state.refs=[];state.scene="exterior";$("#describe-text").value="";$("#detected").textContent="";$("#proj-hint").textContent="";
     const asum=$("#ai-summary");asum.classList.add("hidden");asum.innerHTML="";
-    renderGroups();updateCount();renderThumbs("project");renderThumbs("refs");setMode("project");toast("Recomeçado ✓");
+    updateSceneUI();renderGroups();updateCount();renderThumbs("project");renderThumbs("refs");setMode("project");toast("Recomeçado ✓");
   });
 }
 init();
