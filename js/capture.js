@@ -431,6 +431,10 @@ function buildClientCard(ex, cmdName, aiUsed, idx) {
   const email = inp("email@exemplo.com", ex.email, { type: "email" });
   const nasc = inp("", ex.nasc, { type: "date" });
   const endereco = inp("Rua, nº, bairro, cidade — UF", ex.endereco);
+  const sexoSel = sel([["", "—"], ["F", "Mulher"], ["M", "Homem"]], ex.sexo || "");
+  const nacionalidade = inp("brasileira / brasileiro", ex.nacionalidade);
+  const estadoCivil = inp("Ex: casada, solteiro…", ex.estado_civil);
+  const profissao = inp("Ex: professora, empresário…", ex.profissao);
   const area = inp("Ex: Família, Cível…", ex.area);
   const origem = inp("Ex: Indicação, Instagram…", ex.origem);
   const obs = txt("Resumo do caso, histórico…", ex.obs, 2);
@@ -441,13 +445,15 @@ function buildClientCard(ex, cmdName, aiUsed, idx) {
     el("div", { class: "cap-row" }, [field("Telefone / WhatsApp", tel), field("Nascimento", nasc)]),
     field("E-mail", email),
     field("Endereço", endereco),
+    el("div", { class: "cap-row" }, [field("Sexo", sexoSel), field("Nacionalidade", nacionalidade)]),
+    el("div", { class: "cap-row" }, [field("Estado civil", estadoCivil), field("Profissão", profissao)]),
     el("div", { class: "cap-row" }, [field("Área", area), field("Origem", origem)]),
     field("Observações", obs),
   ]);
   return {
     key: "cliente", node,
     validate: () => (!nome.value.trim() ? { msg: "Informe o nome do cliente.", focus: () => nome.focus() } : null),
-    collect: () => ({ nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim() }),
+    collect: () => ({ nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), sexo: sexoSel.value || null, nacionalidade: nacionalidade.value.trim(), estado_civil: estadoCivil.value.trim(), profissao: profissao.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim() }),
   };
 }
 

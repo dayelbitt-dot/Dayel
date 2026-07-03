@@ -75,6 +75,12 @@ create table if not exists public.processes (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Qualificação do cliente (para gerar procuração/declaração) ----------
+alter table public.clients add column if not exists sexo text;
+alter table public.clients add column if not exists nacionalidade text;
+alter table public.clients add column if not exists estado_civil text;
+alter table public.clients add column if not exists profissao text;
+
 -- ---------- Grau do processo (1º / 2º) ----------
 alter table public.processes add column if not exists grau text default '1';
 

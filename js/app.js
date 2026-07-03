@@ -1242,6 +1242,7 @@ async function openClient(id) {
   const dados = [
     ["CPF", c.cpf], ["RG", c.rg], ["Telefone", c.tel], ["E-mail", c.email],
     ["Nascimento", c.nasc ? prettyDate(c.nasc) : ""], ["Endereço", c.endereco],
+    ["Nacionalidade", c.nacionalidade], ["Estado civil", c.estado_civil], ["Profissão", c.profissao],
     ["Área", c.area], ["Origem", c.origem],
   ].filter(([, v]) => v);
 
@@ -1294,10 +1295,18 @@ function openClientModal(existing) {
   const area = inp("Ex: Família, Cível…", f.area);
   const origem = inp("Ex: Indicação, Instagram…", f.origem);
   const obs = el("textarea", { rows: "3", placeholder: "Resumo do caso, histórico…" }, f.obs || "");
+  // Qualificação (usada para gerar procuração/declaração)
+  const sexoSel = el("select", { class: "form-control" });
+  [["", "—"], ["F", "Mulher"], ["M", "Homem"]].forEach(([v, l]) => sexoSel.append(el("option", { value: v, ...(v === (f.sexo || "") ? { selected: "" } : {}) }, l)));
+  const nacionalidade = inp("brasileira / brasileiro", f.nacionalidade);
+  const estadoCivil = inp("Ex: casada, solteiro…", f.estado_civil);
+  const profissao = inp("Ex: professora, empresário…", f.profissao);
 
   const form = el("form", {}, [
     lbl("Nome *", nome), lbl("CPF", cpf), lbl("RG", rg), lbl("Telefone / WhatsApp", tel),
     lbl("E-mail", email), lbl("Nascimento", nasc), lbl("Endereço", endereco),
+    el("div", { class: "cap-row" }, [lbl("Sexo", sexoSel), lbl("Nacionalidade", nacionalidade)]),
+    el("div", { class: "cap-row" }, [lbl("Estado civil", estadoCivil), lbl("Profissão", profissao)]),
     lbl("Área", area), lbl("Origem", origem), lbl("Observações", obs),
     el("div", { class: "modal-actions" }, [
       el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
@@ -1307,7 +1316,7 @@ function openClientModal(existing) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!nome.value.trim()) { nome.focus(); return; }
-    const data = { nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim() };
+    const data = { nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim(), sexo: sexoSel.value || null, nacionalidade: nacionalidade.value.trim(), estado_civil: estadoCivil.value.trim(), profissao: profissao.value.trim() };
     if (existing) { await update("clients", existing.id, data); closeModal(); openClient(existing.id); }
     else { const saved = await insert("clients", data); closeModal(); if (saved) openClient(saved.id); else renderClients(); }
   };
@@ -1604,9 +1613,17 @@ async function renderGerarDocs() {
   const aplicarCliente = (c) => {
     dados.nome = c.nome || ""; dados.cpf = c.cpf || ""; dados.rg = c.rg || ""; dados.endereco = c.endereco || "";
     nome.value = dados.nome; cpf.value = dados.cpf; rg.value = dados.rg; endereco.value = dados.endereco;
-    // tenta puxar profissão/estado civil das observações, se houver
+    // qualificação: campos próprios do cadastro (com fallback nas observações antigas)
     const obs = c.obs || "";
-    const mp = obs.match(/profiss[ãa]o:\s*([^·\n]+)/i); if (mp) { dados.profissao = mp[1].trim(); profissao.value = dados.profissao; }
+    const fromObs = (re) => { const m = obs.match(re); return m ? m[1].trim() : ""; };
+    dados.nacionalidade = c.nacionalidade || fromObs(/nacionalidade\/?\w*:\s*([^·\n]+)/i);
+    dados.profissao = c.profissao || fromObs(/profiss[ãa]o:\s*([^·\n]+)/i);
+    dados.estadoCivil = c.estado_civil || fromObs(/estado civil:\s*([^·\n]+)/i);
+    nacionalidade.value = dados.nacionalidade; profissao.value = dados.profissao;
+    if (c.sexo === "M" || c.sexo === "F") setSexo(c.sexo);       // ajusta o seg e reconstrói estado civil
+    else { const g = /a$/i.test(dados.estadoCivil) || /a$/i.test(dados.nacionalidade); setSexo(g ? "F" : dados.sexo || "F"); }
+    dados.estadoCivil = c.estado_civil || dados.estadoCivil;      // setSexo pode ter mexido; reafirma
+    fillEstadoCivil();
   };
   cliSel.addEventListener("change", () => { const c = clients.find((x) => x.id === cliSel.value); if (c) aplicarCliente(c); });
 
