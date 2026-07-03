@@ -59,12 +59,40 @@ async function pdfToText(file, onProgress) {
     out += content.items.map((it) => it.str).join(" ") + "\n";
   }
   out = out.trim();
-  // PDF escaneado (imagem, sem texto) → tenta OCR
-  if (!out) { onProgress("📄 PDF sem texto — tentando reconhecer imagem…"); return await imageToText(file, onProgress); }
+  // PDF escaneado (páginas são imagem, sem texto embutido) → renderiza cada
+  // página num canvas e reconhece o texto (OCR). Não dá para OCR do PDF direto:
+  // o Tesseract só entende imagem, então precisamos rasterizar antes.
+  if (out.replace(/\s/g, "").length < 8) {
+    onProgress("📄 PDF escaneado — reconhecendo o texto das páginas…");
+    const worker = await makeOcrWorker(onProgress);
+    try {
+      let ocr = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        onProgress(`🔍 Reconhecendo página ${i}/${pdf.numPages}…`);
+        const canvas = await pageToCanvas(pdf, i, pdfjs);
+        const { data: d } = await worker.recognize(canvas);
+        ocr += (d.text || "") + "\n";
+      }
+      return ocr.replace(/\s+\n/g, "\n").trim();
+    } finally { try { await worker.terminate(); } catch {} }
+  }
   return out;
 }
 
-async function imageToText(file, onProgress) {
+// Renderiza uma página do PDF num <canvas> (escala 2x para o OCR ficar nítido).
+async function pageToCanvas(pdf, pageNum, pdfjs) {
+  const page = await pdf.getPage(pageNum);
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d");
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+
+// Cria um worker de OCR reaproveitável (evita recarregar a biblioteca a cada página).
+async function makeOcrWorker(onProgress) {
   onProgress("🔍 Carregando reconhecimento de texto…");
   const mod = await loadFirst([
     "https://cdn.jsdelivr.net/npm/tesseract.js@5/+esm",
@@ -72,7 +100,7 @@ async function imageToText(file, onProgress) {
     "https://unpkg.com/tesseract.js@5/dist/tesseract.esm.min.js",
   ]);
   const Tesseract = mod.default || mod;
-  const { data } = await Tesseract.recognize(file, "por", {
+  return await Tesseract.createWorker("por", 1, {
     workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
     corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5",
     logger: (m) => {
@@ -80,5 +108,12 @@ async function imageToText(file, onProgress) {
         onProgress(`🔍 Reconhecendo texto… ${Math.round(m.progress * 100)}%`);
     },
   });
-  return (data.text || "").replace(/\s+\n/g, "\n").trim();
+}
+
+async function imageToText(file, onProgress) {
+  const worker = await makeOcrWorker(onProgress);
+  try {
+    const { data } = await worker.recognize(file);
+    return (data.text || "").replace(/\s+\n/g, "\n").trim();
+  } finally { try { await worker.terminate(); } catch {} }
 }

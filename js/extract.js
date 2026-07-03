@@ -11,6 +11,12 @@ const noAccent = (s) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "
 // na mesma linha (ex: "Nome: João  CPF: 123..." → nome para em "CPF:").
 const STOP = /\b(nome|cpf|cnpj|rg|identidade|tel(?:efone)?|celular|whats\s?app|e-?mail|nascimento|data\s+de\s+nascimento|nascid[oa]|endere[cç]o|residente|domiciliad[oa]|cep|estado\s+civil|profiss[aã]o|nacionalidade|naturalidade|filia[cç][aã]o|processo|autos|n[uú]mero|vara|ju[ií]zo|comarca|foro|tribunal|[oó]rg[aã]o|classe|assunto|natureza|valor|distribu\w*|ajuiza\w*|fase|situa[cç][aã]o|r[eé]u|requerid[oa]|executad[oa]|apelad[oa]|parte\s+contr[aá]ria|origem|[aá]rea)\b\s*[:\-–]/i;
 
+// Uma linha que é, na verdade, uma INSTRUÇÃO do usuário ("Cadastre a cliente",
+// "Registrar as partes") — nunca é nome de pessoa. Guarda de segurança para que
+// o comando jamais seja confundido com o dado a cadastrar.
+const CMD_LINE = /^\s*(?:por\s+favor,?\s*)?(?:cadastr\w+|registr\w+|criar?|cria|gerar?|adicion\w+|inserir?|abrir?|lan[cç]ar?|fa[çc]a|fazer|quero|preciso|gostaria|puxa\w*|extrai\w*|leia|ler|preench\w+|prepara\w*)\b/i;
+const CMD_WORD = /\b(cliente|clientes|processo|processos|parte|partes|cadastro|cadastre|cadastrar|petição|peticao)\b/i;
+
 // Recorta o valor de um rótulo: pega até a quebra de linha e corta no próximo
 // rótulo conhecido (para não engolir o campo seguinte).
 function cut(v) {
@@ -111,6 +117,7 @@ function guessName(text) {
     const line = clean(raw);
     if (!line || /\d/.test(line)) continue;
     if (STOP.test(line + ":")) continue;
+    if (CMD_LINE.test(line) || CMD_WORD.test(line)) continue;   // é instrução, não nome
     const words = line.split(/\s+/);
     if (words.length < 2 || words.length > 6) continue;
     if (!/^[A-ZÀ-Ý][\p{L}'.-]*(\s+[\p{L}'.-]+)+$/u.test(line)) continue;

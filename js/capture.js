@@ -189,7 +189,11 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     if (!selected.size) { toast("Escolha ao menos um destino (Tarefa, Agenda, Nota, Cliente ou Processo)."); return; }
 
     status.textContent = "Analisando…";
-    const combined = [userText, docText].filter(Boolean).join("\n\n");        // instrução + documentos (p/ extração)
+    // IMPORTANTE: para EXTRAIR os dados, tira a instrução ("cadastre o cliente…")
+    // do texto — senão o próprio comando viraria nome/dado. Sobra só o que o
+    // usuário digitou como DADO (se houver) + o conteúdo do documento.
+    const dataText = stripCommand(userText);
+    const combined = [dataText, docText].filter(Boolean).join("\n\n");
     const cmdCli = commandName(userText, "cliente");                          // nome dito na instrução, se houver
 
     let clients = [], processes = [];
@@ -269,7 +273,13 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     limpar.onclick = reset;
     cardsWrap.append(el("div", { class: "cap-gen" }, [limpar, principal]));
 
-    status.textContent = "";
+    // Se anexou documento mas ele não trouxe texto (escaneado/protegido) e os
+    // cartões saíram vazios, avisa claramente — em vez de deixar o usuário na dúvida.
+    const anexouSemTexto = attachments.length && !docText.trim();
+    const cartoesVazios = !partyNames.length && !exProc.num && !exProc.tipo;
+    status.textContent = (anexouSemTexto && cartoesVazios)
+      ? "⚠️ Não consegui ler o conteúdo do documento anexado (pode estar escaneado ou protegido). Preencha os campos abaixo à mão."
+      : "";
     cardsWrap.classList.remove("hidden");
     prepBtn.classList.add("hidden");
     const firstInput = cardsWrap.querySelector("input, textarea, select");
@@ -414,7 +424,12 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       drawAtts();
       if (file.size > MAX_ANEXO) status.textContent = `⚠️ “${file.name}” (${fmtBytes(file.size)}) é grande demais para guardar, mas li o conteúdo para preencher os cadastros.`;
       else if (text) status.textContent = `📎 “${file.name}” anexado. Escreva a instrução (ex.: “cadastre o cliente/processo”) e toque em Preparar — vou puxar os dados do arquivo.`;
-      else status.textContent = `📎 “${file.name}” anexado.`;
+      else {
+        const doc = /\.(pdf|png|jpe?g|webp|gif|bmp|tiff?)$/i.test(file.name) || /^(image|application\/pdf)/.test(file.type || "");
+        status.textContent = doc
+          ? `📎 “${file.name}” anexado, mas não consegui LER o conteúdo (pode estar protegido, muito borrado ou ser um documento escaneado difícil). Você pode preencher os campos à mão depois de tocar em Preparar.`
+          : `📎 “${file.name}” anexado.`;
+      }
       saveDraft();
     }
   });
@@ -716,6 +731,15 @@ function commandName(text, kind) {
   const bloq = new Set(["fulano", "beltrano", "sicrano", "ciclano", "peticao", "anexa", "anexo", "anexos", "documento", "documentos", "doc", "arquivo", "arquivos", "acima", "abaixo", "cliente", "processo"]);
   if (!name || bloq.has(first)) return "";
   return name.split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
+// Remove a INSTRUÇÃO do texto ("cadastre o cliente", "cadastrar todas as partes
+// desse documento"…), deixando só o que o usuário digitou como DADO (um nome, por
+// ex.). Assim o comando nunca é confundido com o conteúdo a cadastrar.
+function stripCommand(text) {
+  if (!text) return "";
+  const re = /^\s*(?:por\s+favor,?\s*)?(?:cadastr\w+|registr\w+|criar?|cria|gerar?|adicion\w+|inserir?|abrir?|lan[cç]ar?|fa[çc]a|fazer|quero|preciso|gostaria)\b[\s\S]*?\b(?:clientes?|partes?|requerentes?|requerid[oa]s?|r[eé]us?|autor(?:es|a|as)?|executad[oa]s?|processos?|peti[çc][aã]o|nota|tarefa|agenda|compromisso|s[óo]cios?|herdeiros?|litisconsortes?)\b\s*(?:d[eo]\s+\w+|dess[ea]s?\s+\w+|do\s+documento|do\s+arquivo|da\s+peti[çc][aã]o|anexad[oa]s?|em\s+anexo|anexos?|acima|abaixo)?\s*[:,.]?\s*/i;
+  return text.replace(re, "").trim();
 }
 
 // Quantos clientes cadastrar e quais. "cadastre o cliente" → one; "cadastre as
