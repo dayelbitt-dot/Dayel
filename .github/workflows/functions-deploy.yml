@@ -1,0 +1,38 @@
+name: Publicar funções (Supabase Edge Functions)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - ".github/workflows/functions-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar a CLI do Supabase
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Publicar a função "extrair"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_PAT }}
+          PROJECT_REF: pugquehxhquetjwzfgyq
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "ℹ️  Segredo SUPABASE_PAT ainda não configurado — pulando (nada foi publicado)."
+            echo "    Configure em: Settings → Secrets and variables → Actions → New repository secret"
+            exit 0
+          fi
+          echo "Publicando a função 'extrair' no projeto $PROJECT_REF…"
+          supabase functions deploy extrair --project-ref "$PROJECT_REF"
+          echo "✅ Função 'extrair' publicada."
