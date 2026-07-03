@@ -76,7 +76,6 @@ create table if not exists public.processes (
 );
 
 -- ---------- Qualificação do cliente (para gerar procuração/declaração) ----------
-alter table public.clients add column if not exists sexo text;
 alter table public.clients add column if not exists nacionalidade text;
 alter table public.clients add column if not exists estado_civil text;
 alter table public.clients add column if not exists profissao text;

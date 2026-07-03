@@ -38,9 +38,19 @@ export function dataPorExtenso(iso) {
   return `${+d} de ${MESES[+m - 1]} de ${y}.`;
 }
 
-// Concordância de gênero.
-function genero(sexo) {
-  const fem = (sexo || "").toUpperCase() === "F";
+// Concordância de gênero — INFERIDA do que já está no modelo (nacionalidade e
+// estado civil que o usuário informa: "brasileira", "casada" = feminino).
+function ehFeminino(d) {
+  const nac = (d.nacionalidade || "").trim().toLowerCase();
+  if (/a$/.test(nac)) return true;
+  if (/o$/.test(nac)) return false;
+  const ec = (d.estadoCivil || "").trim().toLowerCase();
+  if (/a$/.test(ec)) return true;
+  if (/o$/.test(ec)) return false;
+  return false; // padrão masculino quando não dá para inferir
+}
+function genero(d) {
+  const fem = ehFeminino(d);
   return {
     nac: fem ? "brasileira" : "brasileiro",
     inscr: fem ? "inscrita" : "inscrito",
@@ -51,7 +61,7 @@ function genero(sexo) {
 
 // Qualificação para PROCURAÇÃO: começa com vírgula, inclui RG, termina em ponto.
 function qualifProcuracao(d) {
-  const g = genero(d.sexo);
+  const g = genero(d);
   const nac = (d.nacionalidade || g.nac).trim();
   const bits = [nac, d.estadoCivil, d.profissao].map((x) => (x || "").trim()).filter(Boolean).join(", ");
   const rg = (d.rg || "").trim() ? `, ${g.port} do RG nº ${d.rg.trim()}` : "";
@@ -62,7 +72,7 @@ function qualifProcuracao(d) {
 
 // Qualificação para DECLARAÇÃO: inclui o nome, sem RG, sem ponto final.
 function qualifDeclaracao(d) {
-  const g = genero(d.sexo);
+  const g = genero(d);
   const nac = (d.nacionalidade || g.nac).trim();
   const bits = [nac, d.estadoCivil, d.profissao].map((x) => (x || "").trim()).filter(Boolean).join(", ");
   const cpf = (d.cpf || "").trim() ? `, ${g.inscr} no CPF nº ${d.cpf.trim()}` : "";

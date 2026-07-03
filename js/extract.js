@@ -186,8 +186,8 @@ export function extractClient(text) {
   out.origem = labeled(text, "origem|indica[cç][aã]o|como\\s+chegou|captado\\s+por");
 
   // ---- Qualificação (para gerar procuração/declaração): nacionalidade, estado
-  // civil, profissão e sexo. Vem de rótulos ("Estado civil: X") OU da prosa da
-  // petição ("NOME, brasileiro, solteiro, pintor, inscrito no CPF…"). ----
+  // civil e profissão. Vem de rótulos ("Estado civil: X") OU da prosa da petição
+  // ("NOME, brasileiro, solteiro, pintor, inscrito no CPF…"). ----
   out.nacionalidade = labeled(text, "nacionalidade");
   out.estado_civil = labeled(text, "estado\\s+civil");
   out.profissao = labeled(text, "profiss[aã]o|ocupa[cç][aã]o");
@@ -204,10 +204,6 @@ export function extractClient(text) {
       if (!out.profissao) out.profissao = toks.find((s) => !isNac(s) && !isCivil(s)) || "";
     }
   }
-  // Sexo pela concordância (brasileira/casada… = F).
-  out.sexo = /\b(brasileira|estrangeira|solteira|casada|divorciada|vi[úu]va|separada|companheira|portadora|inscrita|residente e domiciliada)\b/i.test(text)
-    ? "F" : /\b(brasileiro|solteiro|casado|divorciado|vi[úu]vo|separado|companheiro|portador|inscrito|residente e domiciliado)\b/i.test(text) ? "M" : "";
-
   // Observações: só o que não tem campo próprio (filiação/naturalidade).
   const extras = [];
   const nat = labeled(text, "naturalidade"); if (nat) extras.push("Naturalidade: " + nat);
