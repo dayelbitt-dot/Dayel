@@ -144,3 +144,9 @@ export async function createEvent({ title, date, time, description }) {
   }
   return api("/calendars/primary/events", { method: "POST", body: JSON.stringify(body) });
 }
+
+// Remove um evento do Google Agenda (usado para desfazer o que a captura criou).
+export async function deleteEvent(id) {
+  if (!isConnected() || !id) return;
+  return api("/calendars/primary/events/" + encodeURIComponent(id), { method: "DELETE" });
+}

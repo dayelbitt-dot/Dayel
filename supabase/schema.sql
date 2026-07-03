@@ -84,8 +84,13 @@ alter table public.tasks add column if not exists due_time text;
 alter table public.tasks add column if not exists client_id  uuid references public.clients (id)   on delete set null;
 alter table public.tasks add column if not exists process_id uuid references public.processes (id) on delete set null;
 
--- ---------- Anexos das tarefas (arquivos embutidos: nome, tipo, tamanho, dados) ----------
-alter table public.tasks add column if not exists attachments jsonb not null default '[]';
+-- ---------- Anexos (arquivos embutidos: nome, tipo, tamanho, dados) ----------
+--  Usados pela Captura rápida multi-tipo: os documentos subidos ficam guardados
+--  junto do registro (tarefa, cliente, processo ou nota) que ajudaram a criar.
+alter table public.tasks     add column if not exists attachments jsonb not null default '[]';
+alter table public.clients   add column if not exists attachments jsonb not null default '[]';
+alter table public.processes add column if not exists attachments jsonb not null default '[]';
+alter table public.notes     add column if not exists attachments jsonb not null default '[]';
 
 -- ============================================================
 --  Segurança: Row Level Security (cada usuário só acessa o seu)

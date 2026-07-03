@@ -6,7 +6,7 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 
 ## O que já tem
 
-- ✨ **Captura rápida** — descreva a tarefa em linguagem natural e o sistema cadastra sozinho
+- ✨ **Captura rápida multi-tipo** — escreva/fale/suba documentos, escolha **um ou vários destinos** (Tarefa, Agenda, Nota, Cliente, Processo) e o sistema cadastra tudo de uma vez
 - 🏠 **Início** — painel com resumo das tarefas do dia, pendências, lembretes e notas
 - 🧑 **Pessoal** — tarefas, prioridades e prazos
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
@@ -15,16 +15,32 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 
 Visual em **tema claro**, otimizado para celular e computador.
 
-### ✨ Captura rápida (texto, voz e arquivos)
+### ✨ Captura rápida (texto, voz, arquivos e vários destinos)
 
 No topo do **Início** há uma caixa onde você pode:
 
 - **Escrever** em linguagem natural — ex: *"ligar para o cliente amanhã de manhã, urgente"*
 - **Falar** (🎤) — grava o áudio e transcreve para texto (reconhecimento de voz do navegador, em português)
-- **Subir um arquivo** (📎) — o sistema extrai o texto e preenche a caixa:
+- **Subir arquivos** (📎) — o sistema extrai o texto **e guarda o documento anexado**:
   - `.txt`, `.md`, `.csv` — leitura direta (funciona offline)
   - **PDF** com texto — extraído com pdf.js
   - **Imagem / foto / print** — texto reconhecido por OCR (Tesseract.js, em português)
+
+**Escolha para onde vai** (pode marcar mais de um ao mesmo tempo):
+
+| Destino | O que cria |
+|---------|------------|
+| ✅ **Tarefa** | Uma tarefa pessoal ou de trabalho, com prazo/prioridade |
+| 🗓️ **Agenda** | Um compromisso com data/hora (opcionalmente também no Google Agenda) |
+| 📝 **Nota** | Uma anotação |
+| 👤 **Cliente** | Cadastro completo do cliente (nome, CPF/CNPJ, RG, telefone, e-mail, nascimento, endereço…) |
+| ⚖️ **Processo** | Cadastro completo do processo (nº CNJ, tipo, vara, tribunal, partes, valor, fase, grau…) |
+
+**Cadastro automático a partir de documentos:** suba a ficha do cliente e/ou do
+processo (PDF, foto ou texto), marque **👤 Cliente** e **⚖️ Processo** juntos e o
+app **lê os dados dos documentos**, preenche os dois cadastros e **vincula o
+processo ao cliente novo** — tudo de uma vez. Cada campo detectado já vem
+preenchido num cartão editável, então você confere e ajusta antes de gerar.
 
 O interpretador entende automaticamente:
 
@@ -33,8 +49,16 @@ O interpretador entende automaticamente:
 | **Prazo** | "hoje", "amanhã", "depois de amanhã", "sexta que vem", "em 3 dias", "dia 15", "10/07" |
 | **Prioridade** | "urgente", "importante" → Alta · "sem pressa", "quando puder" → Baixa |
 | **Área** | palavras como "reunião", "cliente", "relatório", "chefe" → Trabalho; senão Pessoal |
+| **Dados do cliente** | rótulos como "Nome:", "CPF:", "RG:", "Telefone:", "E-mail:", "Endereço:", "Nascimento:" |
+| **Dados do processo** | número CNJ, "Classe/Tipo:", "Vara:", "Comarca:", "Tribunal:", "Réu:", "Valor da causa:", "Distribuição:" |
 
-Antes de salvar, um **preview ao vivo** mostra o que foi entendido; depois de cadastrar, aparece um aviso com botão **Desfazer**.
+Antes de salvar, **cartões editáveis** mostram o que foi entendido em cada
+destino; depois de cadastrar, aparece um aviso com botão **Desfazer** (que remove
+todos os registros criados naquela captura).
+
+> A leitura de documentos é feita **no próprio navegador** (heurísticas em
+> português, sem enviar nada para servidores de IA), na mesma linha do resto do
+> app. Os documentos anexados ficam guardados junto do cadastro (até 8 MB cada).
 
 > Voz, digitação e arquivos de texto funcionam offline. A leitura de **PDF** e **imagem (OCR)** baixa a biblioteca de uma CDN pública na primeira vez (precisa de internet).
 
@@ -109,6 +133,10 @@ js/config.js            # onde você cola as chaves do Supabase
 js/store.js             # dados (nuvem ou local)
 js/auth.js              # login
 js/ui.js                # utilitários e gráfico
+js/capture.js           # captura rápida multi-tipo (Tarefa/Agenda/Nota/Cliente/Processo)
+js/nlp.js               # interpretador de linguagem natural (prazo, prioridade, área)
+js/extract.js           # extração de dados de cliente/processo de documentos (pt-BR)
+js/files.js             # extrai texto de PDF/imagem (OCR)/txt
 js/app.js               # telas e navegação
 supabase/schema.sql     # banco de dados
 manifest.webmanifest    # configuração do PWA

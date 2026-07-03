@@ -197,16 +197,9 @@ function resumoLinha(abertas, atrasadas) {
 }
 
 function captureCard() {
-  const onCreate = async (task) => {
-    const saved = await insert("tasks", task);
-    renderDashboard();
-    return saved;
-  };
-  // permite desfazer o último cadastro
-  onCreate.__undo = async (saved) => {
-    if (saved && saved.id) { await remove("tasks", saved.id); renderDashboard(); toast("Cadastro desfeito."); }
-  };
-  return mountCapture(state.route === "professional" ? "profissional" : "pessoal", onCreate);
+  // A captura multi-tipo cria tarefas, eventos de agenda, notas, clientes e
+  // processos (com vínculo automático). Só precisamos redesenhar o Início.
+  return mountCapture(state.route === "professional" ? "profissional" : "pessoal", () => renderDashboard());
 }
 
 function dashCard(title, linkLabel, route, body) {
@@ -1268,6 +1261,7 @@ async function openClient(id) {
     ]),
     grauSection("Processos — 1º grau", meus.filter((p) => (p.grau || "1") !== "2"), "1", id),
     grauSection("Processos — 2º grau", meus.filter((p) => p.grau === "2"), "2", id),
+    attachmentsCard("clients", c),
     el("div", { class: "card" }, [
       el("div", { class: "card-title" }, `Tarefas do cliente (${minhasTarefas.length})`),
       minhasTarefas.length
@@ -1434,6 +1428,7 @@ async function openProcess(id, backFn) {
       timeline,
       el("div", { class: "and-add" }, [andInput, el("button", { class: "btn btn-sm", onclick: addAnd }, "Adicionar")]),
     ]),
+    attachmentsCard("processes", p),
     cliente ? el("div", { style: "text-align:center;margin-top:4px" }, [
       el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClient(cliente.id) }, "Abrir pasta do cliente →"),
     ]) : null,
@@ -1592,6 +1587,48 @@ function openAttachment(a) {
     const link = el("a", { href: a.data, download: a.name || "arquivo" });
     document.body.append(link); link.click(); link.remove();
   } catch { toast("Não foi possível abrir o anexo."); }
+}
+
+// Cartão de documentos (anexos) reutilizável — usado nas pastas de cliente e
+// processo. Mesma UX dos anexos de tarefa: listar, abrir, remover e adicionar.
+function attachmentsCard(table, record) {
+  let atts = Array.isArray(record.attachments) ? record.attachments.slice() : [];
+  const titleEl = el("div", { class: "card-title" }, "");
+  const listEl = el("div", { class: "att-list" });
+  const input = el("input", { type: "file", class: "hidden", multiple: "" });
+  const addBtn = el("button", { type: "button", class: "btn btn-ghost btn-sm" }, "📎 Anexar documento");
+  const draw = () => {
+    titleEl.textContent = `Documentos (${atts.length})`;
+    listEl.innerHTML = "";
+    if (!atts.length) { listEl.append(el("div", { class: "t2" }, "Nenhum documento anexado.")); return; }
+    atts.forEach((a, i) => listEl.append(el("div", { class: "att-item" }, [
+      el("span", { class: "att-ico" }, iconForType(a.type, a.name)),
+      el("span", { class: "att-name grow", onclick: () => openAttachment(a) }, a.name),
+      el("span", { class: "att-size t2" }, fmtBytes(a.size)),
+      el("button", { type: "button", class: "del", title: "Remover", onclick: async () => {
+        const [removido] = atts.splice(i, 1);
+        try { await update(table, record.id, { attachments: atts }); }
+        catch (e) { atts.splice(i, 0, removido); toast("Não consegui remover o documento. " + (e?.message || "")); }
+        draw();
+      } }, "×"),
+    ])));
+  };
+  addBtn.onclick = () => input.click();
+  input.onchange = async () => {
+    const chosen = [...input.files]; input.value = "";
+    addBtn.disabled = true; addBtn.textContent = "Lendo…";
+    const novos = await filesToAttachments(chosen, (m) => toast(m));
+    atts = atts.concat(novos);
+    try { await update(table, record.id, { attachments: atts }); } catch (e) { toast("Não consegui salvar (arquivo grande?). " + (e?.message || "")); }
+    addBtn.disabled = false; addBtn.textContent = "📎 Anexar documento";
+    draw();
+  };
+  draw();
+  return el("div", { class: "card" }, [
+    titleEl, listEl,
+    el("div", { style: "margin-top:8px" }, [addBtn, el("div", { class: "t2", style: "margin-top:4px" }, "Até 8 MB por arquivo (PDF, imagem, documento…).")]),
+    input,
+  ]);
 }
 
 // ==================== HELPERS ====================
