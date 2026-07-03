@@ -67,6 +67,16 @@ export function parseMoney(s) {
 
 function firstMatch(text, re) { const m = text.match(re); return m ? m[0] : ""; }
 
+// Limpa o ruído típico do texto extraído de PDF (pdf.js): muitos espaços entre
+// as palavras e traços soltos dentro de números ("028.466.390 - 51" → "028.466.390-51").
+export function precleanDoc(text) {
+  return (text || "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/(\d)[ \t]*-[ \t]*(\d)/g, "$1-$2")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
 // Formata 11 dígitos como CPF; 14 como CNPJ.
 function fmtDoc(digits) {
   if (digits.length === 11) return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
@@ -85,7 +95,10 @@ function cleanPersonName(s) {
   let n = clean(s).split(/[,;\n]/)[0];
   n = n.replace(/\b(brasileir[oa]|estrangeir[oa]|nacionalidade|natural|portador\w*|inscrit\w*|estado\s+civil|solteir\w*|casad\w*|divorciad\w*|vi[úu]v\w*|separad\w*|companheir\w*|uni[ãa]o|residente|domiciliad\w*|maior|capaz|advogad\w*|profiss\w*|ocupa\w*|do\s+lar|aposentad\w*)\b.*$/i, "").trim();
   n = n.replace(/^(?:vem|v[êe]m|venho|vimos|requer|requerem|comparece|prop[õo]e|isto\s+posto|serve|serve-se|exm[oa]\.?|sr[a]?\.?|dr[a]?\.?|a\s+seguir|respeitosamente)\s+/i, "").replace(/[\s.]+$/, "");
-  const words = n.split(/\s+/).filter(Boolean).slice(0, 6);
+  // remove lixo no início: UF solta ("RS"), iniciais/sozinhas de 1–2 letras.
+  let toks = n.split(/\s+/).filter(Boolean);
+  while (toks.length && /^[A-ZÀ-Ý]{1,2}$/.test(toks[0])) toks.shift();
+  const words = toks.slice(0, 8);
   return words.length >= 2 ? titleCaseName(words.join(" ")) : "";
 }
 
@@ -108,7 +121,7 @@ function guessName(text) {
 //  CLIENTE
 // ------------------------------------------------------------------
 export function extractClient(text) {
-  text = (text || "").replace(/\r/g, "");
+  text = precleanDoc(text);
   const out = { nome: "", cpf: "", rg: "", tel: "", email: "", nasc: null, endereco: "", area: "", origem: "", obs: "" };
 
   out.nome = labeled(text, "nome\\s+completo|nome\\s+do\\s+cliente|nome|cliente|requerente|autora?|contratante|outorgante") || guessName(text);
@@ -139,14 +152,16 @@ export function extractClient(text) {
     const m = text.match(/(?:residente\s+e\s+domiciliad[oa]|residente|domiciliad[oa])\s+(?:à|na|no|em)\s+([^\n]{6,200})/i);
     if (m) {
       let e = clean(m[1]);
-      const cepm = e.match(/^(.*?\bCEP[:\s]*\d{5}-?\d{3})/i);        // termina no CEP, se houver
+      const cepm = e.match(/^(.*?\bCEP[:\s]*\d{2}\.?\d{3}-?\d{3})/i);  // termina no CEP, se houver
       if (cepm) e = cepm[1];
-      else e = e.split(/\s*,?\s*\b(?:telefone|tel\.?|fone|celular|e-?mail|por\s+seu|por\s+sua|neste\s+ato|por\s+meio|pelo\s+presente|vem|venho|requer|prop[õo]e|serve[- ]se)\b/i)[0];
+      // corta antes da 2ª parte ("e FULANO,"), telefone, e-mail ou verbo
+      else e = e.split(/\s*,?\s*\b(?:telefone|tel\.?|fone|celular|e-?mail|por\s+seu|por\s+sua|neste\s+ato|por\s+meio|pelo\s+presente|vem|v[êe]m|venho|requer|prop[õo]e|serve[- ]se)\b/i)[0]
+                 .split(/,\s+e\s+[A-ZÀ-Ý]/)[0];
       endereco = clean(e).replace(/[,;]\s*$/, "");
     }
   }
-  const cep = firstMatch(text, /\b\d{5}-\d{3}\b/);
-  if (cep && !/\d{5}-\d{3}/.test(endereco)) endereco = clean(endereco + (endereco ? " — CEP " : "CEP ") + cep);
+  const cep = firstMatch(text, /\b\d{2}\.?\d{3}-\d{3}\b/);
+  if (cep && !/\d{2}\.?\d{3}-\d{3}/.test(endereco)) endereco = clean(endereco + (endereco ? " — CEP " : "CEP ") + cep);
   out.endereco = endereco;
 
   // ---- Reforços para textos em PROSA (ex.: petição inicial), sem rótulo ":" ----
@@ -158,8 +173,9 @@ export function extractClient(text) {
     // ou Título, 2 a 6 palavras) seguido da abertura da qualificação — funciona no
     // meio da linha, mesmo com o PDF quebrando o texto. Tem prioridade sobre o
     // rótulo genérico (que às vezes engole a qualificação inteira).
-    const QUALIF = "brasileir|estrangeir|nacionalidade|natural\\s+de|portador|portadora|inscrit|estado\\s+civil|solteir|casad|divorciad|vi[úu]v|separad|uni[ãa]o\\s+est[aá]vel|companheir|maior\\s+e\\s+capaz|advogad|profiss[ãa]o|residente\\s+e\\s+domiciliad";
-    const re = new RegExp("([A-ZÀ-Ý][\\p{L}]+(?:[ \\t]+(?:d[aeo]s?|e|[A-ZÀ-Ý][\\p{L}']+)){1,5})\\s*,\\s*(?:" + QUALIF + ")", "iu");
+    const QUALIF = "brasileir|estrangeir|nacionalidade|natural\\s+de|portador|portadora|inscrit|estado\\s+civil|solteir|casad|divorciad|vi[úu]v|separad|companheir|maior\\s+e\\s+capaz|advogad|profiss[ãa]o|residente\\s+e\\s+domiciliad";
+    // nome com até 8 palavras (nomes compostos/árabes longos) antes da qualificação.
+    const re = new RegExp("([A-ZÀ-Ý][\\p{L}]+(?:[ \\t]+(?:d[aeo]s?|e|[A-ZÀ-Ý][\\p{L}']+)){1,7})\\s*,\\s*(?:" + QUALIF + ")", "iu");
     const m = text.match(re);
     if (m) out.nome = m[1];
   }
@@ -183,7 +199,7 @@ export function extractClient(text) {
 //  PROCESSO
 // ------------------------------------------------------------------
 export function extractProcess(text) {
-  text = (text || "").replace(/\r/g, "");
+  text = precleanDoc(text);
   const nl = noAccent(text.toLowerCase());
   const out = { num: "", nome: "", tipo: "", vara: "", tribunal: "", partes: "", data_distribuicao: null, fase: "", valor: null, grau: "1", obs: "" };
 
@@ -197,10 +213,16 @@ export function extractProcess(text) {
     if (m) out.tipo = clean(m[1]).replace(/\b\p{L}+/gu, (w) => w.length <= 3 && /^(de|da|do|e)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   }
 
-  let vara = labeled(text, "vara|ju[ií]zo") || firstMatch(text, /(?:\d+[ªaº°]?\s*)?Vara\b[^\n,;.]*/i);
-  const comarca = labeled(text, "comarca|foro") || (firstMatch(text, /Comarca\s+de\s+[^\n,;.\/]+/i).replace(/^Comarca\s+de\s+/i, ""));
+  // Vara/juízo: rótulo, OU o endereçamento da petição ("…VARA … DA COMARCA DE
+  // CIDADE — UF"), parando na UF para não engolir o nome da parte que vem depois;
+  // OU uma "Xª Vara …" curta.
+  let vara = labeled(text, "vara|ju[ií]zo");
+  if (!vara) vara = firstMatch(text, /(?:\d+[ªaº°]?\s*)?Vara\b[^,;.\n]*?\bComarca\s+de\s+[A-Za-zÀ-ÿ.\s]+?\s*[-—\/]\s*[A-Z]{2}\b/i);
+  if (!vara) vara = firstMatch(text, /(?:\d+[ªaº°]?\s*)?Vara\b[^,;.\n—–]{0,50}/i);
+  vara = clean(vara);
+  const comarca = labeled(text, "comarca|foro") || firstMatch(text, /Comarca\s+de\s+[A-Za-zÀ-ÿ.\s]+?\s*[-—\/]\s*[A-Z]{2}\b/i).replace(/^Comarca\s+de\s+/i, "");
   // Evita repetir a comarca quando ela já aparece dentro da vara.
-  out.vara = clean([vara, comarca && !clean(vara).toLowerCase().includes(comarca.toLowerCase()) ? comarca : ""].filter(Boolean).join(" — "));
+  out.vara = clean([vara, comarca && !clean(vara).toLowerCase().includes(clean(comarca).toLowerCase()) ? comarca : ""].filter(Boolean).join(" — "));
 
   out.tribunal = labeled(text, "tribunal|[oó]rg[aã]o(?:\\s+julgador)?|c[aâ]mara|turma")
     || firstMatch(text, /\b(?:TJ[A-Z]{2}|TRF\s?-?\s?\d|TRT\s?-?\s?\d{1,2}|TJ\s?-?\s?[A-Z]{2}|STJ|STF|TST)\b/);
