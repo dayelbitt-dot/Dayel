@@ -196,12 +196,12 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     // Leitura dos campos de cliente/processo: IA (quando configurada) na frente,
     // regras (extract.js) preenchendo o que faltar. Se a IA não estiver
     // disponível, usa só as regras — sem travar.
-    let aiCli = null, aiProc = null;
+    let aiCli = null, aiProc = null, aiUsed = false;
     if (aiEnabled() && combined && (selected.has("cliente") || selected.has("processo"))) {
       status.textContent = "🤖 Lendo o documento com IA…";
-      try { const ai = await aiExtract(combined, [...selected].filter((k) => k === "cliente" || k === "processo")); if (ai) { aiCli = ai.cliente; aiProc = ai.processo; } } catch {}
+      try { const ai = await aiExtract(combined, [...selected].filter((k) => k === "cliente" || k === "processo")); if (ai) { aiCli = ai.cliente; aiProc = ai.processo; aiUsed = true; } } catch {}
     }
-    status.textContent = "";
+    status.textContent = aiUsed ? "🤖 Documento lido pela IA." : "";
     const exCli = mergeFields(aiCli, extractClient(combined));
     const exProc = mergeFields(aiProc, extractProcess(combined));
 
@@ -212,8 +212,8 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     for (const key of ORDER) {
       if (!selected.has(key)) continue;
       let ctrl = null;
-      if (key === "cliente") ctrl = buildClientCard(exCli, cmdCli);
-      else if (key === "processo") ctrl = buildProcessCard(exProc, det, clients, bothCliProc, cmdCli, exCli.nome);
+      if (key === "cliente") ctrl = buildClientCard(exCli, cmdCli, aiUsed);
+      else if (key === "processo") ctrl = buildProcessCard(exProc, det, clients, bothCliProc, cmdCli, exCli.nome, aiUsed);
       else if (key === "tarefa") ctrl = buildTaskCard(parsed, det, clients, processes, userText);
       else if (key === "agenda") ctrl = buildAgendaCard(parsed, userText);
       else if (key === "nota") ctrl = buildNoteCard(parsed, userText);
@@ -385,14 +385,16 @@ function mergeFields(ai, heur) {
 
 function cardShell(ico, title, autofilled, children) {
   const head = el("div", { class: "cap-card-head" }, [icon(ico), el("span", {}, title)]);
-  if (autofilled) head.append(el("span", { class: "cap-autofill" }, "✨ preenchido automaticamente"));
+  // autofilled: 'ai' → preenchido pela IA · true → preenchido pelas regras
+  if (autofilled === "ai") head.append(el("span", { class: "cap-autofill" }, "🤖 preenchido pela IA"));
+  else if (autofilled) head.append(el("span", { class: "cap-autofill" }, "✨ preenchido automaticamente"));
   return el("div", { class: "cap-card" }, [head, ...children]);
 }
 function hasAny(obj, keys) { return keys.some((k) => obj[k] != null && obj[k] !== "" && obj[k] !== "1"); }
 
 // ---------- CLIENTE ----------
-function buildClientCard(ex, cmdName) {
-  const auto = !!cmdName || hasAny(ex, ["nome", "cpf", "rg", "tel", "email", "nasc", "endereco", "area", "origem", "obs"]);
+function buildClientCard(ex, cmdName, aiUsed) {
+  const auto = aiUsed ? "ai" : (!!cmdName || hasAny(ex, ["nome", "cpf", "rg", "tel", "email", "nasc", "endereco", "area", "origem", "obs"]));
   // Nome dito na instrução ("cadastre o cliente Fulano") tem prioridade; o resto
   // (CPF, RG, endereço…) vem do documento anexado.
   const nome = inp("Nome completo *", cmdName || ex.nome, { required: "" });
@@ -423,8 +425,8 @@ function buildClientCard(ex, cmdName) {
 }
 
 // ---------- PROCESSO ----------
-function buildProcessCard(ex, det, clients, linkedToNewClient, cmdName, newClientName) {
-  const auto = hasAny(ex, ["num", "tipo", "vara", "tribunal", "partes", "data_distribuicao", "fase", "valor"]) || ex.grau === "2";
+function buildProcessCard(ex, det, clients, linkedToNewClient, cmdName, newClientName, aiUsed) {
+  const auto = aiUsed ? "ai" : (hasAny(ex, ["num", "tipo", "vara", "tribunal", "partes", "data_distribuicao", "fase", "valor"]) || ex.grau === "2");
   const num = inp("0000000-00.0000.8.21.0000", ex.num);
   // Nome sugerido: "Tipo — Cliente". Quando o Cliente também está sendo criado,
   // usa o nome dito na instrução / extraído do cliente novo; senão, o cliente
