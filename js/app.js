@@ -1230,7 +1230,8 @@ async function openClient(id) {
   const [clients, procs, tasks] = await Promise.all([list("clients"), list("processes"), list("tasks")]);
   const c = clients.find((x) => x.id === id);
   if (!c) { renderClients(); return; }
-  const meus = procs.filter((p) => p.client_id === id);
+  // Processos onde este cliente é o principal OU um dos vinculados (client_ids).
+  const meus = procs.filter((p) => p.client_id === id || (Array.isArray(p.client_ids) && p.client_ids.includes(id)));
   // Só tarefas profissionais aparecem na pasta do cliente.
   // As pessoais vinculadas a um cliente são referência privada (ficam só no cadastro pessoal).
   const minhasTarefas = tasks.filter((t) => t.client_id === id && t.area === "profissional" && !t.done);
@@ -1374,9 +1375,13 @@ async function openProcess(id, backFn) {
   const p = procs.find((x) => x.id === id);
   if (!p) { back(); return; }
   const cliente = clients.find((c) => c.id === p.client_id);
+  // Todos os clientes vinculados (principal + client_ids), sem repetir.
+  const vinculadosIds = [...new Set([p.client_id, ...(Array.isArray(p.client_ids) ? p.client_ids : [])].filter(Boolean))];
+  const clientesVinc = vinculadosIds.map((cid) => clients.find((c) => c.id === cid)).filter(Boolean);
+  const clientesLabel = clientesVinc.length ? clientesVinc.map((c) => c.nome).join(", ") : (cliente ? cliente.nome : "");
 
   const linhas = [
-    ["Número", p.num], ["Cliente", cliente ? cliente.nome : ""], ["Grau", p.grau === "2" ? "2º grau" : "1º grau"],
+    ["Número", p.num], [clientesVinc.length > 1 ? "Clientes" : "Cliente", clientesLabel], ["Grau", p.grau === "2" ? "2º grau" : "1º grau"],
     ["Tipo de ação", p.tipo],
     ["Vara / Juízo", p.vara], ["Tribunal", p.tribunal], ["Partes contrárias", p.partes],
     ["Distribuição", p.data_distribuicao ? prettyDate(p.data_distribuicao) : ""],
@@ -1429,9 +1434,9 @@ async function openProcess(id, backFn) {
       el("div", { class: "and-add" }, [andInput, el("button", { class: "btn btn-sm", onclick: addAnd }, "Adicionar")]),
     ]),
     attachmentsCard("processes", p),
-    cliente ? el("div", { style: "text-align:center;margin-top:4px" }, [
-      el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClient(cliente.id) }, "Abrir pasta do cliente →"),
-    ]) : null,
+    clientesVinc.length ? el("div", { style: "text-align:center;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center" },
+      clientesVinc.map((c) => el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClient(c.id) }, "Abrir pasta de " + c.nome.split(/\s+/)[0] + " →"))
+    ) : null,
   );
   removeFab();
 }

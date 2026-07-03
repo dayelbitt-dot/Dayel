@@ -33,6 +33,12 @@ No topo do **Início** há uma caixa onde você pode:
 > Silva"*. O app marca sozinho o destino, **puxa os dados da pessoa do documento**
 > (nome, CPF, RG, endereço…) e cria o cadastro. Diga *"cadastre o processo"* e ele
 > lê os dados do processo e **já vincula ao cliente correspondente já cadastrado**.
+>
+> 👥 **Várias partes de uma vez:** *"cadastre as duas partes"* / *"cadastre os
+> clientes Saher e Cláudia"* / *"cadastre todas as partes"* cria **um cadastro por
+> parte** e **vincula o mesmo processo a todas** (litisconsórcio, divórcio
+> consensual). Seu cliente pode ser o **réu**: diga *"cadastre o réu"* / *"cadastre
+> a requerida"*, ou nomeie a pessoa (o app procura nos dois lados do processo).
 
 > 💾 **Rascunho automático:** o que você escreve, dita ou anexa fica **salvo neste aparelho** enquanto você não gera nem cancela. Pode sair da tela, fechar o app ou o navegador e, ao voltar, **continua de onde parou** — inclusive os destinos que já tinha marcado.
 
