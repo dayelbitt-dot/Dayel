@@ -320,9 +320,17 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
   <section id="mode-output" class="mode hidden">
     <div class="panel">
       <h2><span class="ic">✦</span> Seu metaprompt</h2>
-      <p class="hint">Estruturado em <strong>5 pilares de um prompt perfeito</strong> — <strong>1) Input arquitetônico · 2) Câmera e composição · 3) Sistema de luz · 4) Materiais e texturas · 5) Vida e atmosfera</strong>. Em <strong>português</strong> e <strong>editável</strong>: ajuste o texto por seção. Quando terminar, clique em <strong>Traduzir para inglês</strong> e cole na IA (anexe as imagens junto).</p>
+      <p class="hint">Começa com a <strong>Instrução padrão (ordem)</strong> — que obriga a IA a seguir o prompt à risca, replicar fielmente a imagem anexada e obedecer 100% ao negative prompt. Em seguida, o prompt em <strong>5 pilares</strong> (input arquitetônico · câmera · luz · materiais · vida/atmosfera), em <strong>português e editável</strong>. Ajuste, clique em <strong>Traduzir para inglês</strong> e cole na IA (no Google Flow, use <strong>Copiar tudo</strong>).</p>
 
       <div id="warn-slot"></div>
+
+      <div class="out-block" id="order-block">
+        <div class="out-head">
+          <h3><span class="dot" style="background:var(--gold-deep)"></span> Instrução padrão (ordem) <span style="text-transform:none;letter-spacing:0;font-weight:400">— cole no topo</span></h3>
+          <button class="btn sm" data-copy="order">⧉ Copiar</button>
+        </div>
+        <textarea class="code" id="out-order" spellcheck="false"></textarea>
+      </div>
 
       <div class="out-block">
         <div class="out-head">
@@ -832,6 +840,7 @@ const GROUPS = [
     title:"Onde você vai gerar a imagem?", sub:"Ajusta o formato do metaprompt e os parâmetros.",
     options:[
       {id:"nano", pt:"Nano Banana (Gemini)", en:"Nano Banana", k:["nano banana","nano-banana","nanobanana","nano","banana","gemini","google gemini","gemini image","gemini 2.5"]},
+      {id:"flow", pt:"Google Flow (Veo / Imagen)", en:"Google Flow", k:["google flow","flow","veo","veo 3","imagen flow"]},
       {id:"mj", pt:"Midjourney v6", en:"Midjourney", k:["midjourney","mj"]},
       {id:"sd", pt:"Stable Diffusion", en:"Stable Diffusion", k:["stable diffusion","sd","automatic1111","comfyui","flux"]},
       {id:"dalle", pt:"DALL·E 3 / ChatGPT", en:"DALL-E 3", k:["dalle","dall-e","chatgpt","openai"]},
@@ -1370,7 +1379,7 @@ function buildTags(model){
 }
 
 const SD_LIKE=["sd","flux","sdxl","sd3"];
-const NARR_MODELS=["nano","dalle","firefly","leonardo","ideogram","krea","recraft","freepik","imagen"];
+const NARR_MODELS=["nano","dalle","flow","firefly","leonardo","ideogram","krea","recraft","freepik","imagen"];
 const ENGINE_MODELS=["ue5","vray","octane","twinmotion","d5","lumion","enscape","blender"];
 function buildPrompt(){
   const model=state.sel.model||"nano";
@@ -1385,6 +1394,8 @@ function buildPrompt(){
       params=`Onde colar: Google AI Studio ou app Gemini → modelo de imagem "Nano Banana" (Gemini 2.5 Flash Image).\n1. Cole o metaprompt acima.\n2. Se você tem imagens de referência, ANEXE elas junto na mesma mensagem — o Nano Banana usa as imagens para reproduzir seu projeto.\n3. Peça explicitamente a proporção ${ar}.`;
     } else if(model==="dalle"){
       params=`Onde colar: ChatGPT (DALL·E 3) ou Bing Image Creator.\n1. Cole o metaprompt acima.\n2. Anexe as imagens de referência quando possível.\n3. Proporção sugerida: ${ar}. O DALL·E responde melhor a linguagem descritiva.`;
+    } else if(model==="flow"){
+      params=`Onde colar: Google Flow → campo de prompt.\n1. Como o Flow tem UM só campo de texto, use "⧉ Copiar tudo": ele junta a INSTRUÇÃO PADRÃO (ordem) + o prompt + o NEGATIVE PROMPT já como "não incluir".\n2. Anexe a imagem do seu projeto como referência (frames/ingredientes).\n3. Peça a proporção ${ar}.\nDica: traduza para inglês antes de colar (o Veo/Imagen respondem melhor em inglês).`;
     } else {
       params=`Onde colar: ${toolName}.\n1. Cole o metaprompt acima (linguagem descritiva).\n2. Anexe as imagens de referência quando a ferramenta permitir.\n3. Proporção sugerida: ${ar}.`;
     }
@@ -1446,12 +1457,37 @@ function buildRational(){
   return warnHtml+`<ul>${bits.map(b=>`<li>${b}</li>`).join("")}</ul>`;
 }
 
+function buildOrder(){
+  const hasImg=state.project.length>0;
+  return [
+    "ORDEM — SIGA À RISCA:",
+    "1) Cumpra este prompt integralmente, sem adicionar, remover ou reinterpretar nada.",
+    hasImg
+      ? "2) Reproduza FIELMENTE a imagem de referência anexada — mesma geometria, volumetria, aberturas, materiais e cores exatas; não redesenhe nem reinvente o edifício."
+      : "2) Respeite integralmente a descrição do projeto, sem inventar elementos não citados.",
+    "3) OBEDEÇA 100% AO NEGATIVE PROMPT: nenhum item listado nele pode aparecer na imagem, em hipótese alguma.",
+    "4) Gere uma única imagem fotorrealista de arquitetura, exatamente conforme o descrito a seguir."
+  ].join("\n");
+}
+function buildOrderEN(){
+  const hasImg=state.project.length>0;
+  return [
+    "ORDER — FOLLOW STRICTLY:",
+    "1) Execute this prompt in full, without adding, removing or reinterpreting anything.",
+    hasImg
+      ? "2) Faithfully reproduce the attached reference image — same geometry, massing, openings, materials and exact colors; do not redesign or reinvent the building."
+      : "2) Fully respect the project description; do not invent elements that are not mentioned.",
+    "3) OBEY THE NEGATIVE PROMPT 100%: none of the listed items may appear in the image under any circumstance.",
+    "4) Generate a single photorealistic architectural image, exactly as described below."
+  ].join("\n");
+}
 function generate(){
   const anySel=GROUPS.some(g=>{const s=state.sel[g.id];return Array.isArray(s)?s.length:s;});
   const anyFree=Object.values(state.free).some(v=>v&&v.trim());
   if(!anySel&&!anyFree){toast("Selecione ao menos uma opção 🙂");return;}
   if(!state.sel.model)state.sel.model="nano";
   const b=buildPrompt();
+  $("#out-order").value=buildOrder();
   $("#out-prompt").value=b.prompt;
   $("#prompt-label").textContent=b.label;
   $("#out-neg").value=b.neg;
@@ -1559,7 +1595,8 @@ async function translateToEnglish(){
     }
     if(!out)throw lastErr||new Error("tradução vazia");
     ta.value=out;
-    note.textContent="✓ Traduzido para inglês. Você pode editar e copiar. (Gere de novo para voltar ao português.)";
+    const ob=$("#out-order"); if(ob&&ob.value.trim()) ob.value=buildOrderEN();
+    note.textContent="✓ Traduzido para inglês (instrução + prompt). Você pode editar e copiar. (Gere de novo para voltar ao português.)";
     toast("Traduzido para inglês ✓");
   }catch(e){ note.textContent="Não consegui traduzir: "+String(e.message||e).slice(0,150); }
   finally{ translating=false; btn.disabled=false; btn.textContent=old; }
@@ -1568,14 +1605,16 @@ async function translateToEnglish(){
 /* ---- Copy ---- */
 function copyText(kind){
   let txt="";
-  if(kind==="prompt")txt=$("#out-prompt").value;
+  if(kind==="order")txt=$("#out-order").value;
+  else if(kind==="prompt")txt=$("#out-prompt").value;
   else if(kind==="neg")txt=$("#out-neg").value;
   else if(kind==="params")txt=$("#out-params").textContent;
   else if(kind==="all"){
+    const o=$("#out-order").value?`${$("#out-order").value}\n\n`:"";
     const p=$("#out-prompt").value;
-    const n=$("#neg-block").classList.contains("hidden")?"":`\n\n— NEGATIVE PROMPT —\n${$("#out-neg").value}`;
+    const n=$("#neg-block").classList.contains("hidden")?"":`\n\n— NEGATIVE PROMPT (não incluir / do not include) —\n${$("#out-neg").value}`;
     const pa=$("#params-block").classList.contains("hidden")?"":`\n\n— COMO USAR —\n${$("#out-params").textContent}`;
-    txt=`${p}${n}${pa}`;
+    txt=`${o}${p}${n}${pa}`;
   }
   navigator.clipboard?.writeText(txt).then(()=>toast("Copiado ✓")).catch(()=>{
     const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Copiado ✓");
