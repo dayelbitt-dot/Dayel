@@ -39,10 +39,16 @@ const CLIENTE_PROPS = {
 };
 const TOOL = {
   name: "registrar",
-  description: "Registra os dados extraídos do documento nos campos dos clientes e do processo.",
+  description: "Interpreta o COMANDO do usuário e registra os dados extraídos nos campos dos clientes e do processo.",
   input_schema: {
     type: "object",
     properties: {
+      destinos: {
+        type: "array",
+        description:
+          "O que o usuário pediu para CRIAR, deduzido do COMANDO (mesmo curto e direto). Valores: 'cliente', 'processo', 'tarefa', 'agenda', 'nota'. Ex.: 'cadastre a cliente' → ['cliente']; 'cadastre o cliente e o processo' → ['cliente','processo']; 'cadastre as duas partes e abra o processo' → ['cliente','processo']; 'anotar reunião' → ['nota']; 'agendar audiência sexta' → ['agenda']; 'criar tarefa contestar' → ['tarefa']. Se o comando não disser o destino mas houver um documento com partes, use ['cliente'].",
+        items: { type: "string", enum: ["cliente", "processo", "tarefa", "agenda", "nota"] },
+      },
       clientes: {
         type: "array",
         description: "TODAS as partes REPRESENTADAS (nossos clientes): requerentes, autores, exequentes, outorgantes. Em divórcio consensual, AMBOS os cônjuges são clientes. NUNCA inclua a parte contrária aqui.",
@@ -65,19 +71,19 @@ const TOOL = {
         },
       },
     },
-    required: ["clientes", "processo"],
+    required: ["destinos", "clientes", "processo"],
   },
 };
 
 const SYSTEM = [
-  "Você é um assistente jurídico brasileiro que extrai dados de documentos (petições, fichas, contratos, procurações).",
-  "Preencha APENAS o que estiver escrito no documento. Se um campo não aparecer, deixe-o como string vazia (ou omita). NUNCA invente dados.",
-  "Os CLIENTES são as partes representadas pelo advogado. Podem ser o(s) AUTOR(es)/requerente(s) OU o(s) RÉU(s)/requerido(s) — o advogado pode representar qualquer lado.",
-  "Se houver INSTRUÇÃO do usuário no início do texto (ex.: 'cadastre o réu', 'cadastre a requerida', 'cadastre Fulano e Beltrano', 'cadastre as duas partes'), SIGA a instrução para decidir quais partes vão em 'clientes'.",
-  "Sem instrução explícita, assuma que os clientes são os requerentes/autores. Em divórcio consensual ou litisconsórcio há MAIS DE UMA parte no mesmo lado — liste TODAS.",
+  "Você é um assistente jurídico brasileiro. Recebe um COMANDO do usuário (a ordem dele) e, opcionalmente, o texto de um DOCUMENTO. Sua tarefa é INTERPRETAR o comando e devolver o plano de ação já pronto para o app executar.",
+  "PRIMEIRO, leia o COMANDO e preencha 'destinos' com o que ele pediu para criar (cliente, processo, tarefa, agenda, nota). Comandos curtos e diretos contam igual: 'cadastre a cliente' → destinos ['cliente']; 'cadastre o cliente e o processo' → ['cliente','processo']. Se não houver comando explícito mas houver documento com partes, use ['cliente'].",
+  "Preencha APENAS o que estiver escrito no comando ou no documento. Se um campo não aparecer, deixe-o vazio (ou omita). NUNCA invente dados.",
+  "Os CLIENTES são as partes representadas pelo advogado. Podem ser o(s) AUTOR(es)/requerente(s) OU o(s) RÉU(s)/requerido(s) — o advogado pode representar qualquer lado. OBEDEÇA ao comando: 'cadastre o réu'/'cadastre a requerida' → cliente é a parte passiva; 'cadastre o autor' → parte ativa; 'cadastre Fulano e Beltrano' → só esses; 'cadastre as duas partes'/'todas as partes' → todas as partes do mesmo lado.",
+  "Se o comando NÃO especificar o lado nem os nomes, assuma que os clientes são os requerentes/autores. Em divórcio consensual ou litisconsórcio há MAIS DE UMA parte no mesmo lado — liste TODAS.",
   "As partes do outro lado (as que NÃO são clientes) vão em processo.partes.",
+  "Quando o comando trouxer os DADOS diretamente (ex.: 'cadastre a cliente Fabiana Royer, brasileira, casada, CPF 000...'), extraia esses dados do próprio comando.",
   "Datas SEMPRE no formato aaaa-mm-dd. CPF no formato 000.000.000-00. Valor da causa como número em reais (ex.: 30000).",
-  "Estado civil, profissão, nacionalidade e filiação de cada cliente vão no obs dele.",
   "Responda chamando a ferramenta 'registrar'.",
 ].join(" ");
 
@@ -86,11 +92,20 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return j({ error: "método não permitido" }, 405);
   if (!KEY) return j({ error: "ANTHROPIC_API_KEY não configurada no servidor" }, 500);
 
-  let body: { text?: string; want?: string[] };
+  let body: { text?: string; command?: string; want?: string[] };
   try { body = await req.json(); } catch { return j({ error: "JSON inválido" }, 400); }
   const text = (body.text || "").slice(0, 40000);
-  if (!text.trim()) return j({ clientes: [], processo: {} });
-  const want = Array.isArray(body.want) && body.want.length ? body.want.join(" e ") : "cliente e processo";
+  const command = (body.command || "").slice(0, 2000).trim();
+  // Precisa de pelo menos UM: a ordem do usuário OU um documento.
+  if (!text.trim() && !command) return j({ destinos: [], clientes: [], processo: {} });
+  const want = Array.isArray(body.want) && body.want.length ? body.want.join(" e ") : "";
+
+  // Monta a mensagem: o COMANDO primeiro (é a ordem a interpretar), depois o documento.
+  const partes = [];
+  if (command) partes.push(`COMANDO DO USUÁRIO (interprete e obedeça):\n"""\n${command}\n"""`);
+  if (text.trim()) partes.push(`DOCUMENTO ANEXADO:\n"""\n${text}\n"""`);
+  if (want) partes.push(`O usuário já marcou estes destinos na tela: ${want}. Respeite-os.`);
+  const userMsg = partes.join("\n\n");
 
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -102,7 +117,7 @@ Deno.serve(async (req) => {
         system: SYSTEM,
         tools: [TOOL],
         tool_choice: { type: "tool", name: "registrar" },
-        messages: [{ role: "user", content: `Extraia os dados para: ${want}.\n\nDOCUMENTO:\n"""\n${text}\n"""` }],
+        messages: [{ role: "user", content: userMsg }],
       }),
     });
     const data = await resp.json();
@@ -110,7 +125,8 @@ Deno.serve(async (req) => {
     const tu = (data.content || []).find((c: { type: string }) => c.type === "tool_use");
     const out = tu?.input || {};
     const clientes = Array.isArray(out.clientes) ? out.clientes : (out.cliente ? [out.cliente] : []);
-    return j({ clientes, processo: out.processo || {} });
+    const destinos = Array.isArray(out.destinos) ? out.destinos : [];
+    return j({ destinos, clientes, processo: out.processo || {} });
   } catch (e) {
     return j({ error: String((e as Error)?.message || e) }, 500);
   }

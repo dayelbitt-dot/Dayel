@@ -183,55 +183,69 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     const docText = attachments.map((a) => a.text).filter(Boolean).join("\n\n"); // conteúdo dos documentos
     if (!userText && !docText && !attachments.length) { textarea.focus(); return; }
 
-    // Se o usuário não mexeu nos destinos, deduz da instrução ("cadastre o
-    // cliente/processo", "criar nota", "agendar…").
-    if (!typesTouched) { const intent = intentFromText(userText); if (intent.size) { selected.clear(); intent.forEach((k) => selected.add(k)); paintTypes(); } }
-    if (!selected.size) { toast("Escolha ao menos um destino (Tarefa, Agenda, Nota, Cliente ou Processo)."); return; }
-
     status.textContent = "Analisando…";
-    // IMPORTANTE: para EXTRAIR os dados, tira a instrução ("cadastre o cliente…")
-    // do texto — senão o próprio comando viraria nome/dado. Sobra só o que o
-    // usuário digitou como DADO (se houver) + o conteúdo do documento.
+    // Para as REGRAS (extract.js) tiramos a instrução do texto — senão o próprio
+    // comando viraria nome/dado. Sobra só o que o usuário digitou como DADO + o doc.
     const dataText = stripCommand(userText);
     const combined = [dataText, docText].filter(Boolean).join("\n\n");
     const cmdCli = commandName(userText, "cliente");                          // nome dito na instrução, se houver
+
+    // ---- IA lê o COMANDO + o documento e devolve o plano já interpretado ----
+    // (destinos a criar, partes que são clientes e seus dados, processo). Se a IA
+    // não estiver disponível, tudo cai nas regras abaixo — nada trava.
+    let aiClientes = null, aiProc = null, aiDest = null, aiUsed = false;
+    if (aiEnabled() && (userText || docText)) {
+      status.textContent = docText ? "🤖 Lendo o comando e o documento com IA…" : "🤖 Interpretando o comando com IA…";
+      try {
+        const want = typesTouched ? [...selected] : null;                     // se o usuário marcou à mão, respeita; senão a IA decide
+        const ai = await aiExtract(docText, want, userText);
+        if (ai) { aiClientes = ai.clientes; aiProc = ai.processo; aiDest = ai.destinos; aiUsed = true; }
+      } catch {}
+    }
+
+    // ---- Destinos: usuário à mão > IA interpretando o comando > regras (intentFromText) ----
+    if (!typesTouched) {
+      let intent = (aiDest && aiDest.length) ? new Set(aiDest.filter((k) => ORDER.includes(k))) : null;
+      if (!intent || !intent.size) intent = intentFromText(userText);
+      if (intent && intent.size) { selected.clear(); intent.forEach((k) => selected.add(k)); paintTypes(); }
+    }
+    if (!selected.size) { status.textContent = ""; toast("Escolha ao menos um destino (Tarefa, Agenda, Nota, Cliente ou Processo)."); return; }
+    status.textContent = aiUsed ? "🤖 Comando interpretado pela IA." : "";
 
     let clients = [], processes = [];
     try { [clients, processes] = await Promise.all([list("clients", { orderBy: "nome", asc: true }), list("processes")]); } catch {}
     const det = detectLinks(combined, clients, processes);                    // detecta cliente/processo já cadastrados (inclui o doc)
     const parsed = parseNaturalTask(userText, defaultArea) || { title: userText, area: defaultArea, priority: "media", due_date: null, due_time: null };
-
-    // Leitura dos campos de cliente/processo: IA (quando configurada) na frente,
-    // regras (extract.js) preenchendo o que faltar. Se a IA não estiver
-    // disponível, usa só as regras — sem travar.
-    let aiClientes = null, aiProc = null, aiUsed = false;
-    if (aiEnabled() && combined && (selected.has("cliente") || selected.has("processo"))) {
-      status.textContent = "🤖 Lendo o documento com IA…";
-      try { const ai = await aiExtract(combined, [...selected].filter((k) => k === "cliente" || k === "processo")); if (ai) { aiClientes = ai.clientes; aiProc = ai.processo; aiUsed = true; } } catch {}
-    }
-    status.textContent = aiUsed ? "🤖 Documento lido pela IA." : "";
     const exProc = mergeFields(aiProc, extractProcess(combined));
 
     // ---- Lista de CLIENTES a cadastrar (uma OU várias partes) ----
     const clientCmd = parseClientCommand(userText);      // { mode: one|all|named, names: [], side }
     let parties = [];
     if (selected.has("cliente")) {
-      // Ao indicar por NOME, procura em ambos os lados (o cliente pode ser o réu).
-      const side = clientCmd.mode === "named" ? "ambos" : clientCmd.side;
-      const regras = extractClients(combined, side);
       const ia = (aiUsed && Array.isArray(aiClientes)) ? aiClientes.filter((p) => p && (p.nome || p.cpf)) : [];
-      if (clientCmd.mode === "one") {
-        parties = [ia[0] || regras[0] || extractClient(combined) || {}];
-        if (!parties[0].nome && cmdCli) parties[0] = { ...parties[0], nome: cmdCli };
+      if (ia.length) {
+        // A IA já leu o comando e decidiu QUAIS e QUANTAS partes são clientes
+        // (e de que lado). Confiamos nela — é exatamente o que o usuário pediu.
+        parties = (clientCmd.mode === "named" && clientCmd.names.length)
+          ? pickNamed(ia, clientCmd.names)
+          : ia;
       } else {
-        // "todas as partes": usa a fonte com MAIS partes (a IA antiga pode devolver
-        // só 1; as regras acham todas). Assim nunca cadastra menos que o documento tem.
-        parties = ia.length >= regras.length ? ia : regras;
-        if (!parties.length) { const c = extractClient(combined); if (c.nome || c.cpf) parties = [c]; }
-        if (clientCmd.mode === "named" && clientCmd.names.length) {
-          parties = clientCmd.names.map((nm) => parties.find((p) => nameMatches(p.nome, nm)) || { nome: nm });
+        // Sem IA: cai nas regras. Ao indicar por NOME, procura em ambos os lados
+        // (o cliente pode ser o réu).
+        const side = clientCmd.mode === "named" ? "ambos" : clientCmd.side;
+        const regras = extractClients(combined, side);
+        if (clientCmd.mode === "one") {
+          parties = [regras[0] || extractClient(combined) || {}];
+          if (!parties[0].nome && cmdCli) parties[0] = { ...parties[0], nome: cmdCli };
+        } else {
+          parties = regras.slice();
+          if (!parties.length) { const c = extractClient(combined); if (c.nome || c.cpf) parties = [c]; }
+          if (clientCmd.mode === "named" && clientCmd.names.length) {
+            parties = pickNamed(parties, clientCmd.names);
+          }
         }
       }
+      if (!parties.length) parties = [{}];   // ao menos um cartão vazio para preencher à mão
     }
     const partyNames = parties.map((p) => p.nome).filter(Boolean);
 
@@ -776,6 +790,17 @@ function cleanNameFragment(s) {
   const bloq = new Set(["fulano", "beltrano", "sicrano", "peticao", "anexa", "anexo", "documento", "cliente", "clientes", "parte", "partes", "todas", "todos", "ambas", "ambos"]);
   if (!parts.length || bloq.has(first)) return "";
   return parts.join(" ").split(/\s+/).map((w) => /^(d[aeo]s?|e)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+// Casa cada nome pedido ("Saher", "Cláudia") com a parte lida correspondente.
+// Se o único "match" for um bloco que também casa com outro nome pedido
+// (ex.: uma parte lida como "Saher e Cláudia"), ignora o bloco e cria a parte
+// só com o nome — assim cada nome vira um cartão separado.
+function pickNamed(pool, names) {
+  return names.map((nm) => {
+    const clean = pool.find((p) => nameMatches(p.nome, nm) &&
+      !names.some((o) => o !== nm && nameMatches(p.nome, o)));
+    return clean || { nome: nm };
+  });
 }
 // Nome A "casa" com o nome B? (um contém o outro, ou compartilham a maioria dos tokens)
 function nameMatches(a, b) {
