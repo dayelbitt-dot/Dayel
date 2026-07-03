@@ -299,6 +299,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 .cap-card-head .cap-ico { font-size: 17px; }
 .cap-linknote { font-size: 12px; background: rgba(91,140,255,.12); border: 1px solid rgba(91,140,255,.35); color: var(--accent-2, var(--accent)); border-radius: 10px; padding: 8px 10px; font-weight: 600; }
 .cap-autofill { font-size: 11px; font-weight: 600; color: var(--green, #1A6B5A); background: rgba(52,211,153,.14); border-radius: 999px; padding: 2px 8px; margin-left: auto; }
+.cap-cardfoot { margin-top: 4px; }
+.cap-cardbtn { padding: 9px; font-size: 14px; }
+.cap-card-done { opacity: .7; border-color: var(--green, #1A6B5A); }
+.cap-card-done .cap-cardbtn { background: rgba(52,211,153,.16); color: var(--green, #1A6B5A); border: 1px solid rgba(52,211,153,.4); }
 
 /* Toast */
 .toast-host { position: fixed; left: 0; right: 0; bottom: 84px; z-index: 60; display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
