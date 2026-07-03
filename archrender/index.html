@@ -893,7 +893,7 @@ function checkContradictions(){
 /* =========================================================================
    REFERENCE clause
    ========================================================================= */
-const FIDELITY_LOCK = "FIDELIDADE ABSOLUTA — NÃO REDESENHE. A imagem do PROJETO anexada é a única fonte da verdade e deve ser reproduzida com 100% de precisão. NÃO adicione, remova, mova, redimensione, duplique, oculte nem redesenhe NENHUM elemento: mantenha exatamente as mesmas janelas (mesma quantidade, tamanho, posição, subdivisões e caixilhos), as mesmas portas e aberturas, as mesmas paredes, pilares, vigas, guarda-corpos, escadas e varandas, o mesmo formato e inclinação do telhado, os mesmos volumes, recuos, número de pavimentos e pés-direitos, e a mesma composição e proporções da fachada. Não invente elementos, mobiliário, decoração ou objetos que não aparecem na imagem do projeto, e não remova nenhum que apareça. Não mude o desenho, a geometria, o layout nem os materiais do edifício. Você só pode alterar o tratamento fotográfico — iluminação, horário, céu, atmosfera, ângulo de câmera com moderação e a qualidade fotorrealista dos MESMOS materiais existentes. O desenho do edifício deve permanecer idêntico ao da imagem do projeto.";
+const FIDELITY_LOCK = "FIDELIDADE ABSOLUTA — NÃO REDESENHE. A imagem do PROJETO anexada é a única fonte da verdade e deve ser reproduzida com 100% de precisão. NÃO adicione, remova, mova, redimensione, duplique, oculte nem redesenhe NENHUM elemento: mantenha exatamente as mesmas janelas (mesma quantidade, tamanho, posição, subdivisões e caixilhos), as mesmas portas e aberturas, as mesmas paredes, pilares, vigas, guarda-corpos, escadas e varandas, o mesmo formato e inclinação do telhado, os mesmos volumes, recuos, número de pavimentos e pés-direitos, e a mesma composição e proporções da fachada. Não invente elementos, mobiliário, decoração ou objetos que não constam na imagem do projeto, e não suprima nenhum que conste. Não altere o partido, a geometria, a implantação, os materiais NEM AS CORES do edifício. Preserve 100% as cores exatas do projeto — as mesmas tonalidades (matiz), valores e saturação de cada superfície e material; não re-tinja, não esquente nem esfrie nenhuma cor, e mantenha a mesma resposta cromática dos revestimentos. Só é admitido alterar o tratamento fotográfico — regime de iluminação, horário, céu, atmosfera, parâmetros de câmera com parcimônia e a fidelidade fotorrealista dos MESMOS materiais e das MESMAS cores existentes. O partido arquitetônico deve permanecer idêntico ao da imagem do projeto.";
 function referenceClause(){
   const parts=[];
   if(state.project.length)
@@ -907,8 +907,8 @@ function imgCount(){return state.project.length+state.refs.length;}
 /* =========================================================================
    METAPROMPT GENERATION
    ========================================================================= */
-const EDITORIAL = "FOTOGRAFIA DE ARQUITETURA EDITORIAL, QUALIDADE DE REVISTA — enquadre e ilumine como a foto de destaque de página inteira de uma grande revista de arquitetura (Dezeen, ArchDaily, Wallpaper*, Architectural Digest) documentando uma obra premiada. Deve parecer curada, cinematográfica e tridimensional, NUNCA chapada, dura, sem graça ou com cara de foto casual. Use iluminação dimensional e escultural: luz principal suave e direcional, com preenchimento sutil e um leve contraluz, para que os volumes e materiais tenham rica gradação tonal e profundidade; composição em camadas com primeiro plano, plano médio e fundo bem definidos; profundidade atmosférica real (leve névoa, queda de luz, oclusão de ambiente crível); tratamento de cor fílmico e refinado, com transição suave nas altas-luzes, contraste gentil e sombras profundas porém abertas; uso elegante de espaço negativo e um ponto de vista seguro e intencional. A cena deve parecer viva, com luz natural suave modelando cada superfície.";
-const ULTRA = "100% ULTRARREALISTA — a imagem INTEIRA, sem uma única exceção, deve parecer uma fotografia real feita em câmera full-frame, nunca um render 3D, nunca CGI, nunca cara de videogame. Absolutamente nenhuma superfície robótica, plástica, emborrachada, cerosa, lisa demais ou artificialmente limpa. CADA material deve mostrar comportamento físico real e microimperfeições: concreto com poros, manchas, marcas de fôrma e leve pátina; madeira com veios reais, nós e variação de tom; metal com escovação fina, micro-riscos e reflexos anisotrópicos reais; vidro com reflexos realistas, marcas leves, poeira e refração verdadeira; pedra e mármore com veios naturais e micro-relevo; tecidos e vegetação com detalhe fibroso. Adicione toques reais em tudo — poeira, sujeira mínima, desgaste, marcas de uso, envelhecimento irregular, sombras de contato, oclusão de ambiente nas frestas — para que nada pareça recém-gerado ou sintético. Iluminação global fisicamente correta, reflexos e refrações com ray tracing, sombras suaves precisas, profundidade de campo realista, alta faixa dinâmica e grão fotográfico natural sutil. Céu, chão, fundo, pessoas e vegetação igualmente fotorrealistas — 8K, nítido, indistinguível de uma fotografia profissional de arquitetura.";
+const EDITORIAL = "COMPOSIÇÃO E ILUMINAÇÃO DE FOTOGRAFIA EDITORIAL DE ARQUITETURA — enquadramento em padrão de publicação especializada, com hierarquia visual definida e profundidade em três planos (primeiro plano, plano médio e fundo). Esquema de iluminação tridimensional: luz principal direcional de baixa dureza, luz de preenchimento controlada e contraluz de recorte sutil, produzindo gradação tonal contínua sobre volumes e superfícies. Profundidade atmosférica por perspectiva aérea (atenuação de luminância e leve meio participativo com a distância) e oclusão de ambiente fisicamente plausível. Colorimetria fílmica calibrada, com roll-off progressivo de altas-luzes, curva de contraste controlada e sombras densas porém com informação. Enquadramento pela regra dos terços, linha do horizonte ao nível do observador, verticais aprumadas e emprego deliberado de espaço negativo.";
+const ULTRA = "RENDERIZAÇÃO FISICAMENTE BASEADA (PBR) E FOTORREALISMO INTEGRAL — a totalidade do quadro deve corresponder a uma captura fotográfica em câmera full-frame 35mm, sem qualquer assinatura de síntese digital, motor de tempo real ou CGI, e sem modelos de reflectância irrealistas (aspecto plástico ou de superfície uniforme). Cada material com BRDF plausível: índice de refração (IOR) correto, rugosidade e reflectância especular condizentes, distribuição de microfacetas e microtextura de superfície — concreto com porosidade, marcas de fôrma e pátina; madeira com anatomia de veio e variação tonal; metais com anisotropia e microrriscos; vidro com reflexos de Fresnel, refração e leve absorção; pedra com veio e micro-relevo; tecidos e folhagem com estrutura fibrosa; incorporando desgaste, deposição de poeira e envelhecimento diferencial coerentes. Iluminação global (GI) por traçado de caminhos, reflexos e refrações por traçado de raios, oclusão de ambiente, sombras de contato e espalhamento subsuperficial (SSS) onde pertinente. Faixa dinâmica alta (HDR), profundidade de campo óptica coerente com a abertura e assinatura de lente sutil (vinheta e aberração cromática mínimas) com grão fotográfico fino. Céu, terreno, entorno, figuras e vegetação com o mesmo grau de fidelidade — resolução 8K, nitidez de borda controlada, indistinguível de fotografia profissional de arquitetura.";
 
 function ptListOf(gid){const g=grp(gid);const s=state.sel[gid];const a=Array.isArray(s)?s:(s?[s]:[]);return a.map(id=>{const o=optById(g,id);return o?o.pt.replace(/\s*\(.*?\)/g,"").replace(/\s*\/\s*.*/,"").trim():null;}).filter(Boolean);}
 function joinPt(a){a=a.filter(Boolean);if(a.length<=1)return a[0]||"";if(a.length===2)return a[0]+" e "+a[1];return a.slice(0,-1).join(", ")+" e "+a[a.length-1];}
@@ -944,13 +944,13 @@ function materialsPhrase(){
   if(!list.length) return "Simule o comportamento físico real de cada material (PBR): reflexos, rugosidade, absorção de luz e microdetalhes de superfície, com imperfeições naturais para nada parecer sintético.";
   return `O projeto é composto por ${joinPt(list)}. Simule o comportamento físico de cada material com precisão — reflexos corretos, rugosidade, absorção de luz, índice de refração e microdetalhes de superfície, com desgaste realista e micro-variação, para que os materiais pareçam realmente táteis e reais.`;
 }
-const TIMEPT={golden:"luz dourada de fim de tarde, rasante e quente, com sombras longas e suaves e contraluz nas bordas",
- blue:"blue hour (crepúsculo), equilibrando o céu azul profundo com a luz quente e acesa do interior",
- midday:"sol de meio-dia limpo, com sombras curtas e nítidas e iluminação clara e uniforme",
- overcast:"luz difusa de céu nublado, sem sombras duras, com cor neutra e fiel",
- night:"cena noturna iluminada por luz artificial arquitetônica quente e em camadas, com contraste controlado",
- natside:"luz natural entrando de lado pelas aberturas, rasando as superfícies e revelando a textura",
- volumetric:"raios de luz volumétricos atravessando uma leve névoa atmosférica"};
+const TIMEPT={golden:"luz solar de fim de tarde em ângulo de incidência baixo (temperatura de cor ~3200 K), rasante e quente, com sombras longas de baixa dureza e contraluz de recorte nas bordas",
+ blue:"hora azul / crepúsculo (~9000 K no céu), com equilíbrio de luminância entre a abóbada celeste e a iluminação artificial interna quente",
+ midday:"sol de meio-dia (~5500 K), incidência próxima da vertical, sombras curtas de alta definição e razão de contraste elevada",
+ overcast:"céu encoberto atuando como difusor (~6500 K), luz difusa sem sombras duras e reprodução cromática neutra",
+ night:"regime noturno com iluminação artificial arquitetônica quente em camadas e razão de contraste controlada",
+ natside:"luz natural lateral rasante através das aberturas, com incidência tangencial que revela a microtextura das superfícies",
+ volumetric:"feixes de luz volumétrica através de meio participativo (névoa fina), com dispersão atmosférica"};
 const WEATHERPT={clear:"céu limpo",partly:"céu parcialmente nublado com nuvens dinâmicas",cloudy:"céu encoberto",fog:"neblina baixa e névoa da manhã",rain:"superfícies molhadas e reflexivas depois da chuva",snow:"cena de inverno coberta de neve"};
 function lightingPhrase(){
   const t=state.sel.time, wx=state.sel.weather;
@@ -985,8 +985,8 @@ function surroundPhrase(){
 function moodPhrase(){
   const m=ptListOf("mood")[0],p=ptListOf("palette")[0];
   if(!m&&!p&&!freeOf("mood")&&!freeOf("palette"))return "";
-  let s="A atmosfera geral é "+(m?m.toLowerCase():"refinada e fotográfica");
-  if(p)s+=`, em paleta de cores ${p.toLowerCase()}`;
+  let s="Registro atmosférico "+(m?m.toLowerCase():"contido e fotográfico");
+  if(p)s+=`, sob paleta cromática ${p.toLowerCase()}`;
   s+=".";
   const fw=[freeOf("mood"),freeOf("palette")].filter(Boolean).join(", ");
   if(fw)s+=` ${fw}.`;
@@ -1004,20 +1004,20 @@ function enginePhrase(model){
   return bits.length?(bits.join(", ")+"."):"";
 }
 function negativeList(){
-  const base=["iluminação chapada","imagem sem vida","sem graça","luz dura e agressiva","iluminação uniforme","falta de profundidade","aparência bidimensional","foto casual","foto amadora","cara de render 3D","CGI","gráficos de videogame","superfícies robóticas","texturas plásticas ou cerosas","materiais emborrachados","superfícies lisas demais","superfícies limpas demais","materiais sintéticos","ilustração","pintura","desenho","cartoon","altas-luzes estouradas","pouco detalhe","desfocado","proporções distorcidas","verticais tortas","janelas adicionadas ou removidas","portas adicionadas ou removidas","pavimentos a mais","janelas duplicadas ou desalinhadas","elementos inventados","edifício redesenhado","geometria derretida","cores saturadas demais","halos de HDR","texto","marca d'água","assinatura","artefatos de compressão"];
-  if(!(state.sel.elements||[]).includes("people"))base.push("pessoas","multidões");
-  if(!(state.sel.elements||[]).includes("cars"))base.push("carros","trânsito");
-  if(state.sel.mood==="clean"||state.sel.mood==="serene")base.push("bagunça visual","ruído");
+  const base=["iluminação difusa achatada sem gradação tonal","ausência de profundidade em planos","perspectiva bidimensional","razão de contraste incorreta","estética de motor de render em tempo real","aspecto de CGI","modelo de reflectância irrealista (aspecto plástico)","superfícies de reflectância uniforme artificial","materiais sem microtextura","ilustração","pintura digital","renderização estilizada","altas-luzes estouradas (clipping)","baixa resolução","desfoque óptico indevido","proporções distorcidas","paralaxe vertical não corrigida (verticais convergentes)","aberturas adicionadas ou suprimidas","fenestração duplicada ou desalinhada","pavimentos excedentes","elementos ausentes no projeto","alteração de geometria do projeto","alteração das cores do projeto","alteração dos materiais do projeto","saturação cromática excessiva","artefatos de tone-mapping (halos de HDR)","texto","marca d'água","assinatura","artefatos de compressão"];
+  if(!(state.sel.elements||[]).includes("people"))base.push("figuras humanas não solicitadas");
+  if(!(state.sel.elements||[]).includes("cars"))base.push("veículos não solicitados");
+  if(state.sel.mood==="clean"||state.sel.mood==="serene")base.push("poluição visual","ruído de composição");
   return base;
 }
 
 function buildNarrative(model){
   const ar=enOf("aspect")[0]||"16:9";
   const S=[];
-  S.push(`Fotografia de arquitetura ultrarrealista, qualidade editorial de revista, na proporção ${ar}.`);
+  S.push(`Fotografia de arquitetura ultrarrealista, registro técnico editorial, na proporção ${ar}.`);
 
-  // 1 · INPUT ARQUITETÔNICO — a construção, volumetria, aberturas e estrutura (fiel ao projeto)
-  let p1=`Represente com precisão técnica ${subjectPhrase()} — a construção, a volumetria, as aberturas e os elementos estruturais exatamente como no projeto.`;
+  // 1 · INPUT ARQUITETÔNICO — construção, volumetria, aberturas e estrutura (fiel ao projeto)
+  let p1=`Representação técnica de ${subjectPhrase()} — construção, volumetria, sistema de aberturas e elementos estruturais rigorosamente conforme o projeto.`;
   const ref=referenceClause(); if(ref) p1+=" "+ref;
   S.push("1 · INPUT ARQUITETÔNICO\n"+p1);
 
@@ -1032,13 +1032,11 @@ function buildNarrative(model){
 
   // 5 · VIDA E ATMOSFERA
   const life=[surroundPhrase(), moodPhrase()].filter(Boolean).join(" ");
-  S.push("5 · VIDA E ATMOSFERA\n"+(life?life+" ":"")+"Enriqueça a cena com vegetação, mobiliário, iluminação cênica, entorno e efeitos atmosféricos coerentes, que completem e deem vida à composição sem competir com a arquitetura.");
+  S.push("5 · VIDA E ATMOSFERA\n"+(life?life+" ":"")+"Contextualização da cena com vegetação, mobiliário, iluminação cênica, entorno e efeitos atmosféricos coerentes, que completam a composição sem competir com a arquitetura.");
 
   // Acabamento fotográfico geral
   const eng=enginePhrase(model);
   S.push("ACABAMENTO\n"+EDITORIAL+" "+ULTRA+(eng?(" Finalize "+eng):""));
-
-  S.push("EVITE\n"+negativeList().join(", ")+".");
   return S.join("\n\n");
 }
 
@@ -1052,7 +1050,7 @@ function buildTags(model){
     FOCALPT[state.sel.focal], APPT[state.sel.aperture], ...ptListOf("perspective").map(x=>x.toLowerCase()),
     ptListOf("context")[0], ...ptListOf("vegetation").map(x=>x.toLowerCase()), ...ptListOf("elements").map(x=>x.toLowerCase()),
     ptListOf("mood")[0], ptListOf("palette")[0]?`paleta ${ptListOf("palette")[0].toLowerCase()}`:"",
-    "fotografia de arquitetura ultrarrealista, qualidade editorial de revista, materiais PBR físicos, iluminação global com ray tracing, reflexos precisos, micro-detalhe tátil, imperfeições naturais dos materiais, nitidez 8K, fotografia profissional de arquitetura"
+    "fotografia de arquitetura ultrarrealista, registro técnico editorial, renderização fisicamente baseada (PBR), iluminação global por traçado de raios, reflexos de Fresnel precisos, microtextura de superfície, imperfeições físicas dos materiais, faixa dinâmica alta, resolução 8K, câmera full-frame 35mm"
   ].filter(Boolean);
   let core=parts.join(", ").replace(/\s+,/g,",").replace(/,\s*,/g,", ");
   const ref=referenceClause();
@@ -1092,6 +1090,9 @@ function buildPrompt(){
     label="Descritivo de setup ("+(model==="ue5"?"Unreal Engine 5":model==="vray"?"V-Ray / Corona":"Octane / Redshift")+")";
     params=`Use o texto acima como descritivo de cena, materiais e luz para montar o setup.\nSaída: 8K, proporção ${ar}.\nCâmera física (ISO/obturador/abertura reais) · tone mapping filmic/AgX · eleve o sampling até a GI ficar limpa (denoise no fim).`;
   }
+  // Negative prompt sempre presente e separado (após o prompt), para todos os motores
+  neg=negativeList().join(", ");
+  negVisible=true;
   return {prompt,neg,params,negVisible,paramsVisible,label,ar,model};
 }
 
