@@ -21,10 +21,18 @@ No topo do **Início** há uma caixa onde você pode:
 
 - **Escrever** em linguagem natural — ex: *"ligar para o cliente amanhã de manhã, urgente"*
 - **Falar** (🎤) — grava o áudio e transcreve para texto (reconhecimento de voz do navegador, em português)
-- **Subir arquivos** (📎) — o sistema extrai o texto **e guarda o documento anexado**:
+- **Subir arquivos** (📎) — o arquivo **fica anexado** ao registro (não é despejado
+  na caixa de texto). O sistema **lê o conteúdo** por baixo dos panos e usa para
+  preencher os cadastros:
   - `.txt`, `.md`, `.csv` — leitura direta (funciona offline)
   - **PDF** com texto — extraído com pdf.js
   - **Imagem / foto / print** — texto reconhecido por OCR (Tesseract.js, em português)
+
+> 📎➡️👤 **Anexe e mande cadastrar:** anexe uma **petição** (ou ficha, contrato…) e
+> escreva a instrução — ex.: *"cadastre o cliente"* ou *"cadastre o cliente João da
+> Silva"*. O app marca sozinho o destino, **puxa os dados da pessoa do documento**
+> (nome, CPF, RG, endereço…) e cria o cadastro. Diga *"cadastre o processo"* e ele
+> lê os dados do processo e **já vincula ao cliente correspondente já cadastrado**.
 
 > 💾 **Rascunho automático:** o que você escreve, dita ou anexa fica **salvo neste aparelho** enquanto você não gera nem cancela. Pode sair da tela, fechar o app ou o navegador e, ao voltar, **continua de onde parou** — inclusive os destinos que já tinha marcado.
 

@@ -116,10 +116,25 @@ export function extractClient(text) {
   out.email = labeled(text, "e-?mail") || firstMatch(text, /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
   out.nasc = brDateToISO(labeled(text, "data\\s+de\\s+nascimento|nascimento|nascid[oa]\\s+em|nascid[oa]"));
 
-  let endereco = labeled(text, "endere[cç]o|residente(?:\\s+e\\s+domiciliad[oa])?|domiciliad[oa]|logradouro");
+  // Endereço: rótulo com ":" OU prosa de petição ("residente e domiciliado na …").
+  let endereco = labeled(text, "endere[cç]o|logradouro");
+  if (!endereco) {
+    const m = text.match(/(?:residente\s+e\s+domiciliad[oa]|residente|domiciliad[oa])\s+(?:à|na|no|em)\s+([^\n]{6,200})/i);
+    if (m) endereco = clean(m[1].split(/\s*,?\s*\b(?:vem|venho|requer|prop[õo]e|neste\s+ato|por\s+meio|pelo\s+presente|serve[- ]se)\b/i)[0]).replace(/[,;]\s*$/, "");
+  }
   const cep = firstMatch(text, /\b\d{5}-\d{3}\b/);
   if (cep && !/\d{5}-\d{3}/.test(endereco)) endereco = clean(endereco + (endereco ? " — CEP " : "CEP ") + cep);
   out.endereco = endereco;
+
+  // ---- Reforços para textos em PROSA (ex.: petição inicial), sem rótulo ":" ----
+  if (!out.cpf) { const m = text.match(/\bCPF\b[^\d]{0,14}(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/i); if (m) { const d = m[1].replace(/\D/g, ""); if (d.length === 11) out.cpf = fmtDoc(d); } }
+  if (!out.rg)  { const m = text.match(/\b(?:RG|c[ée]dula\s+de\s+identidade|carteira\s+de\s+identidade|identidade)\b[^\d]{0,15}(\d[\d.\-\/]{3,}[\dxX])/i); if (m) out.rg = m[1].trim(); }
+  if (!out.nome) {
+    // Petições começam a qualificação com a parte em CAIXA ALTA, no início da
+    // linha e seguida de ", <qualificação em minúsculas>": "FULANO DE TAL, brasileiro…"
+    const m = text.match(/(?:^|\n)\s*([A-ZÀ-Ý][A-ZÀ-Ý]+(?:[ \t]+(?:D[AEO]S?|E|[A-ZÀ-Ý]{2,})){1,5})\s*,\s+[a-zà-ÿ]/);
+    if (m) out.nome = m[1].trim().split(/\s+/).map((w) => /^(D[AEO]S?|E)$/i.test(w) ? w.toLowerCase() : w.charAt(0) + w.slice(1).toLowerCase()).join(" ");
+  }
 
   out.area = labeled(text, "[aá]rea(?:\\s+do\\s+direito)?|[aá]rea\\s+jur[ií]dica");
   out.origem = labeled(text, "origem|indica[cç][aã]o|como\\s+chegou|captado\\s+por");
@@ -147,15 +162,23 @@ export function extractProcess(text) {
   if (!out.num) { const l = labeled(text, "processo|autos|n[uú]mero\\s+do\\s+processo|n[uú]mero|cnj"); if (l) out.num = l; }
 
   out.tipo = labeled(text, "tipo\\s+de\\s+a[cç][aã]o|tipo|classe(?:\\s+processual)?|a[cç][aã]o|assunto|natureza\\s+da\\s+a[cç][aã]o|natureza");
+  // Prosa: "propor a presente AÇÃO DE COBRANÇA em face de…" → tipo "Cobrança".
+  if (!out.tipo) {
+    const m = text.match(/\ba[cç][aã]o\s+(?:de\s+)?([A-Za-zÀ-ÿ]+(?:\s+(?:de\s+|da\s+|do\s+|e\s+)?[A-Za-zÀ-ÿ]+){0,3}?)\s+(?:em\s+face|contra|movida|proposta|c\/c|cumulad[ao]|ajuizad[ao])/i);
+    if (m) out.tipo = clean(m[1]).replace(/\b\p{L}+/gu, (w) => w.length <= 3 && /^(de|da|do|e)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  }
 
-  let vara = labeled(text, "vara|ju[ií]zo") || firstMatch(text, /\d+[ªaº°]?\s*Vara[^\n,;.]*/i);
-  const comarca = labeled(text, "comarca|foro") || (firstMatch(text, /Comarca\s+de\s+[^\n,;.]+/i).replace(/^Comarca\s+de\s+/i, ""));
-  out.vara = clean([vara, comarca].filter(Boolean).join(" — "));
+  let vara = labeled(text, "vara|ju[ií]zo") || firstMatch(text, /(?:\d+[ªaº°]?\s*)?Vara\b[^\n,;.]*/i);
+  const comarca = labeled(text, "comarca|foro") || (firstMatch(text, /Comarca\s+de\s+[^\n,;.\/]+/i).replace(/^Comarca\s+de\s+/i, ""));
+  // Evita repetir a comarca quando ela já aparece dentro da vara.
+  out.vara = clean([vara, comarca && !clean(vara).toLowerCase().includes(comarca.toLowerCase()) ? comarca : ""].filter(Boolean).join(" — "));
 
   out.tribunal = labeled(text, "tribunal|[oó]rg[aã]o(?:\\s+julgador)?|c[aâ]mara|turma")
     || firstMatch(text, /\b(?:TJ[A-Z]{2}|TRF\s?-?\s?\d|TRT\s?-?\s?\d{1,2}|TJ\s?-?\s?[A-Z]{2}|STJ|STF|TST)\b/);
 
   out.partes = labeled(text, "r[eé]u|requerid[oa]|executad[oa]|apelad[oa]|parte\\s+contr[aá]ria|adverso|r[eé]");
+  // Prosa: "em face de X" / "em desfavor de X" / "contra X".
+  if (!out.partes) { const m = text.match(/\b(?:em\s+face\s+de|em\s+desfavor\s+de|contra)\s+([A-ZÀ-Ý][^\n.;,]{2,60})/i); if (m) out.partes = clean(m[1]); }
   out.data_distribuicao = brDateToISO(labeled(text, "distribu[ií][cç][aã]o|distribu[ií]d[oa]\\s+em|data\\s+de\\s+distribui[cç][aã]o|ajuizamento|ajuizad[oa]\\s+em"));
   out.fase = labeled(text, "fase(?:\\s+atual|\\s+processual)?|situa[cç][aã]o");
 

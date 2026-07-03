@@ -222,6 +222,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 .att-name { font-size: 14px; font-weight: 600; color: var(--accent); cursor: pointer; overflow-wrap: anywhere; }
 .att-name:hover { text-decoration: underline; }
 .att-size { flex-shrink: 0; white-space: nowrap; }
+.att-read { flex-shrink: 0; white-space: nowrap; color: var(--green, #1A6B5A); font-weight: 700; }
 .att-block { margin-top: 4px; }
 
 /* Chart */
