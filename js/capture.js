@@ -1,20 +1,62 @@
-// Captura rápida inteligente: o usuário escreve/fala/sobe arquivo, o sistema
-// interpreta e monta um cartão EDITÁVEL (título, descrição, área, data, hora,
-// prioridade, cliente e processo detectados) para ajuste antes de gerar.
+// Captura rápida multi-tipo: o usuário escreve/fala/sobe arquivos, ESCOLHE um ou
+// mais destinos (Tarefa, Agenda, Nota, Cliente, Processo) e o sistema monta um
+// cartão EDITÁVEL para cada um — já preenchido com o que conseguiu interpretar do
+// texto e dos documentos. Ao gerar, cria todos de uma vez e, quando Cliente e
+// Processo são escolhidos juntos, faz o cadastro completo dos dois e VINCULA
+// automaticamente o processo ao cliente novo.
 
-import { el, prettyDate, toast } from "./ui.js";
+import { el, prettyDate, todayISO, toast } from "./ui.js";
 import { parseNaturalTask, shortTitle, isLongText } from "./nlp.js";
 import { extractTextFromFile } from "./files.js";
-import { list } from "./store.js";
+import { extractClient, extractProcess, parseMoney } from "./extract.js";
+import { list, insert, remove } from "./store.js";
+import * as gcal from "./gcal.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const normalize = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-// Detecta cliente e processo a partir do texto livre.
+// Destinos possíveis (multi-seleção).
+const TYPES = [
+  { key: "tarefa", ico: "✅", label: "Tarefa" },
+  { key: "agenda", ico: "🗓️", label: "Agenda" },
+  { key: "nota", ico: "📝", label: "Nota" },
+  { key: "cliente", ico: "👤", label: "Cliente" },
+  { key: "processo", ico: "⚖️", label: "Processo" },
+];
+// Ordem de criação (cliente antes do processo, para poder vincular).
+const ORDER = ["cliente", "processo", "tarefa", "agenda", "nota"];
+
+// ---------- anexos (arquivos embutidos como data URL) ----------
+const MAX_ANEXO = 8 * 1024 * 1024; // 8 MB por arquivo
+function fmtBytes(n) {
+  if (!n && n !== 0) return "";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+function iconForType(type, name) {
+  const t = (type || "") + " " + (name || "").toLowerCase();
+  if (/image\//.test(type) || /\.(png|jpe?g|gif|webp|heic)$/.test(name || "")) return "🖼️";
+  if (/pdf/.test(t)) return "📕";
+  if (/word|\.docx?$/.test(t)) return "📘";
+  if (/sheet|excel|\.xlsx?$|\.csv$/.test(t)) return "📊";
+  if (/audio\//.test(type)) return "🎵";
+  if (/video\//.test(type)) return "🎬";
+  return "📄";
+}
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error || new Error("erro ao ler o arquivo"));
+    r.readAsDataURL(file);
+  });
+}
+
+// Detecta cliente e processo JÁ CADASTRADOS a partir do texto livre.
 function detectLinks(raw, clients, processes) {
   const t = normalize(raw);
   let client = null, process = null, cScore = 0, pScore = 0;
-
   for (const c of clients) {
     const parts = normalize(c.nome).split(/\s+/).filter((w) => w.length >= 3);
     let s = 0;
@@ -39,161 +81,184 @@ function detectLinks(raw, clients, processes) {
   return { client, process };
 }
 
-export function mountCapture(defaultArea, onCreate) {
+// ============================================================
+export function mountCapture(defaultArea, onDone = () => {}) {
+  const selected = new Set(["tarefa"]);
+  let attachments = []; // {name,type,size,data}
+  let cards = [];       // controladores dos cartões ({ key, node, collect })
+
   const textarea = el("textarea", {
     class: "capture-input", rows: "2",
-    placeholder: "Descreva… ex: “Recurso de Agravo Simone amanhã 14h”",
+    placeholder: "Descreva ou cole aqui… ex: “Recurso de Agravo Simone amanhã 14h” — ou os dados do cliente/processo",
   });
   const status = el("div", { class: "capture-status" });
-  const editWrap = el("div", { class: "cap-edit hidden" });
+
+  // seletor de destinos
+  const typesRow = el("div", { class: "cap-types" });
+  const typeBtns = {};
+  const paintTypes = () => TYPES.forEach((t) => typeBtns[t.key].classList.toggle("active", selected.has(t.key)));
+  TYPES.forEach((t) => {
+    const b = el("button", { type: "button", class: "cap-type", "data-k": t.key }, [icon(t.ico), t.label]);
+    b.onclick = () => { selected.has(t.key) ? selected.delete(t.key) : selected.add(t.key); paintTypes(); };
+    typeBtns[t.key] = b;
+    typesRow.append(b);
+  });
+  paintTypes();
+  const typeHint = el("div", { class: "cap-typehint" }, "Escolha um ou mais destinos. Dica: marque 👤 Cliente e ⚖️ Processo juntos para cadastrar e vincular os dois de uma vez.");
 
   const micBtn = el("button", { type: "button", class: "cap-btn", title: "Gravar áudio" }, [icon("🎤"), "Falar"]);
-  const fileBtn = el("button", { type: "button", class: "cap-btn", title: "Subir arquivo" }, [icon("📎"), "Arquivo"]);
+  const fileBtn = el("button", { type: "button", class: "cap-btn", title: "Subir arquivos" }, [icon("📎"), "Arquivos"]);
   const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.txt,.md,.csv,text/plain", multiple: "" });
   const prepBtn = el("button", { type: "button", class: "btn btn-primary cap-submit" }, "Preparar →");
+
+  const attWrap = el("div", { class: "att-list" });
+  const cardsWrap = el("div", { class: "cap-cards hidden" });
 
   const card = el("div", { class: "card capture" }, [
     el("div", { class: "capture-head" }, [icon("✨"), el("span", {}, "Captura rápida")]),
     textarea,
+    typesRow,
+    typeHint,
+    attWrap,
     status,
     el("div", { class: "capture-actions" }, [micBtn, fileBtn, el("span", { class: "grow" }), prepBtn]),
-    editWrap,
+    cardsWrap,
     fileInput,
   ]);
 
-  // ---------- preparar (parse + detecção) ----------
+  // ---------- anexos: desenha os chips ----------
+  const drawAtts = () => {
+    attWrap.innerHTML = "";
+    attachments.forEach((a, i) => attWrap.append(el("div", { class: "att-item" }, [
+      el("span", { class: "att-ico" }, iconForType(a.type, a.name)),
+      el("span", { class: "att-name grow", onclick: () => openAttachment(a) }, a.name),
+      el("span", { class: "att-size t2" }, fmtBytes(a.size)),
+      el("button", { type: "button", class: "del", title: "Remover", onclick: () => { attachments.splice(i, 1); drawAtts(); } }, "×"),
+    ])));
+  };
+
+  // ---------- preparar ----------
   async function prepare() {
+    if (!selected.size) { toast("Escolha ao menos um destino (Tarefa, Agenda, Nota, Cliente ou Processo)."); return; }
     const raw = textarea.value.trim();
-    if (!raw) { textarea.focus(); return; }
+    if (!raw && !attachments.length) { textarea.focus(); return; }
     status.textContent = "Analisando…";
-    const p = parseNaturalTask(raw, defaultArea);
+
     let clients = [], processes = [];
     try { [clients, processes] = await Promise.all([list("clients", { orderBy: "nome", asc: true }), list("processes")]); } catch {}
     const det = detectLinks(raw, clients, processes);
-    status.textContent = "";
-    buildForm(p, det, clients, processes, raw);
-  }
-  prepBtn.addEventListener("click", prepare);
-  textarea.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); prepare(); } });
+    const parsed = parseNaturalTask(raw, defaultArea) || { title: raw, area: defaultArea, priority: "media", due_date: null, due_time: null };
 
-  // ---------- cartão editável ----------
-  function buildForm(p, det, clients, processes, raw) {
-    const linkedArea = det.client || det.process ? "profissional" : p.area;
-    let area = linkedArea;
+    cards = [];
+    cardsWrap.innerHTML = "";
+    const bothCliProc = selected.has("cliente") && selected.has("processo");
 
-    // Texto longo (ex: mensagem colada) → título curto + descrição com o conteúdo
-    const longo = isLongText(raw);
-    const tituloInicial = longo ? shortTitle(p.title || raw) : (p.title || "");
-    const descInicial = longo ? raw.trim() : "";
-    const title = el("input", { class: "form-control", value: tituloInicial, placeholder: "Título" });
-    const desc = el("textarea", { class: "form-control", rows: longo ? "4" : "2", placeholder: "Descrição (opcional)" }, descInicial);
-    const date = el("input", { class: "form-control", type: "date", value: p.due_date || "" });
-    const time = el("input", { class: "form-control", type: "time", value: p.due_time || "" });
-    const prio = el("select", { class: "form-control" });
-    [["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]].forEach(([v, l]) => prio.append(el("option", { value: v, ...(v === p.priority ? { selected: "" } : {}) }, l)));
-
-    const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
-    const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
-    const seg = el("div", { class: "seg" }, [segP, segT]);
-    const cliLabel = el("span");
-    const procLabel = el("span");
-    const cliHint = el("div", { class: "t2", style: "margin-top:-4px" });
-    const updateLabels = () => {
-      const pessoal = area === "pessoal";
-      cliLabel.textContent = pessoal ? "🔒 Vincular a um cliente (opcional, só seu)" : "Cliente";
-      procLabel.textContent = pessoal ? "🔒 Processo (opcional, só seu)" : "Processo";
-      cliHint.textContent = pessoal ? "Vínculo só para seu controle — NÃO aparece na pasta do cliente." : "";
-      cliHint.style.display = pessoal ? "block" : "none";
-    };
-    const paintSeg = () => {
-      segP.classList.toggle("active", area === "pessoal");
-      segT.classList.toggle("active", area === "profissional");
-      updateLabels();
-    };
-    segP.onclick = () => {
-      // zera vínculos ao virar pessoal (cliente, processo e o box de info)
-      cliSel.value = ""; procSel.value = ""; fillProcs();
-      area = "pessoal"; paintSeg();
-    };
-    segT.onclick = () => { area = "profissional"; paintSeg(); };
-    paintSeg();
-
-    const cliSel = el("select", { class: "form-control" });
-    cliSel.append(el("option", { value: "" }, "— nenhum —"));
-    clients.forEach((c) => cliSel.append(el("option", { value: c.id, ...(det.client && det.client.id === c.id ? { selected: "" } : {}) }, c.nome)));
-    const procSel = el("select", { class: "form-control" });
-    const procInfo = el("div", { class: "cap-procinfo" });
-    // Reconstrói a lista de processos PRESERVANDO a escolha atual do usuário.
-    // Nunca "re-crava" o processo detectado — só usamos ele como sugestão inicial.
-    const fillProcs = () => {
-      const cid = cliSel.value;
-      const atual = procSel.value; // respeita o que o usuário escolheu (inclusive "nenhum")
-      procSel.innerHTML = "";
-      procSel.append(el("option", { value: "" }, "— nenhum —"));
-      const avail = processes.filter((p2) => !cid || p2.client_id === cid);
-      avail.forEach((p2) => procSel.append(el("option", { value: p2.id }, p2.nome)));
-      procSel.value = avail.some((p2) => p2.id === atual) ? atual : "";
-      showProcInfo();
-    };
-    const showProcInfo = () => {
-      const p2 = procSel.value ? processes.find((x) => x.id === procSel.value) : null;
-      procInfo.innerHTML = "";
-      if (p2) {
-        const bits = [p2.num ? "Nº " + p2.num : "", p2.vara || "", p2.fase || ""].filter(Boolean);
-        if (bits.length) procInfo.append(el("div", { class: "t2" }, "⚖️ " + bits.join(" · ")));
-      }
-    };
-    cliSel.addEventListener("change", fillProcs);  // respeita a área e a escolha do usuário
-    procSel.addEventListener("change", showProcInfo);
-    fillProcs();
-    // sugestão inicial: processo detectado (só uma vez, e o usuário pode trocar/limpar)
-    if (det.process && (!area || area === "profissional") && processes.some((p2) => p2.id === det.process.id)) {
-      procSel.value = det.process.id; showProcInfo();
+    for (const key of ORDER) {
+      if (!selected.has(key)) continue;
+      let ctrl = null;
+      if (key === "cliente") ctrl = buildClientCard(raw);
+      else if (key === "processo") ctrl = buildProcessCard(raw, det, clients, bothCliProc);
+      else if (key === "tarefa") ctrl = buildTaskCard(parsed, det, clients, processes, raw);
+      else if (key === "agenda") ctrl = buildAgendaCard(parsed, raw);
+      else if (key === "nota") ctrl = buildNoteCard(parsed, raw);
+      if (ctrl) { cards.push(ctrl); cardsWrap.append(ctrl.node); }
     }
 
-    const gerar = el("button", { type: "button", class: "btn btn-primary btn-block" }, "✓ Gerar tarefa");
+    const gerar = el("button", { type: "button", class: "btn btn-primary btn-block" }, "✓ Gerar tudo");
     const cancelar = el("button", { type: "button", class: "btn btn-ghost btn-block" }, "Cancelar");
-
-    gerar.onclick = async () => {
-      if (!title.value.trim()) { title.focus(); return; }
-      gerar.disabled = true;
-      const task = {
-        title: title.value.trim(), description: desc.value.trim(), area,
-        priority: prio.value, due_date: date.value || null, due_time: time.value || null,
-        client_id: cliSel.value || null, process_id: procSel.value || null, done: false,
-      };
-      try {
-        const saved = await onCreate(task);
-        reset();
-        const partes = [area === "profissional" ? "💼 Trabalho" : "🧑 Pessoal"];
-        if (task.due_date) partes.push("📅 " + prettyDate(task.due_date) + (task.due_time ? " " + task.due_time : ""));
-        if (cliSel.value) partes.push("👤 " + cliSel.selectedOptions[0].textContent);
-        toast(`✅ “${task.title}” · ${partes.join(" · ")}`, {
-          action: saved ? { label: "Desfazer", onClick: () => onCreate.__undo && onCreate.__undo(saved) } : null,
-        });
-      } finally { gerar.disabled = false; }
-    };
+    gerar.onclick = () => generate(gerar);
     cancelar.onclick = reset;
+    cardsWrap.append(el("div", { class: "cap-gen" }, [cancelar, gerar]));
 
-    editWrap.innerHTML = "";
-    editWrap.append(
-      field("Título", title),
-      field("Descrição", desc),
-      field("Área", seg),
-      el("div", { class: "cap-row" }, [field("Data", date), field("Hora", time), field("Prioridade", prio)]),
-      field(cliLabel, cliSel),
-      cliHint,
-      field(procLabel, procSel),
-      procInfo,
-      el("div", { class: "cap-gen" }, [cancelar, gerar]),
-    );
-    editWrap.classList.remove("hidden");
+    status.textContent = "";
+    cardsWrap.classList.remove("hidden");
     prepBtn.classList.add("hidden");
-    title.focus();
+    const firstInput = cardsWrap.querySelector("input, textarea, select");
+    if (firstInput) firstInput.focus();
+  }
+  prepBtn.addEventListener("click", prepare);
+  // Ctrl/Cmd+Enter prepara — mas só quando os cartões ainda NÃO foram montados
+  // (senão re-preparar apagaria as edições que o usuário fez nos cartões).
+  textarea.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && cardsWrap.classList.contains("hidden")) { e.preventDefault(); prepare(); }
+  });
+
+  // ---------- gerar (cria tudo e vincula) ----------
+  // Remove tudo que já foi criado nesta captura (usado no rollback de falha
+  // parcial e no botão "Desfazer"). Entradas: {table,id} ou {gcalId}.
+  async function undoAll(undo) {
+    for (const u of undo) {
+      try {
+        if (u.gcalId) await gcal.deleteEvent(u.gcalId);
+        else await remove(u.table, u.id);
+      } catch {}
+    }
+  }
+
+  async function generate(btn) {
+    // validação
+    for (const c of cards) { const err = c.validate && c.validate(); if (err) { toast(err.msg); err.focus && err.focus(); return; } }
+    btn.disabled = true;
+    const undo = [];      // {table,id} ou {gcalId}
+    const feitos = [];    // rótulos para o aviso
+    try {
+      const byKey = Object.fromEntries(cards.map((c) => [c.key, c]));
+      let newClient = null;
+
+      if (byKey.cliente) {
+        const data = { ...byKey.cliente.collect(), attachments };
+        const saved = await insert("clients", data);
+        if (saved) { undo.push({ table: "clients", id: saved.id }); newClient = saved; }
+        feitos.push("👤 Cliente “" + data.nome + "”");
+      }
+      if (byKey.processo) {
+        const data = { ...byKey.processo.collect(), attachments };
+        if (newClient) data.client_id = newClient.id; // VÍNCULO automático
+        const saved = await insert("processes", data);
+        if (saved) undo.push({ table: "processes", id: saved.id });
+        feitos.push("⚖️ Processo “" + data.nome + "”" + (newClient ? " (vinculado)" : ""));
+      }
+      if (byKey.tarefa) {
+        const data = { ...byKey.tarefa.collect(), attachments };
+        const saved = await insert("tasks", data);
+        if (saved) undo.push({ table: "tasks", id: saved.id });
+        feitos.push(taskLabel("✅ Tarefa", data));
+      }
+      if (byKey.agenda) {
+        const { task, gcalWanted } = byKey.agenda.collect();
+        const saved = await insert("tasks", { ...task, attachments });
+        if (saved) undo.push({ table: "tasks", id: saved.id });
+        feitos.push(taskLabel("🗓️ Agenda", task));
+        if (gcalWanted) {
+          try { const ev = await gcal.createEvent({ title: task.title, date: task.due_date, time: task.due_time, description: task.description }); if (ev && ev.id) undo.push({ gcalId: ev.id }); }
+          catch (err) { toast("Salvo aqui, mas falhou no Google: " + (err.message || "")); }
+        }
+      }
+      if (byKey.nota) {
+        const data = { ...byKey.nota.collect(), attachments };
+        const saved = await insert("notes", data);
+        if (saved) undo.push({ table: "notes", id: saved.id });
+        feitos.push("📝 Nota");
+      }
+
+      reset();
+      toast("✅ Criado: " + feitos.join(" · "), {
+        action: undo.length ? { label: "Desfazer", onClick: async () => { await undoAll(undo); onDone(); toast("Cadastro desfeito."); } } : null,
+      });
+      onDone();
+    } catch (err) {
+      // Falha no meio do caminho: desfaz o que já entrou para não deixar
+      // registros órfãos (ex.: cliente criado mas processo falhou).
+      await undoAll(undo);
+      if (undo.length) onDone();
+      toast("Não consegui salvar tudo — nada foi cadastrado. " + (err?.message || err));
+    } finally { btn.disabled = false; }
   }
 
   function reset() {
-    textarea.value = ""; editWrap.innerHTML = ""; editWrap.classList.add("hidden");
+    textarea.value = ""; attachments = []; cards = [];
+    drawAtts();
+    cardsWrap.innerHTML = ""; cardsWrap.classList.add("hidden");
     prepBtn.classList.remove("hidden"); status.textContent = "";
   }
 
@@ -221,16 +286,20 @@ export function mountCapture(defaultArea, onCreate) {
     rec.start();
   });
 
-  // ---------- arquivo ----------
+  // ---------- arquivos: extrai texto (para preencher) E anexa (para guardar) ----------
   fileBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const files = [...fileInput.files]; fileInput.value = "";
     for (const file of files) {
+      // anexa (guarda o arquivo)
+      if (file.size > MAX_ANEXO) { status.textContent = `⚠️ “${file.name}” tem ${fmtBytes(file.size)} — limite ${fmtBytes(MAX_ANEXO)}. Só vou ler o texto.`; }
+      else { try { const data = await readFileAsDataURL(file); attachments.push({ name: file.name, type: file.type || "", size: file.size, data }); drawAtts(); } catch {} }
+      // extrai texto (para preencher os campos)
       status.textContent = `📄 Lendo “${file.name}”…`;
       try {
         const text = await extractTextFromFile(file, (msg) => { status.textContent = msg; });
-        if (text && text.trim()) { textarea.value = (textarea.value.trim() + " " + text.trim()).trim(); status.textContent = `✅ Texto extraído. Toque em Preparar.`; }
-        else status.textContent = `⚠️ Não consegui extrair texto de “${file.name}”.`;
+        if (text && text.trim()) { textarea.value = (textarea.value.trim() + "\n" + text.trim()).trim(); status.textContent = `✅ Texto lido de “${file.name}”. Escolha os destinos e toque em Preparar.`; }
+        else status.textContent = `📎 “${file.name}” anexado (sem texto reconhecido).`;
       } catch (err) { status.textContent = `⚠️ Erro ao ler “${file.name}”: ${err.message || err}`; }
     }
   });
@@ -238,5 +307,245 @@ export function mountCapture(defaultArea, onCreate) {
   return card;
 }
 
+// ============================================================
+//  CARTÕES POR TIPO
+// ============================================================
+
+function cardShell(ico, title, autofilled, children) {
+  const head = el("div", { class: "cap-card-head" }, [icon(ico), el("span", {}, title)]);
+  if (autofilled) head.append(el("span", { class: "cap-autofill" }, "✨ preenchido do texto"));
+  return el("div", { class: "cap-card" }, [head, ...children]);
+}
+function hasAny(obj, keys) { return keys.some((k) => obj[k] != null && obj[k] !== "" && obj[k] !== "1"); }
+
+// ---------- CLIENTE ----------
+function buildClientCard(raw) {
+  const ex = extractClient(raw);
+  const auto = hasAny(ex, ["nome", "cpf", "rg", "tel", "email", "nasc", "endereco", "area", "origem", "obs"]);
+  const nome = inp("Nome completo *", ex.nome, { required: "" });
+  const cpf = inp("000.000.000-00 (ou CNPJ)", ex.cpf);
+  const rg = inp("RG", ex.rg);
+  const tel = inp("(51) 9 0000-0000", ex.tel);
+  const email = inp("email@exemplo.com", ex.email, { type: "email" });
+  const nasc = inp("", ex.nasc, { type: "date" });
+  const endereco = inp("Rua, nº, bairro, cidade — UF", ex.endereco);
+  const area = inp("Ex: Família, Cível…", ex.area);
+  const origem = inp("Ex: Indicação, Instagram…", ex.origem);
+  const obs = txt("Resumo do caso, histórico…", ex.obs, 2);
+
+  const node = cardShell("👤", "Novo cliente", auto, [
+    field("Nome *", nome),
+    el("div", { class: "cap-row" }, [field("CPF / CNPJ", cpf), field("RG", rg)]),
+    el("div", { class: "cap-row" }, [field("Telefone / WhatsApp", tel), field("Nascimento", nasc)]),
+    field("E-mail", email),
+    field("Endereço", endereco),
+    el("div", { class: "cap-row" }, [field("Área", area), field("Origem", origem)]),
+    field("Observações", obs),
+  ]);
+  return {
+    key: "cliente", node,
+    validate: () => (!nome.value.trim() ? { msg: "Informe o nome do cliente.", focus: () => nome.focus() } : null),
+    collect: () => ({ nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim() }),
+  };
+}
+
+// ---------- PROCESSO ----------
+function buildProcessCard(raw, det, clients, linkedToNewClient) {
+  const ex = extractProcess(raw);
+  const auto = hasAny(ex, ["num", "tipo", "vara", "tribunal", "partes", "data_distribuicao", "fase", "valor"]) || ex.grau === "2";
+  const num = inp("0000000-00.0000.8.21.0000", ex.num);
+  // Nome sugerido: "Tipo — Cliente". Quando o Cliente também está sendo criado,
+  // usa o nome extraído do cliente novo; senão, o cliente detectado; por fim, a
+  // parte contrária (para nunca ficar vazio).
+  const linkedName = linkedToNewClient ? (extractClient(raw).nome || "") : (det.client ? det.client.nome : "");
+  const nomeSug = ex.nome || [ex.tipo, linkedName || ex.partes].filter(Boolean).join(" — ");
+  const nome = inp("Ex: Revisão de Alimentos — João Silva", nomeSug, { required: "" });
+  const tipo = inp("Ex: Alimentos, Cobrança…", ex.tipo);
+  const vara = inp("Ex: 1ª Vara de Família — Venâncio Aires", ex.vara);
+  const tribunal = inp("Ex: TJRS, 1ª Instância…", ex.tribunal);
+  const partes = inp("Parte contrária, advogado…", ex.partes);
+  const data = inp("", ex.data_distribuicao, { type: "date" });
+  const fase = inp("Ex: Petição inicial, Sentença…", ex.fase);
+  const status = sel([["Ativo", "Ativo"], ["Suspenso", "Suspenso"], ["Encerrado", "Encerrado"]], "Ativo");
+  const grau = sel([["1", "1º grau"], ["2", "2º grau"]], ex.grau || "1");
+  const valor = inp("Ex: 15000 ou 15.000,00", ex.valor != null ? String(ex.valor) : "", { inputmode: "decimal" });
+  const obs = txt("Histórico, estratégia…", ex.obs, 2);
+
+  // vínculo do cliente: se Cliente também foi escolhido, vincula ao novo; senão,
+  // deixa escolher um cliente já cadastrado (pré-seleciona o detectado).
+  let cliSel = null, linkNote = null;
+  const children = [
+    field("Número do processo", num),
+    field("Nome / Descrição *", nome),
+  ];
+  if (linkedToNewClient) {
+    linkNote = el("div", { class: "cap-linknote" }, "🔗 Será vinculado automaticamente ao cliente novo (cartão acima).");
+    children.push(linkNote);
+  } else {
+    cliSel = el("select", { class: "form-control" });
+    cliSel.append(el("option", { value: "" }, "— nenhum cliente —"));
+    clients.forEach((c) => cliSel.append(el("option", { value: c.id, ...(det.client && det.client.id === c.id ? { selected: "" } : {}) }, c.nome)));
+    children.push(field("Cliente", cliSel));
+  }
+  children.push(
+    el("div", { class: "cap-row" }, [field("Tipo de ação", tipo), field("Grau", grau)]),
+    field("Vara / Juízo", vara),
+    el("div", { class: "cap-row" }, [field("Tribunal", tribunal), field("Fase atual", fase)]),
+    field("Partes contrárias", partes),
+    el("div", { class: "cap-row" }, [field("Distribuição", data), field("Status", status), field("Valor (R$)", valor)]),
+    field("Observações / Estratégia", obs),
+  );
+
+  const node = cardShell("⚖️", "Novo processo", auto, children);
+  return {
+    key: "processo", node,
+    validate: () => (!nome.value.trim() ? { msg: "Dê um nome/descrição ao processo.", focus: () => nome.focus() } : null),
+    collect: () => ({
+      num: num.value.trim(), nome: nome.value.trim(),
+      client_id: cliSel ? (cliSel.value || null) : null,
+      tipo: tipo.value.trim(), vara: vara.value.trim(), tribunal: tribunal.value.trim(),
+      partes: partes.value.trim() || null, data_distribuicao: data.value || null, fase: fase.value.trim(),
+      status: status.value, grau: grau.value, valor: parseMoney(valor.value), obs: obs.value.trim(), andamentos: [],
+    }),
+  };
+}
+
+// ---------- TAREFA ----------
+function buildTaskCard(p, det, clients, processes, raw) {
+  const linkedArea = det.client || det.process ? "profissional" : p.area;
+  let area = linkedArea;
+  const longo = isLongText(raw);
+  const title = inp("Título", longo ? shortTitle(p.title || raw) : (p.title || ""), { required: "" });
+  const desc = txt("Descrição (opcional)", longo ? raw.trim() : "", longo ? 3 : 2);
+  const date = inp("", p.due_date || "", { type: "date" });
+  const time = inp("", p.due_time || "", { type: "time" });
+  const prio = sel([["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]], p.priority || "media");
+
+  const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
+  const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
+  const seg = el("div", { class: "seg" }, [segP, segT]);
+  const cliSel = el("select", { class: "form-control" });
+  cliSel.append(el("option", { value: "" }, "— nenhum —"));
+  clients.forEach((c) => cliSel.append(el("option", { value: c.id, ...(det.client && det.client.id === c.id ? { selected: "" } : {}) }, c.nome)));
+  const procSel = el("select", { class: "form-control" });
+  const procInfo = el("div", { class: "cap-procinfo" });
+  // Mostra nº/vara/fase do processo selecionado, para conferir que é o caso
+  // certo (evita vincular a tarefa ao processo errado quando há nomes parecidos).
+  const showProcInfo = () => {
+    const p2 = procSel.value ? processes.find((x) => x.id === procSel.value) : null;
+    procInfo.innerHTML = "";
+    if (p2) {
+      const bits = [p2.num ? "Nº " + p2.num : "", p2.vara || "", p2.fase || ""].filter(Boolean);
+      if (bits.length) procInfo.append(el("div", { class: "t2" }, "⚖️ " + bits.join(" · ")));
+    }
+  };
+  const fillProcs = () => {
+    const cid = cliSel.value, atual = procSel.value;
+    procSel.innerHTML = "";
+    procSel.append(el("option", { value: "" }, "— nenhum —"));
+    const avail = processes.filter((p2) => !cid || p2.client_id === cid);
+    avail.forEach((p2) => procSel.append(el("option", { value: p2.id }, p2.nome)));
+    procSel.value = avail.some((p2) => p2.id === atual) ? atual : "";
+    showProcInfo();
+  };
+  // Rótulos dinâmicos: na área Pessoal, deixa claro que o vínculo é privado
+  // (só para seu controle) e NÃO aparece na pasta do cliente.
+  const cliLabel = el("span"), procLabel = el("span");
+  const cliHint = el("div", { class: "t2", style: "margin-top:-4px" });
+  const updateLabels = () => {
+    const pessoal = area === "pessoal";
+    cliLabel.textContent = pessoal ? "🔒 Vincular a um cliente (opcional, só seu)" : "Cliente (opcional)";
+    procLabel.textContent = pessoal ? "🔒 Processo (opcional, só seu)" : "Processo (opcional)";
+    cliHint.textContent = pessoal ? "Vínculo só para seu controle — NÃO aparece na pasta do cliente." : "";
+    cliHint.style.display = pessoal ? "block" : "none";
+  };
+  const paintSeg = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); updateLabels(); };
+  segP.onclick = () => { cliSel.value = ""; procSel.value = ""; fillProcs(); area = "pessoal"; paintSeg(); };
+  segT.onclick = () => { area = "profissional"; paintSeg(); };
+  cliSel.addEventListener("change", fillProcs);
+  procSel.addEventListener("change", showProcInfo);
+  paintSeg(); fillProcs();
+  if (det.process && area === "profissional" && processes.some((p2) => p2.id === det.process.id)) { procSel.value = det.process.id; showProcInfo(); }
+
+  const node = cardShell("✅", "Nova tarefa", false, [
+    field("Título *", title),
+    field("Descrição", desc),
+    field("Área", seg),
+    el("div", { class: "cap-row" }, [field("Data", date), field("Hora", time), field("Prioridade", prio)]),
+    field(cliLabel, cliSel),
+    cliHint,
+    field(procLabel, procSel),
+    procInfo,
+  ]);
+  return {
+    key: "tarefa", node,
+    validate: () => (!title.value.trim() ? { msg: "Dê um título à tarefa.", focus: () => title.focus() } : null),
+    collect: () => ({ title: title.value.trim(), description: desc.value.trim(), area, priority: prio.value, due_date: date.value || null, due_time: time.value || null, client_id: cliSel.value || null, process_id: procSel.value || null, done: false }),
+  };
+}
+
+// ---------- AGENDA (evento = tarefa com data, opcionalmente no Google) ----------
+function buildAgendaCard(p, raw) {
+  let area = p.area || "pessoal";
+  const title = inp("O que é?", p.title || "", { required: "" });
+  const date = inp("", p.due_date || todayISO(), { type: "date" });
+  const time = inp("", p.due_time || "", { type: "time" });
+  const desc = txt("Detalhes (opcional)…", isLongText(raw) ? raw.trim() : "", 2);
+  const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
+  const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
+  const seg = el("div", { class: "seg" }, [segP, segT]);
+  const paintSeg = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); };
+  segP.onclick = () => { area = "pessoal"; paintSeg(); };
+  segT.onclick = () => { area = "profissional"; paintSeg(); };
+  paintSeg();
+
+  const gChk = el("input", { type: "checkbox" });
+  const gRow = gcal.isConnected() ? el("label", { class: "cap-field", style: "flex-direction:row; align-items:center; gap:8px" }, [gChk, el("span", {}, "📅 Criar também no Google Agenda")]) : null;
+
+  const node = cardShell("🗓️", "Novo compromisso", !!(p.due_date || p.due_time), [
+    field("O que é? *", title),
+    el("div", { class: "cap-row" }, [field("Data", date), field("Hora", time)]),
+    field("Área", seg),
+    field("Detalhes", desc),
+    gRow,
+  ].filter(Boolean));
+  return {
+    key: "agenda", node,
+    validate: () => (!title.value.trim() ? { msg: "Diga o que é o compromisso.", focus: () => title.focus() } : null),
+    collect: () => ({
+      task: { title: title.value.trim(), description: desc.value.trim(), area, priority: "media", due_date: date.value || todayISO(), due_time: time.value || null, done: false },
+      gcalWanted: !!(gRow && gChk.checked),
+    }),
+  };
+}
+
+// ---------- NOTA ----------
+function buildNoteCard(p, raw) {
+  const longo = isLongText(raw);
+  const title = inp("Título", longo ? shortTitle(p.title || raw) : (p.title || raw || ""));
+  const body = txt("Escreva aqui…", longo ? raw.trim() : "", 4);
+  const node = cardShell("📝", "Nova nota", false, [field("Título", title), field("Conteúdo", body)]);
+  return {
+    key: "nota", node,
+    validate: () => ((!title.value.trim() && !body.value.trim()) ? { msg: "Escreva algo na nota.", focus: () => title.focus() } : null),
+    collect: () => ({ title: title.value.trim(), body: body.value.trim() }),
+  };
+}
+
+// ============================================================
+//  helpers de UI
+// ============================================================
 function field(label, control) { return el("label", { class: "cap-field" }, [label, control]); }
 function icon(emoji) { return el("span", { class: "cap-ico" }, emoji); }
+function inp(ph, val, attrs = {}) { return el("input", { class: "form-control", placeholder: ph, value: val ?? "", ...attrs }); }
+function txt(ph, val, rows = 2) { return el("textarea", { class: "form-control", rows: String(rows), placeholder: ph }, val || ""); }
+function sel(opts, val) { const s = el("select", { class: "form-control" }); opts.forEach(([v, l]) => s.append(el("option", { value: v, ...(v === val ? { selected: "" } : {}) }, l))); return s; }
+// Rótulo do aviso para tarefa/agenda: ecoa a data/hora entendida (ajuda a
+// conferir na hora se a interpretação de linguagem natural acertou o prazo).
+function taskLabel(base, t) {
+  return t.due_date ? base + " · 📅 " + prettyDate(t.due_date) + (t.due_time ? " " + t.due_time : "") : base;
+}
+function openAttachment(a) {
+  try { const link = el("a", { href: a.data, download: a.name || "arquivo" }); document.body.append(link); link.click(); link.remove(); }
+  catch { toast("Não foi possível abrir o anexo."); }
+}

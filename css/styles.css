@@ -283,6 +283,22 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 .seg button.seg-t.active { color: var(--accent); }
 .seg button.seg-p.active { color: var(--moss, #4A5C2E); }
 
+/* Seletor de tipos (multi-seleção) da captura */
+.cap-types { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+.cap-type { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .12s ease; }
+.cap-type:hover { border-color: var(--accent); }
+.cap-type.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.cap-type .cap-ico { font-size: 15px; }
+.cap-typehint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+/* Cartões editáveis por tipo */
+.cap-cards { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.cap-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.cap-card-head { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: var(--text); }
+.cap-card-head .cap-ico { font-size: 17px; }
+.cap-linknote { font-size: 12px; background: rgba(91,140,255,.12); border: 1px solid rgba(91,140,255,.35); color: var(--accent-2, var(--accent)); border-radius: 10px; padding: 8px 10px; font-weight: 600; }
+.cap-autofill { font-size: 11px; font-weight: 600; color: var(--green, #1A6B5A); background: rgba(52,211,153,.14); border-radius: 999px; padding: 2px 8px; margin-left: auto; }
+
 /* Toast */
 .toast-host { position: fixed; left: 0; right: 0; bottom: 84px; z-index: 60; display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; max-width: 560px; width: 100%; background: var(--card-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); animation: slideup .18s ease; }
