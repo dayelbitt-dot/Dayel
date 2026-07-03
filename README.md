@@ -11,6 +11,7 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 - 🧑 **Pessoal** — tarefas, prioridades e prazos
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
 - 🔔 **Lembretes gerais** — tudo que você precisa lembrar, organizado por data (ordem cronológica), agrupado em Atrasados · Hoje · Próximos 7 dias · Mais adiante · Sem data
+- 📄 **Gerar Documentos** — cria **procuração** (judicial/extrajudicial) e **declaração de hipossuficiência** no seu modelo (mesma fonte e formatação), preenchendo com os dados da parte (de um cliente, de documentos anexados ou digitados) e baixa o `.docx`
 - 📝 **Notas** — anotações rápidas
 
 Visual em **tema claro**, otimizado para celular e computador.
