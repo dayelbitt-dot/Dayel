@@ -84,7 +84,8 @@ function detectLinks(raw, clients, processes) {
 // ============================================================
 export function mountCapture(defaultArea, onDone = () => {}) {
   const selected = new Set(["tarefa"]);
-  let attachments = []; // {name,type,size,data}
+  let typesTouched = false; // usuário mexeu manualmente nos destinos?
+  let attachments = []; // {name,type,size,data,text}  (text = conteúdo lido, p/ preencher; não é salvo no registro)
   let cards = [];       // controladores dos cartões ({ key, node, collect })
 
   // Rascunho persistente: o que você escreve/dita e os destinos escolhidos ficam
@@ -114,12 +115,12 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   const paintTypes = () => TYPES.forEach((t) => typeBtns[t.key].classList.toggle("active", selected.has(t.key)));
   TYPES.forEach((t) => {
     const b = el("button", { type: "button", class: "cap-type", "data-k": t.key }, [icon(t.ico), t.label]);
-    b.onclick = () => { selected.has(t.key) ? selected.delete(t.key) : selected.add(t.key); paintTypes(); saveDraft(); };
+    b.onclick = () => { typesTouched = true; selected.has(t.key) ? selected.delete(t.key) : selected.add(t.key); paintTypes(); saveDraft(); };
     typeBtns[t.key] = b;
     typesRow.append(b);
   });
   paintTypes();
-  const typeHint = el("div", { class: "cap-typehint" }, "Escolha um ou mais destinos. Dica: marque 👤 Cliente e ⚖️ Processo juntos para cadastrar e vincular os dois de uma vez.");
+  const typeHint = el("div", { class: "cap-typehint" }, "Escolha os destinos — ou anexe um documento e escreva a instrução (ex.: “cadastre o cliente” / “cadastre o processo”) que eu marco sozinho e puxo os dados do arquivo.");
 
   const micBtn = el("button", { type: "button", class: "cap-btn", title: "Gravar áudio" }, [icon("🎤"), "Falar"]);
   const fileBtn = el("button", { type: "button", class: "cap-btn", title: "Subir arquivos" }, [icon("📎"), "Arquivos"]);
@@ -146,7 +147,8 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     attWrap.innerHTML = "";
     attachments.forEach((a, i) => attWrap.append(el("div", { class: "att-item" }, [
       el("span", { class: "att-ico" }, iconForType(a.type, a.name)),
-      el("span", { class: "att-name grow", onclick: () => openAttachment(a) }, a.name),
+      el("span", { class: "att-name grow", ...(a.data ? { onclick: () => openAttachment(a) } : {}) }, a.name),
+      a.text ? el("span", { class: "att-read t2", title: "Conteúdo lido — será usado para preencher os cadastros" }, "✓ lido") : null,
       el("span", { class: "att-size t2" }, fmtBytes(a.size)),
       el("button", { type: "button", class: "del", title: "Remover", onclick: () => { attachments.splice(i, 1); drawAtts(); saveDraft(); } }, "×"),
     ])));
@@ -172,15 +174,23 @@ export function mountCapture(defaultArea, onDone = () => {}) {
 
   // ---------- preparar ----------
   async function prepare() {
+    const userText = textarea.value.trim();                                   // instrução digitada/ditada
+    const docText = attachments.map((a) => a.text).filter(Boolean).join("\n\n"); // conteúdo dos documentos
+    if (!userText && !docText && !attachments.length) { textarea.focus(); return; }
+
+    // Se o usuário não mexeu nos destinos, deduz da instrução ("cadastre o
+    // cliente/processo", "criar nota", "agendar…").
+    if (!typesTouched) { const intent = intentFromText(userText); if (intent.size) { selected.clear(); intent.forEach((k) => selected.add(k)); paintTypes(); } }
     if (!selected.size) { toast("Escolha ao menos um destino (Tarefa, Agenda, Nota, Cliente ou Processo)."); return; }
-    const raw = textarea.value.trim();
-    if (!raw && !attachments.length) { textarea.focus(); return; }
+
     status.textContent = "Analisando…";
+    const combined = [userText, docText].filter(Boolean).join("\n\n");        // instrução + documentos (p/ extração)
+    const cmdCli = commandName(userText, "cliente");                          // nome dito na instrução, se houver
 
     let clients = [], processes = [];
     try { [clients, processes] = await Promise.all([list("clients", { orderBy: "nome", asc: true }), list("processes")]); } catch {}
-    const det = detectLinks(raw, clients, processes);
-    const parsed = parseNaturalTask(raw, defaultArea) || { title: raw, area: defaultArea, priority: "media", due_date: null, due_time: null };
+    const det = detectLinks(combined, clients, processes);                    // detecta cliente/processo já cadastrados (inclui o doc)
+    const parsed = parseNaturalTask(userText, defaultArea) || { title: userText, area: defaultArea, priority: "media", due_date: null, due_time: null };
 
     cards = [];
     cardsWrap.innerHTML = "";
@@ -189,11 +199,11 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     for (const key of ORDER) {
       if (!selected.has(key)) continue;
       let ctrl = null;
-      if (key === "cliente") ctrl = buildClientCard(raw);
-      else if (key === "processo") ctrl = buildProcessCard(raw, det, clients, bothCliProc);
-      else if (key === "tarefa") ctrl = buildTaskCard(parsed, det, clients, processes, raw);
-      else if (key === "agenda") ctrl = buildAgendaCard(parsed, raw);
-      else if (key === "nota") ctrl = buildNoteCard(parsed, raw);
+      if (key === "cliente") ctrl = buildClientCard(combined, cmdCli);
+      else if (key === "processo") ctrl = buildProcessCard(combined, det, clients, bothCliProc, cmdCli);
+      else if (key === "tarefa") ctrl = buildTaskCard(parsed, det, clients, processes, userText);
+      else if (key === "agenda") ctrl = buildAgendaCard(parsed, userText);
+      else if (key === "nota") ctrl = buildNoteCard(parsed, userText);
       if (ctrl) { cards.push(ctrl); cardsWrap.append(ctrl.node); }
     }
 
@@ -237,29 +247,32 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     try {
       const byKey = Object.fromEntries(cards.map((c) => [c.key, c]));
       let newClient = null;
+      // Anexos salvos no registro: só os que couberam (têm data) e SEM o texto
+      // lido (o texto serviu para preencher os campos; não precisa ir ao banco).
+      const savable = attachments.filter((a) => a.data).map(({ text, ...a }) => a);
 
       if (byKey.cliente) {
-        const data = { ...byKey.cliente.collect(), attachments };
+        const data = { ...byKey.cliente.collect(), attachments: savable };
         const saved = await insert("clients", data);
         if (saved) { undo.push({ table: "clients", id: saved.id }); newClient = saved; }
         feitos.push("👤 Cliente “" + data.nome + "”");
       }
       if (byKey.processo) {
-        const data = { ...byKey.processo.collect(), attachments };
+        const data = { ...byKey.processo.collect(), attachments: savable };
         if (newClient) data.client_id = newClient.id; // VÍNCULO automático
         const saved = await insert("processes", data);
         if (saved) undo.push({ table: "processes", id: saved.id });
         feitos.push("⚖️ Processo “" + data.nome + "”" + (newClient ? " (vinculado)" : ""));
       }
       if (byKey.tarefa) {
-        const data = { ...byKey.tarefa.collect(), attachments };
+        const data = { ...byKey.tarefa.collect(), attachments: savable };
         const saved = await insert("tasks", data);
         if (saved) undo.push({ table: "tasks", id: saved.id });
         feitos.push(taskLabel("✅ Tarefa", data));
       }
       if (byKey.agenda) {
         const { task, gcalWanted } = byKey.agenda.collect();
-        const saved = await insert("tasks", { ...task, attachments });
+        const saved = await insert("tasks", { ...task, attachments: savable });
         if (saved) undo.push({ table: "tasks", id: saved.id });
         feitos.push(taskLabel("🗓️ Agenda", task));
         if (gcalWanted) {
@@ -268,7 +281,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
         }
       }
       if (byKey.nota) {
-        const data = { ...byKey.nota.collect(), attachments };
+        const data = { ...byKey.nota.collect(), attachments: savable };
         const saved = await insert("notes", data);
         if (saved) undo.push({ table: "notes", id: saved.id });
         feitos.push("📝 Nota");
@@ -321,21 +334,23 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     rec.start();
   });
 
-  // ---------- arquivos: extrai texto (para preencher) E anexa (para guardar) ----------
+  // ---------- arquivos: o arquivo FICA ANEXADO; o texto é lido e guardado JUNTO
+  // do anexo (não é despejado na caixa) para preencher os cadastros ao Preparar.
   fileBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const files = [...fileInput.files]; fileInput.value = "";
     for (const file of files) {
-      // anexa (guarda o arquivo)
-      if (file.size > MAX_ANEXO) { status.textContent = `⚠️ “${file.name}” tem ${fmtBytes(file.size)} — limite ${fmtBytes(MAX_ANEXO)}. Só vou ler o texto.`; }
-      else { try { const data = await readFileAsDataURL(file); attachments.push({ name: file.name, type: file.type || "", size: file.size, data }); drawAtts(); } catch {} }
-      // extrai texto (para preencher os campos)
       status.textContent = `📄 Lendo “${file.name}”…`;
-      try {
-        const text = await extractTextFromFile(file, (msg) => { status.textContent = msg; });
-        if (text && text.trim()) { textarea.value = (textarea.value.trim() + "\n" + text.trim()).trim(); status.textContent = `✅ Texto lido de “${file.name}”. Escolha os destinos e toque em Preparar.`; }
-        else status.textContent = `📎 “${file.name}” anexado (sem texto reconhecido).`;
-      } catch (err) { status.textContent = `⚠️ Erro ao ler “${file.name}”: ${err.message || err}`; }
+      let text = "";
+      try { text = (await extractTextFromFile(file, (msg) => { status.textContent = msg; }) || "").trim(); } catch {}
+      // data URL para guardar o arquivo (se couber no limite; senão fica só o texto lido)
+      let data = null;
+      if (file.size <= MAX_ANEXO) { try { data = await readFileAsDataURL(file); } catch {} }
+      attachments.push({ name: file.name, type: file.type || "", size: file.size, data, text });
+      drawAtts();
+      if (file.size > MAX_ANEXO) status.textContent = `⚠️ “${file.name}” (${fmtBytes(file.size)}) é grande demais para guardar, mas li o conteúdo para preencher os cadastros.`;
+      else if (text) status.textContent = `📎 “${file.name}” anexado. Escreva a instrução (ex.: “cadastre o cliente/processo”) e toque em Preparar — vou puxar os dados do arquivo.`;
+      else status.textContent = `📎 “${file.name}” anexado.`;
       saveDraft();
     }
   });
@@ -355,10 +370,12 @@ function cardShell(ico, title, autofilled, children) {
 function hasAny(obj, keys) { return keys.some((k) => obj[k] != null && obj[k] !== "" && obj[k] !== "1"); }
 
 // ---------- CLIENTE ----------
-function buildClientCard(raw) {
+function buildClientCard(raw, cmdName) {
   const ex = extractClient(raw);
-  const auto = hasAny(ex, ["nome", "cpf", "rg", "tel", "email", "nasc", "endereco", "area", "origem", "obs"]);
-  const nome = inp("Nome completo *", ex.nome, { required: "" });
+  const auto = !!cmdName || hasAny(ex, ["nome", "cpf", "rg", "tel", "email", "nasc", "endereco", "area", "origem", "obs"]);
+  // Nome dito na instrução ("cadastre o cliente Fulano") tem prioridade; o resto
+  // (CPF, RG, endereço…) vem do documento anexado.
+  const nome = inp("Nome completo *", cmdName || ex.nome, { required: "" });
   const cpf = inp("000.000.000-00 (ou CNPJ)", ex.cpf);
   const rg = inp("RG", ex.rg);
   const tel = inp("(51) 9 0000-0000", ex.tel);
@@ -386,14 +403,14 @@ function buildClientCard(raw) {
 }
 
 // ---------- PROCESSO ----------
-function buildProcessCard(raw, det, clients, linkedToNewClient) {
+function buildProcessCard(raw, det, clients, linkedToNewClient, cmdName) {
   const ex = extractProcess(raw);
   const auto = hasAny(ex, ["num", "tipo", "vara", "tribunal", "partes", "data_distribuicao", "fase", "valor"]) || ex.grau === "2";
   const num = inp("0000000-00.0000.8.21.0000", ex.num);
   // Nome sugerido: "Tipo — Cliente". Quando o Cliente também está sendo criado,
-  // usa o nome extraído do cliente novo; senão, o cliente detectado; por fim, a
-  // parte contrária (para nunca ficar vazio).
-  const linkedName = linkedToNewClient ? (extractClient(raw).nome || "") : (det.client ? det.client.nome : "");
+  // usa o nome dito na instrução / extraído do cliente novo; senão, o cliente
+  // detectado (já cadastrado); por fim, a parte contrária (para nunca ficar vazio).
+  const linkedName = linkedToNewClient ? (cmdName || extractClient(raw).nome || "") : (det.client ? det.client.nome : "");
   const nomeSug = ex.nome || [ex.tipo, linkedName || ex.partes].filter(Boolean).join(" — ");
   const nome = inp("Ex: Revisão de Alimentos — João Silva", nomeSug, { required: "" });
   const tipo = inp("Ex: Alimentos, Cobrança…", ex.tipo);
@@ -421,6 +438,8 @@ function buildProcessCard(raw, det, clients, linkedToNewClient) {
     cliSel = el("select", { class: "form-control" });
     cliSel.append(el("option", { value: "" }, "— nenhum cliente —"));
     clients.forEach((c) => cliSel.append(el("option", { value: c.id, ...(det.client && det.client.id === c.id ? { selected: "" } : {}) }, c.nome)));
+    // "cadastre o processo": vincula sozinho ao cliente já cadastrado detectado.
+    if (det.client) children.push(el("div", { class: "cap-linknote" }, "🔗 Vinculado automaticamente ao cliente “" + det.client.nome + "” (detectado). Troque abaixo se quiser."));
     children.push(field("Cliente", cliSel));
   }
   children.push(
@@ -584,4 +603,38 @@ function taskLabel(base, t) {
 function openAttachment(a) {
   try { const link = el("a", { href: a.data, download: a.name || "arquivo" }); document.body.append(link); link.click(); link.remove(); }
   catch { toast("Não foi possível abrir o anexo."); }
+}
+
+// Deduz os destinos a partir da instrução digitada ("cadastre o cliente",
+// "cadastre o processo", "criar nota", "agendar reunião"…). Vazio = mantém a
+// seleção atual dos chips.
+function intentFromText(text) {
+  const t = normalize(text);
+  const set = new Set();
+  const cadastro = /\b(cadastr\w*|registr\w*|criar?|cria\w*|adicion\w*|inserir?|gerar?|abrir?|lan[cç]ar?)\b/.test(t);
+  if (cadastro && /\bclientes?\b/.test(t)) set.add("cliente");
+  if (cadastro && (/\bprocessos?\b/.test(t) || /\bpeti[cç][aã]o\b|\bpeticao\b|\bpeticoes\b/.test(t) || /\ba[cç][aã]o\s+judicial\b/.test(t) || /\bautos\b/.test(t))) set.add("processo");
+  if (/\b(criar?|nova?|anotar?)\b.*\bnotas?\b|\bnotas?\b.*\b(criar?|nova?)\b|\banota[çc]\w*/.test(t)) set.add("nota");
+  if (/\bagend\w*|\bcompromisso|\breuni\w*|\baudi[êe]nc\w*|\bevento/.test(t)) set.add("agenda");
+  return set;
+}
+
+// Nome dito logo após "cliente/processo" na instrução ("cadastre o cliente João
+// da Silva" → "João Da Silva"). Ignora placeholders (fulano…) e palavras que se
+// referem ao documento (petição, anexo…), deixando o nome vir do arquivo.
+function commandName(text, kind) {
+  if (!text) return "";
+  const re = new RegExp("\\b" + kind + "s?\\s*:?\\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'.\\-]*(?:\\s+[A-Za-zÀ-ÿ'.\\-]+){0,5})", "i");
+  const m = text.match(re);
+  if (!m) return "";
+  let name = m[1].replace(/^(?:chamad[oa]\s+|de\s+nome\s+|sr[a]?\.?\s+|dr[a]?\.?\s+|d[aeo]s?\s+|para\s+|pra\s+|sobre\s+|nov[oa]\s+|um[a]?\s+|[oa]\s+)/i, "").trim();
+  // corta em palavra que introduz outra ideia (nome de pessoa não tem "com/que/…")
+  const CLAUSE = new Set(["com", "usando", "conforme", "segundo", "cujo", "cuja", "que", "pelo", "pela", "atraves", "e", "dados", "informacoes", "cpf", "rg", "referente"]);
+  const parts = [];
+  for (const w of name.split(/\s+/)) { if (CLAUSE.has(normalize(w))) break; parts.push(w); }
+  name = parts.join(" ");
+  const first = normalize(parts[0] || "");
+  const bloq = new Set(["fulano", "beltrano", "sicrano", "ciclano", "peticao", "anexa", "anexo", "anexos", "documento", "documentos", "doc", "arquivo", "arquivos", "acima", "abaixo", "cliente", "processo"]);
+  if (!name || bloq.has(first)) return "";
+  return name.split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
