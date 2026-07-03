@@ -4,6 +4,9 @@ import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast } from ".
 import { mountCapture } from "./capture.js";
 import { detectColumns, matchClient, buildProcessFromRow, parseCSV, inferGrau, extractProcessesFromText } from "./planilha.js";
 import { extractTextFromFile } from "./files.js";
+import { extractClient } from "./extract.js";
+import { aiEnabled, aiExtract } from "./ai.js";
+import { DOCS, gerarDocumentos } from "./docs.js";
 import * as gcal from "./gcal.js";
 
 let state = { route: "dashboard" };
@@ -115,7 +118,7 @@ function navigate(route) {
   state.route = route;
   $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === route));
   removeFab();
-  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
+  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
   (routes[route] || renderDashboard)();
 }
 
@@ -1546,6 +1549,141 @@ function parseValor(s) {
   else if (v.includes(",")) v = v.replace(",", ".");
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
+}
+
+// ==================== GERAR DOCUMENTOS ====================
+// Gera procuração (judicial/extrajudicial) e declaração de hipossuficiência a
+// partir dos modelos .docx, preenchendo com os dados da parte. Os dados podem
+// vir de um cliente já cadastrado, de documentos anexados (CNH/RG/comprovante) ou
+// digitados. O arquivo gerado sai igual ao modelo e é baixado.
+const EST_CIVIL = {
+  M: ["solteiro", "casado", "divorciado", "viúvo", "separado", "em união estável"],
+  F: ["solteira", "casada", "divorciada", "viúva", "separada", "em união estável"],
+};
+async function renderGerarDocs() {
+  loading();
+  const clients = await list("clients", { orderBy: "nome", asc: true });
+  const main = $("#main");
+  main.innerHTML = "";
+
+  // ---- estado do formulário ----
+  const dados = { nome: "", sexo: "F", nacionalidade: "", estadoCivil: "", profissao: "", cpf: "", rg: "", endereco: "", objeto: "", situacao: "", dataISO: todayISO() };
+
+  const inp = (ph, key, attrs = {}) => { const e = el("input", { class: "form-control", placeholder: ph, value: dados[key] || "", ...attrs }); e.addEventListener("input", () => { dados[key] = e.value; }); return e; };
+  const nome = inp("Nome completo *", "nome");
+  const cpf = inp("000.000.000-00", "cpf");
+  const rg = inp("RG", "rg");
+  const endereco = inp("Rua, nº, bairro, cidade — UF", "endereco");
+  const nacionalidade = inp("brasileira / brasileiro", "nacionalidade");
+  const profissao = inp("Ex: professora, empresário…", "profissao");
+  const estadoCivilSel = el("select", { class: "form-control" });
+  const fillEstadoCivil = () => {
+    const atual = dados.estadoCivil;
+    estadoCivilSel.innerHTML = "";
+    estadoCivilSel.append(el("option", { value: "" }, "—"));
+    EST_CIVIL[dados.sexo].forEach((v) => estadoCivilSel.append(el("option", { value: v, ...(v === atual ? { selected: "" } : {}) }, v)));
+  };
+  estadoCivilSel.addEventListener("change", () => { dados.estadoCivil = estadoCivilSel.value; });
+  fillEstadoCivil();
+
+  const segF = el("button", { type: "button", class: "seg-p" }, "♀ Mulher");
+  const segM = el("button", { type: "button", class: "seg-t" }, "♂ Homem");
+  const paintSexo = () => { segF.classList.toggle("active", dados.sexo === "F"); segM.classList.toggle("active", dados.sexo === "M"); };
+  const setSexo = (s) => { const ec = EST_CIVIL[dados.sexo].indexOf(dados.estadoCivil); dados.sexo = s; if (ec >= 0) { dados.estadoCivil = EST_CIVIL[s][ec]; } fillEstadoCivil(); paintSexo(); };
+  segF.onclick = () => setSexo("F"); segM.onclick = () => setSexo("M");
+  paintSexo();
+
+  const data = el("input", { class: "form-control", type: "date", value: dados.dataISO }); data.addEventListener("input", () => { dados.dataISO = data.value; });
+  const objeto = el("textarea", { class: "form-control", rows: "2", placeholder: "Ex: à ação de cobrança, ajuizada em desfavor de Fulano de Tal." }); objeto.addEventListener("input", () => { dados.objeto = objeto.value; });
+  const situacao = inp("Ex: aposentada, desempregado… (padrão: a profissão)", "situacao");
+
+  // preencher a partir de um cliente já cadastrado
+  const cliSel = el("select", { class: "form-control" });
+  cliSel.append(el("option", { value: "" }, "— preencher manualmente / por documento —"));
+  clients.forEach((c) => cliSel.append(el("option", { value: c.id }, c.nome)));
+  const aplicarCliente = (c) => {
+    dados.nome = c.nome || ""; dados.cpf = c.cpf || ""; dados.rg = c.rg || ""; dados.endereco = c.endereco || "";
+    nome.value = dados.nome; cpf.value = dados.cpf; rg.value = dados.rg; endereco.value = dados.endereco;
+    // tenta puxar profissão/estado civil das observações, se houver
+    const obs = c.obs || "";
+    const mp = obs.match(/profiss[ãa]o:\s*([^·\n]+)/i); if (mp) { dados.profissao = mp[1].trim(); profissao.value = dados.profissao; }
+  };
+  cliSel.addEventListener("change", () => { const c = clients.find((x) => x.id === cliSel.value); if (c) aplicarCliente(c); });
+
+  // preencher a partir de documentos (CNH/RG/comprovante) — lê e completa
+  const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.txt,.md,.csv,text/plain", multiple: "" });
+  const docStatus = el("div", { class: "capture-status" });
+  const upBtn = el("button", { type: "button", class: "cap-btn" }, "📎 Ler documentos (CNH, RG, comprovante…)");
+  upBtn.onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const files = [...fileInput.files]; fileInput.value = "";
+    let texto = "";
+    for (const f of files) {
+      docStatus.textContent = `📄 Lendo “${f.name}”…`;
+      try { texto += "\n" + (await extractTextFromFile(f, (m) => { docStatus.textContent = m; }) || ""); } catch {}
+    }
+    if (!texto.trim()) { docStatus.textContent = "⚠️ Não consegui ler texto dos arquivos."; return; }
+    let ex = null;
+    if (aiEnabled()) { docStatus.textContent = "🤖 Lendo com IA…"; try { const ai = await aiExtract(texto, ["cliente"]); if (ai && ai.clientes && ai.clientes[0]) ex = ai.clientes[0]; } catch {} }
+    if (!ex) ex = extractClient(texto);
+    const set = (key, node, val) => { if (val) { dados[key] = val; node.value = val; } };
+    set("nome", nome, ex.nome); set("cpf", cpf, ex.cpf); set("rg", rg, ex.rg); set("endereco", endereco, ex.endereco);
+    docStatus.textContent = "✅ Dados lidos do documento. Confira e complete abaixo.";
+  };
+
+  // seleção de documentos a gerar
+  const escolhidos = new Set();
+  const tipoBtns = el("div", { class: "cap-types" });
+  DOCS.forEach((doc) => {
+    const b = el("button", { type: "button", class: "cap-type", "data-k": doc.key }, [el("span", { class: "cap-ico" }, doc.ico), doc.label]);
+    b.onclick = () => { escolhidos.has(doc.key) ? escolhidos.delete(doc.key) : escolhidos.add(doc.key); b.classList.toggle("active"); atualizarCondicionais(); };
+    tipoBtns.append(b);
+  });
+  const objetoField = lbl("Objeto da procuração judicial (a ação, o pedido, contra quem)", objeto);
+  const situacaoField = lbl("Situação para a hipossuficiência", situacao);
+  const atualizarCondicionais = () => {
+    objetoField.style.display = escolhidos.has("procuracao_judicial") ? "" : "none";
+    situacaoField.style.display = escolhidos.has("declaracao") ? "" : "none";
+  };
+
+  const gerarBtn = el("button", { type: "button", class: "btn btn-primary btn-block" }, "📄 Gerar e baixar");
+  gerarBtn.onclick = async () => {
+    if (!dados.nome.trim()) { toast("Informe o nome da parte."); nome.focus(); return; }
+    if (!escolhidos.size) { toast("Escolha ao menos um documento para gerar."); return; }
+    if (escolhidos.has("procuracao_judicial") && !dados.objeto.trim()) { toast("Descreva o objeto da procuração judicial."); objeto.focus(); return; }
+    gerarBtn.disabled = true; gerarBtn.textContent = "Gerando…";
+    try {
+      await gerarDocumentos([...escolhidos], dados);
+      toast("✅ Documento(s) gerado(s). Verifique os downloads.");
+    } catch (e) {
+      toast("Não consegui gerar: " + (e?.message || e));
+    } finally { gerarBtn.disabled = false; gerarBtn.textContent = "📄 Gerar e baixar"; }
+  };
+
+  main.append(
+    el("div", {}, [el("h1", { class: "page-title" }, "Gerar Documentos 📄"), el("p", { class: "page-sub" }, "Procuração e declaração de hipossuficiência, prontas e no seu modelo")]),
+    el("div", { class: "card" }, [
+      el("div", { class: "card-title" }, "1. Dados da parte"),
+      lbl("Usar um cliente já cadastrado", cliSel),
+      el("div", { style: "margin:8px 0" }, [upBtn, docStatus, fileInput]),
+      lbl("Nome completo *", nome),
+      lbl("Sexo (para concordância: brasileiro/a, inscrito/a…)", el("div", { class: "seg" }, [segF, segM])),
+      el("div", { class: "cap-row" }, [lbl("Nacionalidade", nacionalidade), lbl("Estado civil", estadoCivilSel), lbl("Profissão", profissao)]),
+      el("div", { class: "cap-row" }, [lbl("CPF", cpf), lbl("RG", rg)]),
+      lbl("Endereço", endereco),
+    ]),
+    el("div", { class: "card" }, [
+      el("div", { class: "card-title" }, "2. Quais documentos gerar"),
+      tipoBtns,
+      objetoField,
+      situacaoField,
+      lbl("Data do documento", data),
+    ]),
+    el("div", { style: "margin-top:4px" }, [gerarBtn]),
+    el("p", { class: "t2", style: "margin-top:10px" }, "Os outorgados (seu escritório) e o texto dos poderes vêm prontos do modelo. Confira o documento gerado antes de assinar."),
+  );
+  atualizarCondicionais();
+  removeFab();
 }
 
 // ==================== ANEXOS (arquivos embutidos na tarefa) ====================
