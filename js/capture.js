@@ -9,6 +9,7 @@ import { el, prettyDate, todayISO, toast } from "./ui.js";
 import { parseNaturalTask, shortTitle, isLongText } from "./nlp.js";
 import { extractTextFromFile } from "./files.js";
 import { extractClient, extractProcess, parseMoney } from "./extract.js";
+import { aiEnabled, aiExtract } from "./ai.js";
 import { list, insert, remove } from "./store.js";
 import * as gcal from "./gcal.js";
 
@@ -192,6 +193,18 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     const det = detectLinks(combined, clients, processes);                    // detecta cliente/processo já cadastrados (inclui o doc)
     const parsed = parseNaturalTask(userText, defaultArea) || { title: userText, area: defaultArea, priority: "media", due_date: null, due_time: null };
 
+    // Leitura dos campos de cliente/processo: IA (quando configurada) na frente,
+    // regras (extract.js) preenchendo o que faltar. Se a IA não estiver
+    // disponível, usa só as regras — sem travar.
+    let aiCli = null, aiProc = null;
+    if (aiEnabled() && combined && (selected.has("cliente") || selected.has("processo"))) {
+      status.textContent = "🤖 Lendo o documento com IA…";
+      try { const ai = await aiExtract(combined, [...selected].filter((k) => k === "cliente" || k === "processo")); if (ai) { aiCli = ai.cliente; aiProc = ai.processo; } } catch {}
+    }
+    status.textContent = "";
+    const exCli = mergeFields(aiCli, extractClient(combined));
+    const exProc = mergeFields(aiProc, extractProcess(combined));
+
     cards = [];
     cardsWrap.innerHTML = "";
     const bothCliProc = selected.has("cliente") && selected.has("processo");
@@ -199,8 +212,8 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     for (const key of ORDER) {
       if (!selected.has(key)) continue;
       let ctrl = null;
-      if (key === "cliente") ctrl = buildClientCard(combined, cmdCli);
-      else if (key === "processo") ctrl = buildProcessCard(combined, det, clients, bothCliProc, cmdCli);
+      if (key === "cliente") ctrl = buildClientCard(exCli, cmdCli);
+      else if (key === "processo") ctrl = buildProcessCard(exProc, det, clients, bothCliProc, cmdCli, exCli.nome);
       else if (key === "tarefa") ctrl = buildTaskCard(parsed, det, clients, processes, userText);
       else if (key === "agenda") ctrl = buildAgendaCard(parsed, userText);
       else if (key === "nota") ctrl = buildNoteCard(parsed, userText);
@@ -362,16 +375,23 @@ export function mountCapture(defaultArea, onDone = () => {}) {
 //  CARTÕES POR TIPO
 // ============================================================
 
+// Mescla os campos: a IA (quando veio) tem prioridade; as regras preenchem o
+// que a IA deixou em branco. Assim nunca fica pior que só as regras.
+function mergeFields(ai, heur) {
+  const out = { ...heur };
+  if (ai) for (const [k, v] of Object.entries(ai)) if (v != null && v !== "") out[k] = v;
+  return out;
+}
+
 function cardShell(ico, title, autofilled, children) {
   const head = el("div", { class: "cap-card-head" }, [icon(ico), el("span", {}, title)]);
-  if (autofilled) head.append(el("span", { class: "cap-autofill" }, "✨ preenchido do texto"));
+  if (autofilled) head.append(el("span", { class: "cap-autofill" }, "✨ preenchido automaticamente"));
   return el("div", { class: "cap-card" }, [head, ...children]);
 }
 function hasAny(obj, keys) { return keys.some((k) => obj[k] != null && obj[k] !== "" && obj[k] !== "1"); }
 
 // ---------- CLIENTE ----------
-function buildClientCard(raw, cmdName) {
-  const ex = extractClient(raw);
+function buildClientCard(ex, cmdName) {
   const auto = !!cmdName || hasAny(ex, ["nome", "cpf", "rg", "tel", "email", "nasc", "endereco", "area", "origem", "obs"]);
   // Nome dito na instrução ("cadastre o cliente Fulano") tem prioridade; o resto
   // (CPF, RG, endereço…) vem do documento anexado.
@@ -403,14 +423,13 @@ function buildClientCard(raw, cmdName) {
 }
 
 // ---------- PROCESSO ----------
-function buildProcessCard(raw, det, clients, linkedToNewClient, cmdName) {
-  const ex = extractProcess(raw);
+function buildProcessCard(ex, det, clients, linkedToNewClient, cmdName, newClientName) {
   const auto = hasAny(ex, ["num", "tipo", "vara", "tribunal", "partes", "data_distribuicao", "fase", "valor"]) || ex.grau === "2";
   const num = inp("0000000-00.0000.8.21.0000", ex.num);
   // Nome sugerido: "Tipo — Cliente". Quando o Cliente também está sendo criado,
   // usa o nome dito na instrução / extraído do cliente novo; senão, o cliente
   // detectado (já cadastrado); por fim, a parte contrária (para nunca ficar vazio).
-  const linkedName = linkedToNewClient ? (cmdName || extractClient(raw).nome || "") : (det.client ? det.client.nome : "");
+  const linkedName = linkedToNewClient ? (cmdName || newClientName || "") : (det.client ? det.client.nome : "");
   const nomeSug = ex.nome || [ex.tipo, linkedName || ex.partes].filter(Boolean).join(" — ");
   const nome = inp("Ex: Revisão de Alimentos — João Silva", nomeSug, { required: "" });
   const tipo = inp("Ex: Alimentos, Cobrança…", ex.tipo);

@@ -115,6 +115,29 @@ Salve, e pronto: o app passa a pedir login e sincronizar entre aparelhos. ✅
 
 ---
 
+## 🤖 Leitura de documentos por IA (opcional, recomendado p/ petições)
+
+Sem isso, o app já lê documentos por **regras** (bom para fichas organizadas). Para
+ler **petições e documentos livres muito melhor** (nome, CPF, RG, endereço,
+requerente × requerido, dados do processo), ligue a leitura por **IA**. A chave da
+API fica **só no servidor** (nunca no navegador), então é seguro mesmo com o
+repositório público.
+
+1. Tenha uma chave da **Anthropic** (Claude) — `https://console.anthropic.com`.
+2. Instale a [CLI do Supabase](https://supabase.com/docs/guides/cli) e faça login (`supabase login`), depois `supabase link` no seu projeto.
+3. Publique a função e guarde a chave (uma vez):
+   ```bash
+   supabase functions deploy extrair
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-sua-chave
+   # opcional (mais preciso, um pouco mais caro):
+   # supabase secrets set ANTHROPIC_MODEL=claude-sonnet-5
+   ```
+4. Pronto. Na **Captura rápida**, ao anexar um documento aparece “🤖 Lendo o documento com IA…”. Se a função não estiver instalada, o app volta sozinho para a leitura por regras — nada quebra.
+
+> Custa **centavos por documento** (modelo `claude-haiku` por padrão). A função está em [`supabase/functions/extrair/index.ts`](supabase/functions/extrair/index.ts).
+
+---
+
 ## 📲 Como usar no celular
 
 Depois de publicado (ex: GitHub Pages), abra o link no navegador do celular:
@@ -145,10 +168,12 @@ js/auth.js              # login
 js/ui.js                # utilitários e gráfico
 js/capture.js           # captura rápida multi-tipo (Tarefa/Agenda/Nota/Cliente/Processo)
 js/nlp.js               # interpretador de linguagem natural (prazo, prioridade, área)
-js/extract.js           # extração de dados de cliente/processo de documentos (pt-BR)
+js/extract.js           # extração de dados de cliente/processo por REGRAS (pt-BR)
+js/ai.js                # leitura de documentos por IA (opcional, via função do Supabase)
 js/files.js             # extrai texto de PDF/imagem (OCR)/txt
 js/app.js               # telas e navegação
 supabase/schema.sql     # banco de dados
+supabase/functions/extrair/  # função de IA (chave da API fica no servidor)
 manifest.webmanifest    # configuração do PWA
 sw.js                   # funcionar offline
 ```
