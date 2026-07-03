@@ -74,6 +74,21 @@ function fmtDoc(digits) {
   return digits;
 }
 
+// "JOÃO DA SILVA" / "joão da silva" → "João da Silva" (conectivos em minúsculas).
+function titleCaseName(s) {
+  return clean(s).split(/\s+/).map((w) => /^(d[aeo]s?|e)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+}
+// Deixa só o nome da pessoa: corta na vírgula e na abertura da qualificação
+// ("brasileiro, casado…"), limita o tamanho e normaliza a caixa.
+function cleanPersonName(s) {
+  if (!s) return "";
+  let n = clean(s).split(/[,;\n]/)[0];
+  n = n.replace(/\b(brasileir[oa]|estrangeir[oa]|nacionalidade|natural|portador\w*|inscrit\w*|estado\s+civil|solteir\w*|casad\w*|divorciad\w*|vi[úu]v\w*|separad\w*|companheir\w*|uni[ãa]o|residente|domiciliad\w*|maior|capaz|advogad\w*|profiss\w*|ocupa\w*|do\s+lar|aposentad\w*)\b.*$/i, "").trim();
+  n = n.replace(/^(?:vem|v[êe]m|venho|vimos|requer|requerem|comparece|prop[õo]e|isto\s+posto|serve|serve-se|exm[oa]\.?|sr[a]?\.?|dr[a]?\.?|a\s+seguir|respeitosamente)\s+/i, "").replace(/[\s.]+$/, "");
+  const words = n.split(/\s+/).filter(Boolean).slice(0, 6);
+  return words.length >= 2 ? titleCaseName(words.join(" ")) : "";
+}
+
 // Heurística: uma linha que "parece" nome de pessoa (2 a 6 palavras, só letras).
 function guessName(text) {
   for (const raw of text.split(/\n/)) {
@@ -115,26 +130,40 @@ export function extractClient(text) {
     || firstMatch(text, /\(?\d{2}\)?\s*9?\d{4}[-\s]\d{4}/);
   out.email = labeled(text, "e-?mail") || firstMatch(text, /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
   out.nasc = brDateToISO(labeled(text, "data\\s+de\\s+nascimento|nascimento|nascid[oa]\\s+em|nascid[oa]"));
+  // Prosa: "nascida em 12/05/1988" (sem ":").
+  if (!out.nasc) { const m = text.match(/nascid[oa]\s+(?:em\s+|no\s+dia\s+)?(\d{1,2}\/\d{1,2}\/\d{2,4})/i); if (m) out.nasc = brDateToISO(m[1]); }
 
   // Endereço: rótulo com ":" OU prosa de petição ("residente e domiciliado na …").
   let endereco = labeled(text, "endere[cç]o|logradouro");
   if (!endereco) {
     const m = text.match(/(?:residente\s+e\s+domiciliad[oa]|residente|domiciliad[oa])\s+(?:à|na|no|em)\s+([^\n]{6,200})/i);
-    if (m) endereco = clean(m[1].split(/\s*,?\s*\b(?:vem|venho|requer|prop[õo]e|neste\s+ato|por\s+meio|pelo\s+presente|serve[- ]se)\b/i)[0]).replace(/[,;]\s*$/, "");
+    if (m) {
+      let e = clean(m[1]);
+      const cepm = e.match(/^(.*?\bCEP[:\s]*\d{5}-?\d{3})/i);        // termina no CEP, se houver
+      if (cepm) e = cepm[1];
+      else e = e.split(/\s*,?\s*\b(?:telefone|tel\.?|fone|celular|e-?mail|por\s+seu|por\s+sua|neste\s+ato|por\s+meio|pelo\s+presente|vem|venho|requer|prop[õo]e|serve[- ]se)\b/i)[0];
+      endereco = clean(e).replace(/[,;]\s*$/, "");
+    }
   }
   const cep = firstMatch(text, /\b\d{5}-\d{3}\b/);
   if (cep && !/\d{5}-\d{3}/.test(endereco)) endereco = clean(endereco + (endereco ? " — CEP " : "CEP ") + cep);
   out.endereco = endereco;
 
   // ---- Reforços para textos em PROSA (ex.: petição inicial), sem rótulo ":" ----
-  if (!out.cpf) { const m = text.match(/\bCPF\b[^\d]{0,14}(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/i); if (m) { const d = m[1].replace(/\D/g, ""); if (d.length === 11) out.cpf = fmtDoc(d); } }
+  // CPF perto do rótulo, tolerante a espaços/pontos (ruído de PDF/OCR).
+  if (!out.cpf) { const m = text.match(/\bCPF(?:\/MF)?\b[\s\S]{0,20}?(\d[\d.\s-]{11,18}\d)/i); if (m) { const d = m[1].replace(/\D/g, "").slice(0, 11); if (d.length === 11) out.cpf = fmtDoc(d); } }
   if (!out.rg)  { const m = text.match(/\b(?:RG|c[ée]dula\s+de\s+identidade|carteira\s+de\s+identidade|identidade)\b[^\d]{0,15}(\d[\d.\-\/]{3,}[\dxX])/i); if (m) out.rg = m[1].trim(); }
-  if (!out.nome) {
-    // Petições começam a qualificação com a parte em CAIXA ALTA, no início da
-    // linha e seguida de ", <qualificação em minúsculas>": "FULANO DE TAL, brasileiro…"
-    const m = text.match(/(?:^|\n)\s*([A-ZÀ-Ý][A-ZÀ-Ý]+(?:[ \t]+(?:D[AEO]S?|E|[A-ZÀ-Ý]{2,})){1,5})\s*,\s+[a-zà-ÿ]/);
-    if (m) out.nome = m[1].trim().split(/\s+/).map((w) => /^(D[AEO]S?|E)$/i.test(w) ? w.toLowerCase() : w.charAt(0) + w.slice(1).toLowerCase()).join(" ");
+  {
+    // Nome do REQUERENTE = 1ª pessoa qualificada. Padrão robusto: nome (Maiúsculas
+    // ou Título, 2 a 6 palavras) seguido da abertura da qualificação — funciona no
+    // meio da linha, mesmo com o PDF quebrando o texto. Tem prioridade sobre o
+    // rótulo genérico (que às vezes engole a qualificação inteira).
+    const QUALIF = "brasileir|estrangeir|nacionalidade|natural\\s+de|portador|portadora|inscrit|estado\\s+civil|solteir|casad|divorciad|vi[úu]v|separad|uni[ãa]o\\s+est[aá]vel|companheir|maior\\s+e\\s+capaz|advogad|profiss[ãa]o|residente\\s+e\\s+domiciliad";
+    const re = new RegExp("([A-ZÀ-Ý][\\p{L}]+(?:[ \\t]+(?:d[aeo]s?|e|[A-ZÀ-Ý][\\p{L}']+)){1,5})\\s*,\\s*(?:" + QUALIF + ")", "iu");
+    const m = text.match(re);
+    if (m) out.nome = m[1];
   }
+  out.nome = cleanPersonName(out.nome);
 
   out.area = labeled(text, "[aá]rea(?:\\s+do\\s+direito)?|[aá]rea\\s+jur[ií]dica");
   out.origem = labeled(text, "origem|indica[cç][aã]o|como\\s+chegou|captado\\s+por");
