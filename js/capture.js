@@ -26,6 +26,8 @@ const TYPES = [
 ];
 // Ordem de criação (cliente antes do processo, para poder vincular).
 const ORDER = ["cliente", "processo", "tarefa", "agenda", "nota"];
+// Rótulo do botão de cadastrar de cada cartão.
+const CARD_ACTION = { cliente: "✓ Cadastrar cliente", processo: "✓ Gerar processo", tarefa: "✓ Criar tarefa", agenda: "✓ Adicionar à agenda", nota: "✓ Salvar nota" };
 
 // ---------- anexos (arquivos embutidos como data URL) ----------
 const MAX_ANEXO = 8 * 1024 * 1024; // 8 MB por arquivo
@@ -88,6 +90,8 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   let typesTouched = false; // usuário mexeu manualmente nos destinos?
   let attachments = []; // {name,type,size,data,text}  (text = conteúdo lido, p/ preencher; não é salvo no registro)
   let cards = [];       // controladores dos cartões ({ key, node, collect })
+  let sessionUndo = [];      // {table,id} ou {gcalId} criados nesta captura
+  let sessionClientIds = []; // ids dos clientes já cadastrados nesta captura (p/ vincular o processo)
 
   // Rascunho persistente: o que você escreve/dita e os destinos escolhidos ficam
   // salvos NESTE aparelho, então dá para sair, fechar o app e continuar de onde
@@ -205,45 +209,65 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     const exProc = mergeFields(aiProc, extractProcess(combined));
 
     // ---- Lista de CLIENTES a cadastrar (uma OU várias partes) ----
-    const clientCmd = parseClientCommand(userText);      // { mode: one|all|named, names: [] }
+    const clientCmd = parseClientCommand(userText);      // { mode: one|all|named, names: [], side }
     let parties = [];
     if (selected.has("cliente")) {
       // Ao indicar por NOME, procura em ambos os lados (o cliente pode ser o réu).
       const side = clientCmd.mode === "named" ? "ambos" : clientCmd.side;
-      parties = (aiUsed && Array.isArray(aiClientes) && aiClientes.length) ? aiClientes : extractClients(combined, side);
-      if (!parties.length) parties = [extractClient(combined)];
+      const regras = extractClients(combined, side);
+      const ia = (aiUsed && Array.isArray(aiClientes)) ? aiClientes.filter((p) => p && (p.nome || p.cpf)) : [];
       if (clientCmd.mode === "one") {
-        parties = [parties[0] || {}];
+        parties = [ia[0] || regras[0] || extractClient(combined) || {}];
         if (!parties[0].nome && cmdCli) parties[0] = { ...parties[0], nome: cmdCli };
-      } else if (clientCmd.mode === "named" && clientCmd.names.length) {
-        parties = clientCmd.names.map((nm) => parties.find((p) => nameMatches(p.nome, nm)) || { nome: nm });
+      } else {
+        // "todas as partes": usa a fonte com MAIS partes (a IA antiga pode devolver
+        // só 1; as regras acham todas). Assim nunca cadastra menos que o documento tem.
+        parties = ia.length >= regras.length ? ia : regras;
+        if (!parties.length) { const c = extractClient(combined); if (c.nome || c.cpf) parties = [c]; }
+        if (clientCmd.mode === "named" && clientCmd.names.length) {
+          parties = clientCmd.names.map((nm) => parties.find((p) => nameMatches(p.nome, nm)) || { nome: nm });
+        }
       }
     }
     const partyNames = parties.map((p) => p.nome).filter(Boolean);
 
     cards = [];
     cardsWrap.innerHTML = "";
+    sessionUndo = []; sessionClientIds = [];
     const bothCliProc = selected.has("cliente") && selected.has("processo");
 
+    // Monta os controladores (um por cartão; várias partes = vários cartões de cliente).
+    const ctrls = [];
     for (const key of ORDER) {
       if (!selected.has(key)) continue;
-      if (key === "cliente") {
-        parties.forEach((p, i) => { const c = buildClientCard(p, null, aiUsed, parties.length > 1 ? i + 1 : 0); cards.push(c); cardsWrap.append(c.node); });
-        continue;
-      }
-      let ctrl = null;
-      if (key === "processo") ctrl = buildProcessCard(exProc, det, clients, bothCliProc, partyNames, aiUsed);
-      else if (key === "tarefa") ctrl = buildTaskCard(parsed, det, clients, processes, userText);
-      else if (key === "agenda") ctrl = buildAgendaCard(parsed, userText);
-      else if (key === "nota") ctrl = buildNoteCard(parsed, userText);
-      if (ctrl) { cards.push(ctrl); cardsWrap.append(ctrl.node); }
+      if (key === "cliente") { parties.forEach((p, i) => ctrls.push(buildClientCard(p, null, aiUsed, parties.length > 1 ? i + 1 : 0))); continue; }
+      if (key === "processo") ctrls.push(buildProcessCard(exProc, det, clients, bothCliProc, partyNames, aiUsed));
+      else if (key === "tarefa") ctrls.push(buildTaskCard(parsed, det, clients, processes, userText));
+      else if (key === "agenda") ctrls.push(buildAgendaCard(parsed, userText));
+      else if (key === "nota") ctrls.push(buildNoteCard(parsed, userText));
     }
+    cards = ctrls.filter(Boolean);
 
-    const gerar = el("button", { type: "button", class: "btn btn-primary btn-block" }, "✓ Gerar tudo");
-    const cancelar = el("button", { type: "button", class: "btn btn-ghost btn-block" }, "Cancelar");
-    gerar.onclick = () => generate(gerar);
-    cancelar.onclick = reset;
-    cardsWrap.append(el("div", { class: "cap-gen" }, [cancelar, gerar]));
+    // Com mais de um cartão, CADA cartão ganha seu próprio botão de cadastrar —
+    // você autoriza cada um separadamente. Com um só, usa o botão de baixo.
+    const multi = cards.length > 1;
+    cards.forEach((ctrl) => {
+      if (multi) {
+        const btn = el("button", { type: "button", class: "btn btn-primary btn-block cap-cardbtn" }, CARD_ACTION[ctrl.key] || "✓ Cadastrar");
+        btn.onclick = () => createOne(ctrl, btn);
+        ctrl._btn = btn;
+        ctrl.node.append(el("div", { class: "cap-cardfoot" }, [btn]));
+      }
+      cardsWrap.append(ctrl.node);
+    });
+
+    const principal = el("button", { type: "button", class: "btn btn-primary btn-block" }, multi ? "✓ Cadastrar todos os pendentes" : (CARD_ACTION[cards[0] ? cards[0].key : ""] || "✓ Gerar"));
+    const limpar = el("button", { type: "button", class: "btn btn-ghost btn-block" }, "Limpar");
+    // Um só cartão: cadastra e já limpa (fluxo rápido de sempre). Vários: cada um
+    // tem seu botão; este cadastra os que faltam.
+    principal.onclick = async () => { if (multi) { await createAllPending(principal); } else if (cards[0] && await createOne(cards[0], principal)) { reset(); } };
+    limpar.onclick = reset;
+    cardsWrap.append(el("div", { class: "cap-gen" }, [limpar, principal]));
 
     status.textContent = "";
     cardsWrap.classList.remove("hidden");
@@ -270,82 +294,83 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     }
   }
 
-  async function generate(btn) {
-    // validação
-    for (const c of cards) { const err = c.validate && c.validate(); if (err) { toast(err.msg); err.focus && err.focus(); return; } }
-    btn.disabled = true;
-    const undo = [];      // {table,id} ou {gcalId}
-    const feitos = [];    // rótulos para o aviso
+  // Marca um cartão como já cadastrado (trava os campos e o botão).
+  function markDone(ctrl, btn) {
+    ctrl.done = true;
+    ctrl.node.classList.add("cap-card-done");
+    ctrl.node.querySelectorAll("input, textarea, select").forEach((x) => { x.disabled = true; });
+    if (btn) { btn.disabled = true; btn.classList.remove("btn-primary"); btn.textContent = "✓ Cadastrado"; }
+  }
+
+  // Cadastra UM cartão (autorização individual). O processo é vinculado a todos
+  // os clientes já cadastrados nesta captura (sessionClientIds).
+  async function createOne(ctrl, btn) {
+    if (!ctrl || ctrl.done) return true;
+    const err = ctrl.validate && ctrl.validate(); if (err) { toast(err.msg); err.focus && err.focus(); return false; }
+    const prev = btn ? btn.textContent : ""; if (btn) { btn.disabled = true; btn.textContent = "Salvando…"; }
+    const savable = attachments.filter((a) => a.data).map(({ text, ...a }) => a);
     try {
-      const byKey = Object.fromEntries(cards.map((c) => [c.key, c]));
-      const clienteCards = cards.filter((c) => c.key === "cliente");
-      const newClientIds = [];
-      // Anexos salvos no registro: só os que couberam (têm data) e SEM o texto
-      // lido (o texto serviu para preencher os campos; não precisa ir ao banco).
-      const savable = attachments.filter((a) => a.data).map(({ text, ...a }) => a);
-
-      // Cria TODOS os clientes (uma ou várias partes).
-      for (const cc of clienteCards) {
-        const data = { ...cc.collect(), attachments: savable };
+      let label = "", entry = null;
+      if (ctrl.key === "cliente") {
+        const data = { ...ctrl.collect(), attachments: savable };
         const saved = await insert("clients", data);
-        if (saved) { undo.push({ table: "clients", id: saved.id }); newClientIds.push(saved.id); }
-        feitos.push("👤 " + data.nome);
-      }
-      if (byKey.processo) {
-        const data = { ...byKey.processo.collect(), attachments: savable };
-        // Vincula o processo a TODOS os clientes novos + o já cadastrado escolhido
-        // no seletor (se houver). client_id = principal; client_ids = todos.
-        const ids = [...newClientIds];
+        if (saved) { entry = { table: "clients", id: saved.id }; sessionClientIds.push(saved.id); }
+        label = "👤 " + data.nome;
+      } else if (ctrl.key === "processo") {
+        const data = { ...ctrl.collect(), attachments: savable };
+        const ids = [...sessionClientIds];
         if (data.client_id && !ids.includes(data.client_id)) ids.push(data.client_id);
-        data.client_ids = ids;
-        data.client_id = ids[0] || null;
+        data.client_ids = ids; data.client_id = ids[0] || null;
         const saved = await insert("processes", data);
-        if (saved) undo.push({ table: "processes", id: saved.id });
-        feitos.push("⚖️ Processo “" + data.nome + "”" + (ids.length ? ` (vinculado a ${ids.length})` : ""));
-      }
-      if (byKey.tarefa) {
-        const data = { ...byKey.tarefa.collect(), attachments: savable };
+        if (saved) entry = { table: "processes", id: saved.id };
+        label = "⚖️ " + data.nome + (ids.length ? ` (vinculado a ${ids.length})` : "");
+      } else if (ctrl.key === "tarefa") {
+        const data = { ...ctrl.collect(), attachments: savable };
         const saved = await insert("tasks", data);
-        if (saved) undo.push({ table: "tasks", id: saved.id });
-        feitos.push(taskLabel("✅ Tarefa", data));
-      }
-      if (byKey.agenda) {
-        const { task, gcalWanted } = byKey.agenda.collect();
+        if (saved) entry = { table: "tasks", id: saved.id };
+        label = taskLabel("✅ Tarefa", data);
+      } else if (ctrl.key === "agenda") {
+        const { task, gcalWanted } = ctrl.collect();
         const saved = await insert("tasks", { ...task, attachments: savable });
-        if (saved) undo.push({ table: "tasks", id: saved.id });
-        feitos.push(taskLabel("🗓️ Agenda", task));
-        if (gcalWanted) {
-          try { const ev = await gcal.createEvent({ title: task.title, date: task.due_date, time: task.due_time, description: task.description }); if (ev && ev.id) undo.push({ gcalId: ev.id }); }
-          catch (err) { toast("Salvo aqui, mas falhou no Google: " + (err.message || "")); }
-        }
-      }
-      if (byKey.nota) {
-        const data = { ...byKey.nota.collect(), attachments: savable };
+        if (saved) entry = { table: "tasks", id: saved.id };
+        label = taskLabel("🗓️ Agenda", task);
+        if (gcalWanted) { try { const ev = await gcal.createEvent({ title: task.title, date: task.due_date, time: task.due_time, description: task.description }); if (ev && ev.id) sessionUndo.push({ gcalId: ev.id }); } catch (e) { toast("Salvo aqui, mas falhou no Google: " + (e.message || "")); } }
+      } else if (ctrl.key === "nota") {
+        const data = { ...ctrl.collect(), attachments: savable };
         const saved = await insert("notes", data);
-        if (saved) undo.push({ table: "notes", id: saved.id });
-        feitos.push("📝 Nota");
+        if (saved) entry = { table: "notes", id: saved.id };
+        label = "📝 Nota";
       }
+      if (entry) sessionUndo.push(entry);
+      markDone(ctrl, btn);
+      // NÃO re-renderiza aqui (isso recriaria a captura e apagaria os outros
+      // cartões ainda pendentes). O Início é atualizado ao Limpar/concluir.
+      toast("✅ " + label, { action: entry ? { label: "Desfazer", onClick: async () => { await undoAll([entry]); onDone(); toast("Cadastro desfeito."); } } : null });
+      if (cards.every((c) => c.done)) toast("Tudo cadastrado. ✅");
+      return true;
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = prev; }
+      toast("Não consegui salvar: " + (e?.message || e));
+      return false;
+    }
+  }
 
-      reset();
-      toast("✅ Criado: " + feitos.join(" · "), {
-        action: undo.length ? { label: "Desfazer", onClick: async () => { await undoAll(undo); onDone(); toast("Cadastro desfeito."); } } : null,
-      });
-      onDone();
-    } catch (err) {
-      // Falha no meio do caminho: desfaz o que já entrou para não deixar
-      // registros órfãos (ex.: cliente criado mas processo falhou).
-      await undoAll(undo);
-      if (undo.length) onDone();
-      toast("Não consegui salvar tudo — nada foi cadastrado. " + (err?.message || err));
-    } finally { btn.disabled = false; }
+  // Cadastra todos os cartões pendentes (na ordem — clientes antes do processo).
+  async function createAllPending(btn) {
+    for (const c of cards) { if (c.done) continue; const err = c.validate && c.validate(); if (err) { toast(err.msg); err.focus && err.focus(); return; } }
+    btn.disabled = true; btn.textContent = "Salvando…";
+    for (const c of cards) { if (!c.done) { const ok = await createOne(c, c._btn); if (!ok) { btn.disabled = false; btn.textContent = "✓ Cadastrar todos os pendentes"; return; } } }
+    btn.disabled = true; btn.textContent = "✓ Concluído";
   }
 
   function reset() {
-    textarea.value = ""; attachments = []; cards = [];
+    const criou = sessionUndo.length > 0;
+    textarea.value = ""; attachments = []; cards = []; sessionUndo = []; sessionClientIds = [];
     clearDraft();
     drawAtts();
     cardsWrap.innerHTML = ""; cardsWrap.classList.add("hidden");
     prepBtn.classList.remove("hidden"); status.textContent = "";
+    if (criou) onDone(); // atualiza o Início só depois de sair da captura
   }
 
   // ---------- áudio ----------

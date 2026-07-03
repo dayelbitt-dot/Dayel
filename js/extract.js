@@ -95,10 +95,13 @@ function cleanPersonName(s) {
   let n = clean(s).split(/[,;\n]/)[0];
   n = n.replace(/\b(brasileir[oa]|estrangeir[oa]|nacionalidade|natural|portador\w*|inscrit\w*|estado\s+civil|solteir\w*|casad\w*|divorciad\w*|vi[úu]v\w*|separad\w*|companheir\w*|uni[ãa]o|residente|domiciliad\w*|maior|capaz|advogad\w*|profiss\w*|ocupa\w*|do\s+lar|aposentad\w*)\b.*$/i, "").trim();
   n = n.replace(/^(?:vem|v[êe]m|venho|vimos|requer|requerem|comparece|prop[õo]e|isto\s+posto|serve|serve-se|exm[oa]\.?|sr[a]?\.?|dr[a]?\.?|a\s+seguir|respeitosamente)\s+/i, "").replace(/[\s.]+$/, "");
-  // remove lixo no início: UF solta ("RS"), iniciais/sozinhas de 1–2 letras.
+  // remove lixo no início: UF/preposições soltas ("RS", "DO"), iniciais de 1–2 letras.
   let toks = n.split(/\s+/).filter(Boolean);
   while (toks.length && /^[A-ZÀ-Ý]{1,2}$/.test(toks[0])) toks.shift();
-  const words = toks.slice(0, 8);
+  n = toks.join(" ");
+  // remove nome de ESTADO grudado do cabeçalho ("…RIO GRANDE DO SUL <Nome>").
+  n = n.replace(/^(?:rio\s+grande\s+do\s+(?:sul|norte)|santa\s+catarina|s[ãa]o\s+paulo|minas\s+gerais|rio\s+de\s+janeiro|esp[íi]rito\s+santo|mato\s+grosso(?:\s+do\s+sul)?|goi[áa]s|distrito\s+federal|paran[áa]|pernambuco|cear[áa]|bahia|maranh[ãa]o|par[áa]|amazonas|para[íi]ba|piau[íi]|alagoas|sergipe|rond[ôo]nia|roraima|amap[áa]|acre|tocantins)\s+(?=\S)/i, "");
+  const words = n.split(/\s+/).filter(Boolean).slice(0, 8);
   return words.length >= 2 ? titleCaseName(words.join(" ")) : "";
 }
 
