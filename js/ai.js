@@ -30,7 +30,10 @@ export async function aiExtract(text, want) {
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || data.error) return null;
-    if (data.cliente || data.processo) return { cliente: data.cliente || null, processo: data.processo || null };
+    // Aceita a versão nova (clientes: []) e a antiga (cliente: {}).
+    const clientes = Array.isArray(data.clientes) ? data.clientes.filter(Boolean)
+      : (data.cliente ? [data.cliente] : []);
+    if (clientes.length || data.processo) return { clientes, processo: data.processo || null };
     return null;
   } catch { return null; }
   finally { clearTimeout(timer); }

@@ -175,7 +175,8 @@ export function extractClient(text) {
     // rótulo genérico (que às vezes engole a qualificação inteira).
     const QUALIF = "brasileir|estrangeir|nacionalidade|natural\\s+de|portador|portadora|inscrit|estado\\s+civil|solteir|casad|divorciad|vi[úu]v|separad|companheir|maior\\s+e\\s+capaz|advogad|profiss[ãa]o|residente\\s+e\\s+domiciliad";
     // nome com até 8 palavras (nomes compostos/árabes longos) antes da qualificação.
-    const re = new RegExp("([A-ZÀ-Ý][\\p{L}]+(?:[ \\t]+(?:d[aeo]s?|e|[A-ZÀ-Ý][\\p{L}']+)){1,7})\\s*,\\s*(?:" + QUALIF + ")", "iu");
+    // Sem "i": nome começa em maiúscula (evita casar profissão em minúsculas).
+    const re = new RegExp("([A-ZÀ-Ý][\\p{L}]+(?:[ \\t]+(?:d[aeo]s?|e|[A-ZÀ-Ý][\\p{L}']+)){1,7})\\s*,\\s*(?:" + QUALIF + ")", "u");
     const m = text.match(re);
     if (m) out.nome = m[1];
   }
@@ -192,6 +193,50 @@ export function extractClient(text) {
   const fil = labeled(text, "filia[cç][aã]o|m[aã]e|pai"); if (fil) extras.push("Filiação: " + fil);
   out.obs = extras.join(" · ");
 
+  return out;
+}
+
+// Abertura da qualificação (usada para achar CADA parte no documento).
+const QUALIF_SRC = "brasileir|estrangeir|nacionalidade|natural\\s+de|portador|portadora|inscrit|estado\\s+civil|solteir|casad|divorciad|vi[úu]v|separad|companheir|maior\\s+e\\s+capaz|advogad|profiss[ãa]o|residente\\s+e\\s+domiciliad";
+// Sem o flag "i": o nome precisa começar em MAIÚSCULA (senão "gerente de frota,
+// portadora…" viraria um "nome"). A qualificação em minúsculas casa com QUALIF_SRC.
+const NAME_QUALIF = new RegExp("([A-ZÀ-Ý][\\p{L}]+(?:[ \\t]+(?:d[aeo]s?|e|[A-ZÀ-Ý][\\p{L}']+)){1,7})\\s*,\\s*(?:" + QUALIF_SRC + ")", "gu");
+
+// Acha cada parte qualificada num trecho e extrai seus dados isolados.
+function grabParties(region) {
+  const hits = [...region.matchAll(NAME_QUALIF)];
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < hits.length && out.length < 8; i++) {
+    const start = hits[i].index;
+    const end = i + 1 < hits.length ? hits[i + 1].index : region.length;
+    const c = extractClient(region.slice(start, Math.min(end, start + 700)));
+    const key = (c.nome || "").toLowerCase();
+    if (c.nome && !seen.has(key)) { seen.add(key); out.push(c); }
+  }
+  return out;
+}
+
+// Extrai as partes do documento. Como o cliente pode ser o AUTOR **ou** o RÉU,
+// `side` escolhe de que lado pegar:
+//   "ativo"   (padrão) → requerentes/autores (antes de "em face de")
+//   "passivo"           → réus/requeridos/executados (depois de "em face de")
+//   "ambos"             → todas as partes (autor + réu) — útil quando o usuário
+//                         indica os clientes pelo NOME (podem estar em qualquer lado)
+export function extractClients(text, side = "ativo") {
+  const full = precleanDoc(text);
+  const cutAt = full.search(/\bem\s+face\s+de\b|\bem\s+desfavor\s+de\b|\bcontra\s+[A-ZÀ-Ý]|\brequerid[oa]s?\b|\br[eé]us?\b|\bexecutad[oa]s?\b|\bpromovid[oa]s?\b/i);
+  const ativoTxt = cutAt > 0 ? full.slice(0, cutAt) : full;
+  const passivoTxt = cutAt > 0 ? full.slice(cutAt) : "";
+
+  const ativos = grabParties(ativoTxt);
+  const passivos = passivoTxt ? grabParties(passivoTxt) : [];
+  let out = side === "passivo" ? passivos : side === "ambos" ? [...ativos, ...passivos] : ativos;
+
+  // dedup por nome (caso "ambos")
+  const seen = new Set(); out = out.filter((c) => { const k = (c.nome || "").toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+
+  if (!out.length && side !== "passivo") { const c = extractClient(full); if (c.nome || c.cpf) out.push(c); }
   return out;
 }
 

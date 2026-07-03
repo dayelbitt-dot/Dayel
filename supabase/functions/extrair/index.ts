@@ -22,27 +22,28 @@ const j = (obj: unknown, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { ...CORS, "content-type": "application/json" } });
 
 // Campos que a IA deve devolver (mesma estrutura dos cadastros do app).
+const CLIENTE_PROPS = {
+  nome: { type: "string" },
+  cpf: { type: "string", description: "CPF 000.000.000-00 ou CNPJ 00.000.000/0000-00" },
+  rg: { type: "string" },
+  tel: { type: "string" },
+  email: { type: "string" },
+  nasc: { type: "string", description: "Data de nascimento em aaaa-mm-dd" },
+  endereco: { type: "string" },
+  area: { type: "string", description: "Área do direito (ex.: Família, Cível)" },
+  origem: { type: "string" },
+  obs: { type: "string", description: "Estado civil, profissão, nacionalidade, filiação e outros dados úteis" },
+};
 const TOOL = {
   name: "registrar",
-  description: "Registra os dados extraídos do documento nos campos do cliente e do processo.",
+  description: "Registra os dados extraídos do documento nos campos dos clientes e do processo.",
   input_schema: {
     type: "object",
     properties: {
-      cliente: {
-        type: "object",
-        description: "Dados da parte REPRESENTADA (nosso cliente): requerente, autor, exequente, outorgante — NUNCA a parte contrária.",
-        properties: {
-          nome: { type: "string" },
-          cpf: { type: "string", description: "CPF 000.000.000-00 ou CNPJ 00.000.000/0000-00" },
-          rg: { type: "string" },
-          tel: { type: "string" },
-          email: { type: "string" },
-          nasc: { type: "string", description: "Data de nascimento em aaaa-mm-dd" },
-          endereco: { type: "string" },
-          area: { type: "string", description: "Área do direito (ex.: Família, Cível)" },
-          origem: { type: "string" },
-          obs: { type: "string", description: "Estado civil, profissão, nacionalidade, filiação e outros dados úteis" },
-        },
+      clientes: {
+        type: "array",
+        description: "TODAS as partes REPRESENTADAS (nossos clientes): requerentes, autores, exequentes, outorgantes. Em divórcio consensual, AMBOS os cônjuges são clientes. NUNCA inclua a parte contrária aqui.",
+        items: { type: "object", properties: CLIENTE_PROPS },
       },
       processo: {
         type: "object",
@@ -61,17 +62,19 @@ const TOOL = {
         },
       },
     },
-    required: ["cliente", "processo"],
+    required: ["clientes", "processo"],
   },
 };
 
 const SYSTEM = [
   "Você é um assistente jurídico brasileiro que extrai dados de documentos (petições, fichas, contratos, procurações).",
-  "Preencha APENAS o que estiver escrito no documento. Se um campo não aparecer, deixe-o como string vazia (ou omita).",
-  "NUNCA invente dados. Não confunda a parte contrária com o cliente.",
-  "O CLIENTE é a parte representada: requerente, autor(a), exequente, outorgante, promovente. A parte contrária (requerido, réu, executado) vai em processo.partes.",
+  "Preencha APENAS o que estiver escrito no documento. Se um campo não aparecer, deixe-o como string vazia (ou omita). NUNCA invente dados.",
+  "Os CLIENTES são as partes representadas pelo advogado. Podem ser o(s) AUTOR(es)/requerente(s) OU o(s) RÉU(s)/requerido(s) — o advogado pode representar qualquer lado.",
+  "Se houver INSTRUÇÃO do usuário no início do texto (ex.: 'cadastre o réu', 'cadastre a requerida', 'cadastre Fulano e Beltrano', 'cadastre as duas partes'), SIGA a instrução para decidir quais partes vão em 'clientes'.",
+  "Sem instrução explícita, assuma que os clientes são os requerentes/autores. Em divórcio consensual ou litisconsórcio há MAIS DE UMA parte no mesmo lado — liste TODAS.",
+  "As partes do outro lado (as que NÃO são clientes) vão em processo.partes.",
   "Datas SEMPRE no formato aaaa-mm-dd. CPF no formato 000.000.000-00. Valor da causa como número em reais (ex.: 30000).",
-  "Estado civil, profissão, nacionalidade e filiação do cliente vão em cliente.obs.",
+  "Estado civil, profissão, nacionalidade e filiação de cada cliente vão no obs dele.",
   "Responda chamando a ferramenta 'registrar'.",
 ].join(" ");
 
@@ -83,7 +86,7 @@ Deno.serve(async (req) => {
   let body: { text?: string; want?: string[] };
   try { body = await req.json(); } catch { return j({ error: "JSON inválido" }, 400); }
   const text = (body.text || "").slice(0, 40000);
-  if (!text.trim()) return j({ cliente: {}, processo: {} });
+  if (!text.trim()) return j({ clientes: [], processo: {} });
   const want = Array.isArray(body.want) && body.want.length ? body.want.join(" e ") : "cliente e processo";
 
   try {
@@ -102,8 +105,9 @@ Deno.serve(async (req) => {
     const data = await resp.json();
     if (!resp.ok) return j({ error: data?.error?.message || `IA HTTP ${resp.status}` }, 502);
     const tu = (data.content || []).find((c: { type: string }) => c.type === "tool_use");
-    const out = tu?.input || { cliente: {}, processo: {} };
-    return j({ cliente: out.cliente || {}, processo: out.processo || {} });
+    const out = tu?.input || {};
+    const clientes = Array.isArray(out.clientes) ? out.clientes : (out.cliente ? [out.cliente] : []);
+    return j({ clientes, processo: out.processo || {} });
   } catch (e) {
     return j({ error: String((e as Error)?.message || e) }, 500);
   }

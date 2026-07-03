@@ -8,7 +8,7 @@
 import { el, prettyDate, todayISO, toast } from "./ui.js";
 import { parseNaturalTask, shortTitle, isLongText } from "./nlp.js";
 import { extractTextFromFile } from "./files.js";
-import { extractClient, extractProcess, parseMoney } from "./extract.js";
+import { extractClient, extractClients, extractProcess, parseMoney } from "./extract.js";
 import { aiEnabled, aiExtract } from "./ai.js";
 import { list, insert, remove } from "./store.js";
 import * as gcal from "./gcal.js";
@@ -196,14 +196,30 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     // Leitura dos campos de cliente/processo: IA (quando configurada) na frente,
     // regras (extract.js) preenchendo o que faltar. Se a IA não estiver
     // disponível, usa só as regras — sem travar.
-    let aiCli = null, aiProc = null, aiUsed = false;
+    let aiClientes = null, aiProc = null, aiUsed = false;
     if (aiEnabled() && combined && (selected.has("cliente") || selected.has("processo"))) {
       status.textContent = "🤖 Lendo o documento com IA…";
-      try { const ai = await aiExtract(combined, [...selected].filter((k) => k === "cliente" || k === "processo")); if (ai) { aiCli = ai.cliente; aiProc = ai.processo; aiUsed = true; } } catch {}
+      try { const ai = await aiExtract(combined, [...selected].filter((k) => k === "cliente" || k === "processo")); if (ai) { aiClientes = ai.clientes; aiProc = ai.processo; aiUsed = true; } } catch {}
     }
     status.textContent = aiUsed ? "🤖 Documento lido pela IA." : "";
-    const exCli = mergeFields(aiCli, extractClient(combined));
     const exProc = mergeFields(aiProc, extractProcess(combined));
+
+    // ---- Lista de CLIENTES a cadastrar (uma OU várias partes) ----
+    const clientCmd = parseClientCommand(userText);      // { mode: one|all|named, names: [] }
+    let parties = [];
+    if (selected.has("cliente")) {
+      // Ao indicar por NOME, procura em ambos os lados (o cliente pode ser o réu).
+      const side = clientCmd.mode === "named" ? "ambos" : clientCmd.side;
+      parties = (aiUsed && Array.isArray(aiClientes) && aiClientes.length) ? aiClientes : extractClients(combined, side);
+      if (!parties.length) parties = [extractClient(combined)];
+      if (clientCmd.mode === "one") {
+        parties = [parties[0] || {}];
+        if (!parties[0].nome && cmdCli) parties[0] = { ...parties[0], nome: cmdCli };
+      } else if (clientCmd.mode === "named" && clientCmd.names.length) {
+        parties = clientCmd.names.map((nm) => parties.find((p) => nameMatches(p.nome, nm)) || { nome: nm });
+      }
+    }
+    const partyNames = parties.map((p) => p.nome).filter(Boolean);
 
     cards = [];
     cardsWrap.innerHTML = "";
@@ -211,9 +227,12 @@ export function mountCapture(defaultArea, onDone = () => {}) {
 
     for (const key of ORDER) {
       if (!selected.has(key)) continue;
+      if (key === "cliente") {
+        parties.forEach((p, i) => { const c = buildClientCard(p, null, aiUsed, parties.length > 1 ? i + 1 : 0); cards.push(c); cardsWrap.append(c.node); });
+        continue;
+      }
       let ctrl = null;
-      if (key === "cliente") ctrl = buildClientCard(exCli, cmdCli, aiUsed);
-      else if (key === "processo") ctrl = buildProcessCard(exProc, det, clients, bothCliProc, cmdCli, exCli.nome, aiUsed);
+      if (key === "processo") ctrl = buildProcessCard(exProc, det, clients, bothCliProc, partyNames, aiUsed);
       else if (key === "tarefa") ctrl = buildTaskCard(parsed, det, clients, processes, userText);
       else if (key === "agenda") ctrl = buildAgendaCard(parsed, userText);
       else if (key === "nota") ctrl = buildNoteCard(parsed, userText);
@@ -259,23 +278,30 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     const feitos = [];    // rótulos para o aviso
     try {
       const byKey = Object.fromEntries(cards.map((c) => [c.key, c]));
-      let newClient = null;
+      const clienteCards = cards.filter((c) => c.key === "cliente");
+      const newClientIds = [];
       // Anexos salvos no registro: só os que couberam (têm data) e SEM o texto
       // lido (o texto serviu para preencher os campos; não precisa ir ao banco).
       const savable = attachments.filter((a) => a.data).map(({ text, ...a }) => a);
 
-      if (byKey.cliente) {
-        const data = { ...byKey.cliente.collect(), attachments: savable };
+      // Cria TODOS os clientes (uma ou várias partes).
+      for (const cc of clienteCards) {
+        const data = { ...cc.collect(), attachments: savable };
         const saved = await insert("clients", data);
-        if (saved) { undo.push({ table: "clients", id: saved.id }); newClient = saved; }
-        feitos.push("👤 Cliente “" + data.nome + "”");
+        if (saved) { undo.push({ table: "clients", id: saved.id }); newClientIds.push(saved.id); }
+        feitos.push("👤 " + data.nome);
       }
       if (byKey.processo) {
         const data = { ...byKey.processo.collect(), attachments: savable };
-        if (newClient) data.client_id = newClient.id; // VÍNCULO automático
+        // Vincula o processo a TODOS os clientes novos + o já cadastrado escolhido
+        // no seletor (se houver). client_id = principal; client_ids = todos.
+        const ids = [...newClientIds];
+        if (data.client_id && !ids.includes(data.client_id)) ids.push(data.client_id);
+        data.client_ids = ids;
+        data.client_id = ids[0] || null;
         const saved = await insert("processes", data);
         if (saved) undo.push({ table: "processes", id: saved.id });
-        feitos.push("⚖️ Processo “" + data.nome + "”" + (newClient ? " (vinculado)" : ""));
+        feitos.push("⚖️ Processo “" + data.nome + "”" + (ids.length ? ` (vinculado a ${ids.length})` : ""));
       }
       if (byKey.tarefa) {
         const data = { ...byKey.tarefa.collect(), attachments: savable };
@@ -393,7 +419,8 @@ function cardShell(ico, title, autofilled, children) {
 function hasAny(obj, keys) { return keys.some((k) => obj[k] != null && obj[k] !== "" && obj[k] !== "1"); }
 
 // ---------- CLIENTE ----------
-function buildClientCard(ex, cmdName, aiUsed) {
+function buildClientCard(ex, cmdName, aiUsed, idx) {
+  ex = ex || {};
   const auto = aiUsed ? "ai" : (!!cmdName || hasAny(ex, ["nome", "cpf", "rg", "tel", "email", "nasc", "endereco", "area", "origem", "obs"]));
   // Nome dito na instrução ("cadastre o cliente Fulano") tem prioridade; o resto
   // (CPF, RG, endereço…) vem do documento anexado.
@@ -408,7 +435,7 @@ function buildClientCard(ex, cmdName, aiUsed) {
   const origem = inp("Ex: Indicação, Instagram…", ex.origem);
   const obs = txt("Resumo do caso, histórico…", ex.obs, 2);
 
-  const node = cardShell("👤", "Novo cliente", auto, [
+  const node = cardShell("👤", idx ? `Novo cliente ${idx}` : "Novo cliente", auto, [
     field("Nome *", nome),
     el("div", { class: "cap-row" }, [field("CPF / CNPJ", cpf), field("RG", rg)]),
     el("div", { class: "cap-row" }, [field("Telefone / WhatsApp", tel), field("Nascimento", nasc)]),
@@ -425,13 +452,14 @@ function buildClientCard(ex, cmdName, aiUsed) {
 }
 
 // ---------- PROCESSO ----------
-function buildProcessCard(ex, det, clients, linkedToNewClient, cmdName, newClientName, aiUsed) {
+function buildProcessCard(ex, det, clients, linkedToNewClient, partyNames, aiUsed) {
+  partyNames = (partyNames || []).filter(Boolean);
   const auto = aiUsed ? "ai" : (hasAny(ex, ["num", "tipo", "vara", "tribunal", "partes", "data_distribuicao", "fase", "valor"]) || ex.grau === "2");
   const num = inp("0000000-00.0000.8.21.0000", ex.num);
-  // Nome sugerido: "Tipo — Cliente". Quando o Cliente também está sendo criado,
-  // usa o nome dito na instrução / extraído do cliente novo; senão, o cliente
-  // detectado (já cadastrado); por fim, a parte contrária (para nunca ficar vazio).
-  const linkedName = linkedToNewClient ? (cmdName || newClientName || "") : (det.client ? det.client.nome : "");
+  // Nome sugerido: "Tipo — Clientes". Quando o Cliente também está sendo criado,
+  // usa os nomes das partes novas; senão, o cliente detectado; por fim, a parte
+  // contrária (para nunca ficar vazio).
+  const linkedName = linkedToNewClient ? partyNames.slice(0, 2).join(" e ") : (det.client ? det.client.nome : "");
   const nomeSug = ex.nome || [ex.tipo, linkedName || ex.partes].filter(Boolean).join(" — ");
   const nome = inp("Ex: Revisão de Alimentos — João Silva", nomeSug, { required: "" });
   const tipo = inp("Ex: Alimentos, Cobrança…", ex.tipo);
@@ -453,7 +481,8 @@ function buildProcessCard(ex, det, clients, linkedToNewClient, cmdName, newClien
     field("Nome / Descrição *", nome),
   ];
   if (linkedToNewClient) {
-    linkNote = el("div", { class: "cap-linknote" }, "🔗 Será vinculado automaticamente ao cliente novo (cartão acima).");
+    const quem = partyNames.length > 1 ? `aos ${partyNames.length} clientes novos (${partyNames.join(", ")})` : "ao cliente novo (cartão acima)";
+    linkNote = el("div", { class: "cap-linknote" }, "🔗 Será vinculado automaticamente " + quem + ".");
     children.push(linkNote);
   } else {
     cliSel = el("select", { class: "form-control" });
@@ -633,7 +662,7 @@ function intentFromText(text) {
   const t = normalize(text);
   const set = new Set();
   const cadastro = /\b(cadastr\w*|registr\w*|criar?|cria\w*|adicion\w*|inserir?|gerar?|abrir?|lan[cç]ar?)\b/.test(t);
-  if (cadastro && /\bclientes?\b/.test(t)) set.add("cliente");
+  if (cadastro && (/\bclientes?\b/.test(t) || /\bpartes?\b/.test(t) || /\brequerentes?\b/.test(t) || /\bautor(?:es|a|as)?\b/.test(t) || /\bherdeir/.test(t) || /\bs[óo]cios?\b/.test(t))) set.add("cliente");
   if (cadastro && (/\bprocessos?\b/.test(t) || /\bpeti[cç][aã]o\b|\bpeticao\b|\bpeticoes\b/.test(t) || /\ba[cç][aã]o\s+judicial\b/.test(t) || /\bautos\b/.test(t))) set.add("processo");
   if (/\b(criar?|nova?|anotar?)\b.*\bnotas?\b|\bnotas?\b.*\b(criar?|nova?)\b|\banota[çc]\w*/.test(t)) set.add("nota");
   if (/\bagend\w*|\bcompromisso|\breuni\w*|\baudi[êe]nc\w*|\bevento/.test(t)) set.add("agenda");
@@ -658,4 +687,49 @@ function commandName(text, kind) {
   const bloq = new Set(["fulano", "beltrano", "sicrano", "ciclano", "peticao", "anexa", "anexo", "anexos", "documento", "documentos", "doc", "arquivo", "arquivos", "acima", "abaixo", "cliente", "processo"]);
   if (!name || bloq.has(first)) return "";
   return name.split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
+// Quantos clientes cadastrar e quais. "cadastre o cliente" → one; "cadastre as
+// duas partes / os clientes / todas as partes" → all; "cadastre os clientes
+// Saher e Cláudia" → named (lista de nomes).
+function parseClientCommand(text) {
+  if (!text) return { mode: "one", names: [], side: "ativo" };
+  const t = normalize(text);
+  // Lado do cliente: o cliente pode ser o RÉU. "réu/requerido/executado" → passivo;
+  // "autor/requerente/exequente" → ativo; senão o padrão (ativo).
+  const side = /\br[eé]us?\b|\brequerid[oa]s?\b|\bexecutad[oa]s?\b|\breclamad[oa]s?\b|\bpromovid[oa]s?\b|\bparte\s+r[eé]|\bparte\s+passiva|\bapelad[oa]|\bagravad[oa]/.test(t) ? "passivo"
+    : /\bautor(?:es|a|as)?\b|\brequerentes?\b|\bexequentes?\b|\breclamantes?\b|\bparte\s+ativa|\bapelantes?\b|\bagravantes?\b/.test(t) ? "ativo"
+    : "ativo";
+  // Sem flag "i": o nome precisa começar em MAIÚSCULA (senão "partes e o processo"
+  // casaria o "e"). Aceita o rótulo com inicial maiúscula ou minúscula.
+  const nm = text.match(/\b(?:[Cc]lientes|[Pp]artes|[Rr][eé]us|[Rr]equerid[oa]s?|[Rr]equerentes|[Aa]utores|[Ee]xecutad[oa]s?|[Ss][óoÓO]cios|[Hh]erdeiros|[Ll]itisconsortes)\s+([A-ZÀ-Ý][^\n.;]*)/);
+  let names = [];
+  if (nm) names = nm[1].split(/\s*,\s*|\s+e\s+/i).map(cleanNameFragment).filter(Boolean).slice(0, 8);
+  if (names.length) return { mode: "named", names, side };
+  // "todas"/plural → todas as partes; singular ("o cliente", "a parte") → uma.
+  const all = /\btodas?\s+as\b|\bambas?\b|\bambos\b|\bas\s+duas\b|\bos\s+dois\b|\bv[áa]ri[oa]s\b|\bclientes\b|\bpartes\b|\brequerentes\b|\br[eé]us\b|\bautores\b|\bherdeiros\b|\bs[óo]cios\b|\blitisconsortes\b/.test(t);
+  return all ? { mode: "all", names: [], side } : { mode: "one", names: [], side };
+}
+function cleanNameFragment(s) {
+  if (!s) return "";
+  const CLAUSE = new Set(["no", "na", "conforme", "com", "que", "processo", "acao", "peticao", "anexa", "anexo", "documento", "referente", "cujo", "cuja"]);
+  const parts = [];
+  for (const w of s.trim().replace(/^(?:sr[a]?\.?|dr[a]?\.?)\s+/i, "").split(/\s+/)) {
+    if (CLAUSE.has(normalize(w))) break;
+    parts.push(w);
+    if (parts.length >= 4) break;
+  }
+  const first = normalize(parts[0] || "");
+  const bloq = new Set(["fulano", "beltrano", "sicrano", "peticao", "anexa", "anexo", "documento", "cliente", "clientes", "parte", "partes", "todas", "todos", "ambas", "ambos"]);
+  if (!parts.length || bloq.has(first)) return "";
+  return parts.join(" ").split(/\s+/).map((w) => /^(d[aeo]s?|e)$/i.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+// Nome A "casa" com o nome B? (um contém o outro, ou compartilham a maioria dos tokens)
+function nameMatches(a, b) {
+  const na = normalize(a || ""), nb = normalize(b || "");
+  if (!na || !nb) return false;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const ta = new Set(na.split(/\s+/).filter((w) => w.length >= 3));
+  const tb = nb.split(/\s+/).filter((w) => w.length >= 3);
+  return tb.length ? tb.filter((w) => ta.has(w)).length / tb.length >= 0.5 : false;
 }

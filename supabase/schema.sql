@@ -78,6 +78,11 @@ create table if not exists public.processes (
 -- ---------- Grau do processo (1º / 2º) ----------
 alter table public.processes add column if not exists grau text default '1';
 
+-- ---------- Vários clientes por processo (litisconsórcio / divórcio consensual) ----------
+--  client_id continua sendo o cliente PRINCIPAL (compatibilidade); client_ids é a
+--  lista de TODOS os clientes vinculados ao processo (inclui o principal).
+alter table public.processes add column if not exists client_ids jsonb not null default '[]';
+
 -- ---------- Vínculos das tarefas ao CRM (para a captura inteligente) ----------
 alter table public.tasks add column if not exists description text;
 alter table public.tasks add column if not exists due_time text;
