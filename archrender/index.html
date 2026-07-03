@@ -308,7 +308,7 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
   <section id="mode-output" class="mode hidden">
     <div class="panel">
       <h2><span class="ic">✦</span> Seu metaprompt</h2>
-      <p class="hint">Em <strong>português</strong> e <strong>editável</strong> — ajuste o texto como quiser. Quando terminar, clique em <strong>Traduzir para inglês</strong> (os modelos de imagem entendem inglês com mais precisão) e cole na IA. Se tiver imagens, anexe-as junto.</p>
+      <p class="hint">Estruturado em <strong>5 pilares de um prompt perfeito</strong> — <strong>1) Input arquitetônico · 2) Câmera e composição · 3) Sistema de luz · 4) Materiais e texturas · 5) Vida e atmosfera</strong>. Em <strong>português</strong> e <strong>editável</strong>: ajuste o texto por seção. Quando terminar, clique em <strong>Traduzir para inglês</strong> e cole na IA (anexe as imagens junto).</p>
 
       <div id="warn-slot"></div>
 
@@ -941,8 +941,8 @@ const MATPT={concrete:"concreto aparente moldado in loco, com marcas da fôrma d
 function materialsPhrase(){
   const list=(state.sel.materials||[]).map(id=>MATPT[id]||(optById(grp("materials"),id)||{}).pt).filter(Boolean);
   if(freeOf("materials"))list.push(freeOf("materials"));
-  if(!list.length) return "Todos os materiais devem ter resposta física correta (PBR), microtextura tátil, rugosidade e reflexo corretos, com imperfeições naturais para nada parecer sintético.";
-  return `O projeto é composto por ${joinPt(list)}. Cada superfície deve ter resposta física precisa — rugosidade, reflexo e refração corretos, microtextura fina, desgaste realista e micro-variação, para que os materiais pareçam realmente táteis e reais.`;
+  if(!list.length) return "Simule o comportamento físico real de cada material (PBR): reflexos, rugosidade, absorção de luz e microdetalhes de superfície, com imperfeições naturais para nada parecer sintético.";
+  return `O projeto é composto por ${joinPt(list)}. Simule o comportamento físico de cada material com precisão — reflexos corretos, rugosidade, absorção de luz, índice de refração e microdetalhes de superfície, com desgaste realista e micro-variação, para que os materiais pareçam realmente táteis e reais.`;
 }
 const TIMEPT={golden:"luz dourada de fim de tarde, rasante e quente, com sombras longas e suaves e contraluz nas bordas",
  blue:"blue hour (crepúsculo), equilibrando o céu azul profundo com a luz quente e acesa do interior",
@@ -1013,19 +1013,33 @@ function negativeList(){
 
 function buildNarrative(model){
   const ar=enOf("aspect")[0]||"16:9";
-  const paras=[];
-  paras.push(`Fotografia de arquitetura ultrarrealista de ${subjectPhrase()}, na proporção ${ar}.`);
-  paras.push(materialsPhrase());
-  paras.push(lightingPhrase());
-  paras.push(cameraPhrase());
-  const sur=surroundPhrase(); if(sur)paras.push(sur);
-  const mp=moodPhrase(); if(mp)paras.push(mp);
-  paras.push(EDITORIAL);
+  const S=[];
+  S.push(`Fotografia de arquitetura ultrarrealista, qualidade editorial de revista, na proporção ${ar}.`);
+
+  // 1 · INPUT ARQUITETÔNICO — a construção, volumetria, aberturas e estrutura (fiel ao projeto)
+  let p1=`Represente com precisão técnica ${subjectPhrase()} — a construção, a volumetria, as aberturas e os elementos estruturais exatamente como no projeto.`;
+  const ref=referenceClause(); if(ref) p1+=" "+ref;
+  S.push("1 · INPUT ARQUITETÔNICO\n"+p1);
+
+  // 2 · CÂMERA E COMPOSIÇÃO
+  S.push("2 · CÂMERA E COMPOSIÇÃO\n"+cameraPhrase());
+
+  // 3 · SISTEMA DE LUZ
+  S.push("3 · SISTEMA DE LUZ\n"+lightingPhrase());
+
+  // 4 · MATERIAIS E TEXTURAS
+  S.push("4 · MATERIAIS E TEXTURAS\n"+materialsPhrase());
+
+  // 5 · VIDA E ATMOSFERA
+  const life=[surroundPhrase(), moodPhrase()].filter(Boolean).join(" ");
+  S.push("5 · VIDA E ATMOSFERA\n"+(life?life+" ":"")+"Enriqueça a cena com vegetação, mobiliário, iluminação cênica, entorno e efeitos atmosféricos coerentes, que completem e deem vida à composição sem competir com a arquitetura.");
+
+  // Acabamento fotográfico geral
   const eng=enginePhrase(model);
-  paras.push(ULTRA+(eng?(" Finalize "+eng):""));
-  const ref=referenceClause(); if(ref)paras.push(ref);
-  paras.push("Evite: "+negativeList().join(", ")+".");
-  return paras.join("\n\n");
+  S.push("ACABAMENTO\n"+EDITORIAL+" "+ULTRA+(eng?(" Finalize "+eng):""));
+
+  S.push("EVITE\n"+negativeList().join(", ")+".");
+  return S.join("\n\n");
 }
 
 function buildTags(model){
