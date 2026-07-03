@@ -15,6 +15,8 @@ Visual em **tons claros com estética de luxo**, feito para arquitetos. Quatro a
 3. **Descrever** — escreva livremente em português **ou grave um áudio** (transcrição por voz em pt-BR) e o app **pré-seleciona as perguntas**, inclusive o motor-alvo.
 4. **Metaprompt** — a saída pronta.
 
+> **Exterior ou interior?** Ao anexar o projeto, escolha se é de **área externa** ou de **interior** — o app ajusta as perguntas: no interior some o que não se aplica (céu, entorno, paisagismo) e aparecem **Ambiente / cômodo** e **Iluminação do ambiente**. O metaprompt também passa a descrever layout, superfícies e mobiliário em vez de volumetria/fachada. A cena é detectada automaticamente pela leitura da imagem e pela descrição em texto.
+
 ## Motores-alvo
 
 - **Nano Banana (Gemini 2.5 Flash Image)** — metaprompt narrativo longo e detalhado (formato que o Gemini entende melhor).
