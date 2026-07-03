@@ -177,6 +177,17 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
   color:var(--gold-deep);margin-bottom:16px;display:flex;gap:11px}
 .warnbox .ic{font-size:17px}
 .count-pill{font-size:12px;color:var(--muted);background:#f2e7d0;border:1px solid var(--gold-soft);padding:4px 12px;border-radius:16px;font-weight:500}
+.hist-empty{color:var(--muted);font-size:13.5px;font-weight:300;padding:14px 2px}
+.hist-item{display:flex;gap:14px;background:#fbf7ee;border:1px solid var(--line-2);border-radius:13px;padding:13px;margin-bottom:12px}
+.hist-thumb{width:88px;height:88px;flex:none;border-radius:10px;overflow:hidden;background:#efe8d8;border:1px solid var(--line-2);display:grid;place-items:center;color:var(--faint);font-size:22px}
+.hist-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.hist-body{flex:1;min-width:0}
+.hist-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:5px}
+.hist-label{font-family:var(--serif);font-size:16px;font-weight:600;color:var(--ink)}
+.hist-date{font-size:11.5px;color:var(--muted)}
+.hist-preview{font-size:12.5px;color:var(--ink-soft);font-weight:300;line-height:1.5;max-height:3em;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:9px}
+.hist-actions{display:flex;gap:7px;flex-wrap:wrap}
 /* Gerar imagem (Nano Banana) */
 .gen-hero{margin:2px 0 24px;text-align:center;padding:22px 20px;border-radius:16px;
   background:linear-gradient(180deg,#fffdf7,#f5ead2);border:1px solid var(--gold-soft);box-shadow:inset 0 1px 0 #fff}
@@ -226,6 +237,7 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
     <button data-mode="guided"><span class="n">◐</span><span>Perguntas</span></button>
     <button data-mode="describe"><span class="n">✎</span><span>Descrever</span></button>
     <button data-mode="output"><span class="n">✦</span><span>Metaprompt</span></button>
+    <button data-mode="history"><span class="n">🕘</span><span>Histórico</span></button>
   </div>
 
   <!-- ===== MEU PROJETO ===== -->
@@ -351,6 +363,19 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
         <button class="btn primary" data-copy="all">⧉ Copiar tudo</button>
         <button class="btn ghost" data-goto="guided">← Ajustar respostas</button>
       </div>
+    </div>
+  </section>
+
+  <!-- ===== HISTÓRICO ===== -->
+  <section id="mode-history" class="mode hidden">
+    <div class="panel">
+      <h2><span class="ic">🕘</span> Histórico de prompts</h2>
+      <p class="hint">Cada metaprompt gerado fica salvo aqui (com a miniatura do projeto), <strong>só neste navegador</strong>. Copie prompts antigos quando quiser.</p>
+      <div class="actionbar" style="margin-bottom:12px">
+        <button class="btn ghost sm" id="btn-clear-history">🗑 Limpar histórico</button>
+        <span class="count-pill" id="hist-count"></span>
+      </div>
+      <div id="history-list"></div>
     </div>
   </section>
 
@@ -1144,8 +1169,77 @@ function generate(){
   $("#params-block").classList.toggle("hidden",!b.paramsVisible);
   $("#out-rational").innerHTML=buildRational();
   const tn=$("#translate-note"); if(tn)tn.textContent="";
+  pushHistory(b);
   setMode("output");
   window.scrollTo({top:0,behavior:"smooth"});
+}
+
+/* =========================================================================
+   Histórico de prompts (persistido no navegador)
+   ========================================================================= */
+const HIST_KEY="archp_history", HIST_MAX=60;
+function loadHistory(){ try{return JSON.parse(localStorage.getItem(HIST_KEY)||"[]");}catch(_){return [];} }
+function saveHistory(h){ try{localStorage.setItem(HIST_KEY,JSON.stringify(h));}catch(_){ /* quota */ } }
+function makeThumb(rec){
+  return new Promise(res=>{
+    if(!rec||!rec.url){res(null);return;}
+    const im=new Image();
+    im.onload=()=>{
+      try{
+        const M=200, r=Math.min(M/im.naturalWidth,M/im.naturalHeight,1);
+        const w=Math.max(1,Math.round(im.naturalWidth*r)), h=Math.max(1,Math.round(im.naturalHeight*r));
+        const c=document.createElement("canvas");c.width=w;c.height=h;
+        c.getContext("2d").drawImage(im,0,0,w,h);
+        res(c.toDataURL("image/jpeg",0.72));
+      }catch(_){res(null);}
+    };
+    im.onerror=()=>res(null);
+    im.src=rec.url;
+  });
+}
+async function pushHistory(b){
+  const h=loadHistory();
+  if(h.length && h[0].prompt===b.prompt && h[0].neg===b.neg) return; // evita duplicado consecutivo
+  const thumb=await makeThumb(state.project[0]);
+  const entry={id:"h"+Date.now(), ts:Date.now(), label:b.label||"Metaprompt", model:b.model||"", prompt:b.prompt||"", neg:b.neg||"", params:b.params||"", thumb:thumb||null};
+  h.unshift(entry);
+  while(h.length>HIST_MAX)h.pop();
+  saveHistory(h);
+  renderHistory();
+}
+function fmtDate(ts){
+  try{return new Date(ts).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});}
+  catch(_){return "";}
+}
+function renderHistory(){
+  const host=$("#history-list"); if(!host)return;
+  const h=loadHistory();
+  $("#hist-count").textContent=`${h.length} ${h.length===1?"prompt salvo":"prompts salvos"}`;
+  if(!h.length){host.innerHTML=`<div class="hist-empty">Nenhum prompt salvo ainda. Gere um metaprompt na aba <strong>Perguntas</strong> e ele aparece aqui.</div>`;return;}
+  host.innerHTML="";
+  h.forEach(e=>{
+    const d=document.createElement("div"); d.className="hist-item";
+    d.innerHTML=`
+      <div class="hist-thumb">${e.thumb?`<img src="${e.thumb}" alt="projeto">`:"◈"}</div>
+      <div class="hist-body">
+        <div class="hist-top"><span class="hist-label">${esc(e.label)}</span><span class="hist-date">${fmtDate(e.ts)}</span></div>
+        <div class="hist-preview">${esc(e.prompt)}</div>
+        <div class="hist-actions">
+          <button class="btn sm" data-h-copy="${e.id}">⧉ Copiar prompt</button>
+          ${e.neg?`<button class="btn sm" data-h-neg="${e.id}">⧉ Copiar negative</button>`:""}
+          <button class="btn ghost sm" data-h-del="${e.id}">🗑</button>
+        </div>
+      </div>`;
+    host.appendChild(d);
+  });
+  host.querySelectorAll("[data-h-copy]").forEach(b=>b.addEventListener("click",()=>{const e=loadHistory().find(x=>x.id===b.dataset.hCopy);if(e)copyRaw(e.prompt);}));
+  host.querySelectorAll("[data-h-neg]").forEach(b=>b.addEventListener("click",()=>{const e=loadHistory().find(x=>x.id===b.dataset.hNeg);if(e)copyRaw(e.neg);}));
+  host.querySelectorAll("[data-h-del]").forEach(b=>b.addEventListener("click",()=>{ saveHistory(loadHistory().filter(x=>x.id!==b.dataset.hDel)); renderHistory(); toast("Removido do histórico"); }));
+}
+function copyRaw(txt){
+  navigator.clipboard?.writeText(txt).then(()=>toast("Copiado ✓")).catch(()=>{
+    const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Copiado ✓");
+  });
 }
 
 /* ---- Traduzir o prompt (editado) para inglês via Gemini ---- */
@@ -1283,6 +1377,12 @@ function init(){
   });
   $("#btn-analyze-proj").addEventListener("click",analyzeProject);
   $("#btn-translate").addEventListener("click",translateToEnglish);
+  $("#btn-clear-history").addEventListener("click",()=>{
+    if(!loadHistory().length){toast("Histórico já está vazio");return;}
+    if(!confirm("Apagar todo o histórico de prompts?"))return;
+    saveHistory([]); renderHistory(); toast("Histórico limpo ✓");
+  });
+  renderHistory();
   setupMic();
   $("#btn-analyze").addEventListener("click",analyzeText);
   $("#btn-generate").addEventListener("click",generate);
