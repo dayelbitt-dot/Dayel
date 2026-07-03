@@ -26,6 +26,8 @@ No topo do **Início** há uma caixa onde você pode:
   - **PDF** com texto — extraído com pdf.js
   - **Imagem / foto / print** — texto reconhecido por OCR (Tesseract.js, em português)
 
+> 💾 **Rascunho automático:** o que você escreve, dita ou anexa fica **salvo neste aparelho** enquanto você não gera nem cancela. Pode sair da tela, fechar o app ou o navegador e, ao voltar, **continua de onde parou** — inclusive os destinos que já tinha marcado.
+
 **Escolha para onde vai** (pode marcar mais de um ao mesmo tempo):
 
 | Destino | O que cria |
