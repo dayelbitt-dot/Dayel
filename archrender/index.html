@@ -219,6 +219,106 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
 .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(64,45,16,.35);border-top-color:#402d10;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-3px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:560px){.wrap{padding:18px 13px 76px}.brand h1{font-size:24px}.modebar button span:not(.n){display:none}.modebar button{min-width:0}.panel{padding:18px}.btn-gen{font-size:18px}}
+
+/* ===================== TOUR VIRTUAL ===================== */
+#tour-root{margin-bottom:18px}
+.tour-empty .tour-empty-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+.tour-stage{position:relative;width:100%;height:clamp(360px,68vh,720px);border-radius:var(--radius);overflow:hidden;
+  background:#0e1220;box-shadow:var(--shadow);touch-action:none;-webkit-user-select:none;user-select:none;outline:none}
+.tour-stage:fullscreen{height:100dvh;border-radius:0}
+.tour-stage.loading::after{content:"";position:absolute;top:50%;left:50%;width:34px;height:34px;margin:-17px 0 0 -17px;
+  border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;z-index:5}
+.tour-layer{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;opacity:0;
+  will-change:opacity,transform;background:#0e1220}
+.tour-imgbox{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:3}
+/* hotspots */
+.hotspot{position:absolute;transform:translate(-50%,-50%);min-width:46px;min-height:46px;width:46px;height:46px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.65);background:rgba(255,255,255,.16);color:#fff;cursor:pointer;
+  display:grid;place-items:center;pointer-events:auto;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  box-shadow:0 6px 18px rgba(0,0,0,.35);transition:transform .16s ease, background .16s ease;z-index:4}
+.hotspot .hs-dot{font-size:20px;line-height:1;font-weight:700;transform:translateX(1px)}
+.hotspot.hs-info .hs-dot{transform:none;font-size:19px}
+.hotspot::before{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(255,255,255,.55);
+  animation:hspulse 2.4s ease-out infinite;pointer-events:none}
+.tour-stage-edit .hotspot::before{animation:none}
+.hotspot:hover,.hotspot:focus-visible{transform:translate(-50%,-50%) scale(1.12);background:rgba(255,255,255,.28);z-index:6}
+.hotspot:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.hotspot .hs-label{position:absolute;bottom:130%;left:50%;transform:translateX(-50%) translateY(4px);white-space:nowrap;
+  background:rgba(14,18,32,.86);color:#fff;font-size:12.5px;font-weight:500;padding:5px 10px;border-radius:9px;
+  opacity:0;pointer-events:none;transition:.16s;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.hotspot:hover .hs-label,.hotspot:focus-visible .hs-label{opacity:1;transform:translateX(-50%) translateY(0)}
+.hotspot.hs-incomplete{border-color:#ff5aa0;background:rgba(255,60,140,.28)}
+.tour-stage-edit .hotspot.hs-selected{outline:3px solid var(--gold-soft);outline-offset:3px;background:rgba(126,168,255,.42)}
+@keyframes hspulse{0%{transform:scale(1);opacity:.7}70%{transform:scale(1.5);opacity:0}100%{opacity:0}}
+/* room name + controls */
+.tour-roomname{position:absolute;top:14px;left:16px;z-index:5;color:#fff;font-family:var(--serif);font-weight:600;
+  font-size:19px;letter-spacing:.3px;text-shadow:0 2px 12px rgba(0,0,0,.6);pointer-events:none}
+.tour-ctrls{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:7;display:flex;gap:6px;flex-wrap:wrap;
+  justify-content:center;background:rgba(14,18,32,.5);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:6px;max-width:calc(100% - 24px)}
+.tctl{border:0;background:rgba(255,255,255,.10);color:#fff;font-family:var(--sans);font-size:13px;font-weight:500;
+  padding:9px 13px;border-radius:10px;cursor:pointer;transition:.15s;min-height:40px}
+.tctl:hover{background:rgba(255,255,255,.22)}
+.tctl:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.tctl-edit{background:rgba(126,168,255,.32)}
+.tctl-rooms{position:relative;display:flex}
+.tour-roomlist{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);min-width:180px;max-height:260px;
+  overflow:auto;background:rgba(14,18,32,.94);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:6px;display:flex;flex-direction:column;gap:2px;z-index:9}
+.tour-roomlist button{border:0;background:transparent;color:#fff;text-align:left;padding:9px 11px;border-radius:8px;
+  cursor:pointer;font-size:13.5px}
+.tour-roomlist button:hover{background:rgba(255,255,255,.14)}
+.tour-roomlist button.cur{color:var(--gold-soft);font-weight:600}
+.tour-info-balloon{position:absolute;z-index:8;transform:translate(-50%,-115%);max-width:280px;
+  background:rgba(14,18,32,.92);color:#fff;font-size:13.5px;line-height:1.5;padding:11px 14px;border-radius:12px;
+  border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 30px rgba(0,0,0,.4);pointer-events:none}
+/* editor */
+.tour-edit-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.tour-title-in{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--ink);background:var(--paper);
+  border:1px solid var(--line-2);border-radius:12px;padding:9px 14px;min-width:220px}
+.tour-edit-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tour-edit-grid{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start}
+.tour-edit-side{display:flex;flex-direction:column;gap:14px}
+.tour-card{background:var(--paper);border:1px solid var(--line-2);border-radius:14px;padding:14px}
+.tour-card-h{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;
+  font-family:var(--serif);font-weight:600;font-size:15px;color:var(--ink)}
+.tour-rooms{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto}
+.tour-room-row{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:4px 4px 4px 0;
+  background:rgba(255,255,255,.4)}
+.tour-room-row.sel{border-color:var(--gold);background:rgba(126,168,255,.12)}
+.tour-room-pick{flex:1;min-width:0;border:0;background:transparent;text-align:left;padding:7px 10px;cursor:pointer;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink)}
+.tour-room-name{font-weight:500;font-size:14px}
+.tour-mini{font-size:11px;color:var(--muted)} .tour-mini.muted{color:var(--faint)}
+.tour-badge{font-size:10px;text-transform:uppercase;letter-spacing:.08em;background:var(--gold-soft);color:var(--gold-deep);
+  padding:2px 7px;border-radius:10px;font-weight:600}
+.tour-badge.warn{background:#ffd9e6;color:#c4607f}
+.tour-room-ops{display:flex;gap:2px;flex:none}
+.iconbtn{border:0;background:transparent;cursor:pointer;font-size:13px;color:var(--muted);width:26px;height:28px;border-radius:7px}
+.iconbtn:hover:not(:disabled){background:rgba(255,255,255,.7);color:var(--ink)}
+.iconbtn:disabled{opacity:.3;cursor:default}
+.iconbtn.danger:hover{color:var(--bad)}
+.tour-field{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted);margin-bottom:10px}
+.tour-field input,.tour-field select,.tour-field textarea{font-family:var(--sans);font-size:14px;color:var(--ink);
+  background:rgba(255,255,255,.7);border:1px solid var(--line-2);border-radius:10px;padding:9px 11px;width:100%}
+.tour-field select.invalid{border-color:var(--bad);background:#fff2f6}
+.tour-drop{margin-top:4px;padding:18px 14px}
+.tour-drop .big{font-size:26px}
+.tour-focal{display:flex;gap:12px;margin-top:2px}
+.tour-focal label{flex:1;font-size:11.5px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.tour-focal input[type=range]{width:100%}
+.tour-hist-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:7px;margin:8px 0;max-height:200px;overflow:auto}
+.tour-hist-thumb{border:1px solid var(--line-2);border-radius:9px;overflow:hidden;padding:0;cursor:pointer;background:#e4ebfb;aspect-ratio:1}
+.tour-hist-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.tour-hist-thumb:hover{border-color:var(--gold);box-shadow:var(--shadow-sm)}
+.tour-edit-stagewrap{display:flex;flex-direction:column;gap:10px}
+.tour-editbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tour-hint-inline{font-size:12.5px;color:var(--muted)}
+.tour-stage-edit{height:clamp(340px,60vh,620px)}
+.tour-stage-edit.adding{cursor:crosshair}
+.btn.sm.danger,.btn.ghost.sm.danger{color:var(--bad)}
+@media (max-width:820px){.tour-edit-grid{grid-template-columns:1fr}}
+@media (max-width:560px){.tctl{font-size:12px;padding:8px 10px}.tour-roomname{font-size:16px}}
 </style>
 </head>
 <body>
@@ -243,6 +343,7 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
     <button data-mode="guided"><span class="n">◐</span><span>Perguntas</span></button>
     <button data-mode="describe"><span class="n">✎</span><span>Descrever</span></button>
     <button data-mode="output"><span class="n">✦</span><span>Metaprompt</span></button>
+    <button data-mode="tour"><span class="n">◎</span><span>Tour</span></button>
     <button data-mode="history"><span class="n">🕘</span><span>Histórico</span></button>
   </div>
 
@@ -378,6 +479,11 @@ textarea.metaprompt{font-family:var(--sans);font-size:14.5px;line-height:1.7;min
         <button class="btn ghost" data-goto="guided">← Ajustar respostas</button>
       </div>
     </div>
+  </section>
+
+  <!-- ===== TOUR VIRTUAL ===== -->
+  <section id="mode-tour" class="mode hidden">
+    <div id="tour-root"></div>
   </section>
 
   <!-- ===== HISTÓRICO ===== -->
@@ -1691,12 +1797,612 @@ function stopRec(){
   else $("#mic-hint").textContent="";
 }
 
+/* =========================================================================
+   TOUR VIRTUAL — passeio navegável por imagens planas (100% local)
+   Config (Tour) no localStorage · renders (imagens pesadas) no IndexedDB.
+   Coordenadas de hotspot sempre em % (0–100), nunca em pixels.
+   ========================================================================= */
+const tourState = { config:null, currentRoomId:null, history:[], mode:"view",
+  transitioning:false, selectedHotspotId:null, addingHotspot:false, selectedRoomId:null, _idbWarned:false };
+
+/* refs transitórios do palco ativo (só existe um por vez) */
+let _tStage=null, _tLayers=[null,null], _tBox=null, _tFront=0;
+const _tImgCache=new Map();
+
+function tuid(p){ return (p||"id")+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function reducedMotion(){ try{ return matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(_){ return false; } }
+function blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result)); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); }); }
+function imgDims(blob){ return new Promise((res)=>{ const u=URL.createObjectURL(blob); const im=new Image(); im.onload=()=>{ res({w:im.naturalWidth,h:im.naturalHeight}); URL.revokeObjectURL(u); }; im.onerror=()=>{ res({w:0,h:0}); URL.revokeObjectURL(u); }; im.src=u; }); }
+function whenLoaded(img,url,cb){ if(img.getAttribute("src")===url && img.complete && img.naturalWidth){ cb(); return; } img.onload=cb; img.onerror=cb; img.src=url; }
+
+/* ---- Repositório local: única camada que fala com o storage ---- */
+const tourRepo = (function(){
+  const DBNAME="archp_tour", STORE="imgs";
+  let _db=null, _failed=false;
+  function open(){ return new Promise((res,rej)=>{
+    if(_failed) return rej(new Error("idb off"));
+    if(_db) return res(_db);
+    let req; try{ req=indexedDB.open(DBNAME,1); }catch(e){ _failed=true; return rej(e); }
+    req.onupgradeneeded=()=>{ try{ req.result.createObjectStore(STORE); }catch(_){} };
+    req.onsuccess=()=>{ _db=req.result; res(_db); };
+    req.onerror=()=>{ _failed=true; rej(req.error); };
+  }); }
+  async function putBlob(key,blob){ const db=await open(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,"readwrite"); tx.objectStore(STORE).put(blob,key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+  async function getBlob(key){ const db=await open(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,"readonly"); const r=tx.objectStore(STORE).get(key); r.onsuccess=()=>r.result?res(r.result):rej(new Error("missing")); r.onerror=()=>rej(r.error); }); }
+  async function delBlob(key){ try{ const db=await open(); const tx=db.transaction(STORE,"readwrite"); tx.objectStore(STORE).delete(key); }catch(_){} }
+  function loadCfg(id){ try{ return JSON.parse(localStorage.getItem("archprompter:tour:"+id)||"null"); }catch(_){ return null; } }
+  function saveCfg(cfg){ try{ localStorage.setItem("archprompter:tour:"+cfg.id, JSON.stringify(cfg)); localStorage.setItem("archp_tour_active", cfg.id); return true; }catch(_){ return false; } }
+  function activeId(){ try{ return localStorage.getItem("archp_tour_active"); }catch(_){ return null; } }
+  return { putBlob, getBlob, delBlob, loadCfg, saveCfg, activeId };
+})();
+
+async function tourPutImage(blob){
+  const key="img_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8);
+  try{ await tourRepo.putBlob(key, blob); return "idb:"+key; }
+  catch(_){
+    if(!tourState._idbWarned){ tourState._idbWarned=true; toast("IndexedDB indisponível — o tour não vai persistir entre recargas"); }
+    return await blobToDataURL(blob);
+  }
+}
+async function resolveImage(ref){
+  if(!ref) return "";
+  if(_tImgCache.has(ref)) return _tImgCache.get(ref);
+  if(ref.indexOf("idb:")===0){
+    try{ const blob=await tourRepo.getBlob(ref.slice(4)); const url=URL.createObjectURL(blob); _tImgCache.set(ref,url); return url; }
+    catch(_){ return ""; }
+  }
+  return ref; // dataURL ou URL
+}
+
+/* ---- Modelo / acesso ---- */
+function roomById(id){ return tourState.config ? tourState.config.rooms.find(r=>r.id===id) : null; }
+function currentRoom(){ return roomById(tourState.currentRoomId); }
+function selectedRoom(){ return roomById(tourState.selectedRoomId); }
+function refUsed(ref){ return !!(tourState.config && tourState.config.rooms.some(r=>r.imageRef===ref)); }
+function persistTour(){ return tourState.config ? tourRepo.saveCfg(tourState.config) : false; }
+
+/* ---- Tour de exemplo (renders sintéticos em SVG, 100% offline) ---- */
+function makeSampleImage(name, c1, c2, accent){
+  const svg="<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='1000' viewBox='0 0 1600 1000'>"
+    +"<defs><linearGradient id='w' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='"+c1+"'/><stop offset='1' stop-color='"+c2+"'/></linearGradient>"
+    +"<linearGradient id='f' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#2b2f3a'/><stop offset='1' stop-color='#12141b'/></linearGradient></defs>"
+    +"<rect width='1600' height='1000' fill='url(#w)'/>"
+    +"<rect y='640' width='1600' height='360' fill='url(#f)'/>"
+    +"<g stroke='rgba(255,255,255,.06)' stroke-width='2'><line x1='0' y1='700' x2='1600' y2='700'/><line x1='0' y1='830' x2='1600' y2='830'/><line x1='800' y1='640' x2='230' y2='1000'/><line x1='800' y1='640' x2='1370' y2='1000'/></g>"
+    +"<rect x='120' y='170' width='360' height='400' rx='6' fill='rgba(255,255,255,.10)' stroke='"+accent+"' stroke-width='3'/>"
+    +"<line x1='300' y1='170' x2='300' y2='570' stroke='"+accent+"' stroke-width='3'/><line x1='120' y1='370' x2='480' y2='370' stroke='"+accent+"' stroke-width='3'/>"
+    +"<rect x='1080' y='250' width='330' height='500' rx='6' fill='rgba(0,0,0,.38)' stroke='"+accent+"' stroke-width='3'/>"
+    +"<text x='1245' y='515' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='22' letter-spacing='4' fill='"+accent+"' opacity='.85'>"+name+"</text>"
+    +"<text x='800' y='950' text-anchor='middle' font-family='Helvetica, Arial, sans-serif' font-size='22' letter-spacing='7' fill='rgba(255,255,255,.34)'>ARCHPROMPTER · TOUR · EXEMPLO</text>"
+    +"</svg>";
+  return "data:image/svg+xml,"+encodeURIComponent(svg);
+}
+function makeSampleTour(){
+  const entrada=tuid("room"), sala=tuid("room"), cozinha=tuid("room"), quarto=tuid("room");
+  return {
+    id: tuid("tour"), title:"Tour de exemplo", startRoomId: entrada,
+    rooms:[
+      { id:entrada, name:"Entrada", imageRef:makeSampleImage("Entrada","#3a4a6b","#1c2333","#8ab4ff"), focalX:50, focalY:50, hotspots:[
+        { id:tuid("hs"), x:78, y:52, kind:"move", targetRoomId:sala, label:"Ir para a Sala", info:"" },
+        { id:tuid("hs"), x:19, y:40, kind:"info", targetRoomId:null, label:"Sobre a entrada", info:"Pé-direito duplo com luz natural pela fachada oeste." },
+      ]},
+      { id:sala, name:"Sala de estar", imageRef:makeSampleImage("Sala de estar","#5b4a6b","#241b30","#c79bff"), focalX:50, focalY:50, hotspots:[
+        { id:tuid("hs"), x:79, y:50, kind:"move", targetRoomId:cozinha, label:"Ir para a Cozinha", info:"" },
+        { id:tuid("hs"), x:20, y:50, kind:"move", targetRoomId:quarto, label:"Ir para o Quarto", info:"" },
+        { id:tuid("hs"), x:50, y:82, kind:"move", targetRoomId:entrada, label:"Voltar à Entrada", info:"" },
+      ]},
+      { id:cozinha, name:"Cozinha", imageRef:makeSampleImage("Cozinha","#3f5b52","#182420","#63d6b0"), focalX:50, focalY:50, hotspots:[
+        { id:tuid("hs"), x:21, y:50, kind:"move", targetRoomId:sala, label:"Voltar à Sala", info:"" },
+      ]},
+      { id:quarto, name:"Quarto", imageRef:makeSampleImage("Quarto","#6b5340","#281e14","#e0b878"), focalX:50, focalY:50, hotspots:[
+        { id:tuid("hs"), x:79, y:50, kind:"move", targetRoomId:sala, label:"Voltar à Sala", info:"" },
+      ]},
+    ]
+  };
+}
+
+/* ---- Layout do palco (geometria do object-fit: cover) ---- */
+function layoutStage(){
+  if(!_tStage || !_tBox) return;
+  const img=_tLayers[_tFront];
+  const cw=_tStage.clientWidth, ch=_tStage.clientHeight;
+  if(!img || !img.naturalWidth || !cw || !ch){ _tBox.style.cssText="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:3"; return; }
+  const iw=img.naturalWidth, ih=img.naturalHeight;
+  const scale=Math.max(cw/iw, ch/ih);
+  const dW=iw*scale, dH=ih*scale;
+  const room=(tourState.mode==="edit")?selectedRoom():currentRoom();
+  const fx=(room && typeof room.focalX==="number" ? room.focalX : 50)/100;
+  const fy=(room && typeof room.focalY==="number" ? room.focalY : 50)/100;
+  _tBox.style.width=dW+"px"; _tBox.style.height=dH+"px";
+  _tBox.style.left=((cw-dW)*fx)+"px"; _tBox.style.top=((ch-dH)*fy)+"px";
+}
+function tourRelayout(){ layoutStage(); }
+
+function mountLayers(stage){
+  _tStage=stage; _tFront=0;
+  _tBox=stage.querySelector(".tour-imgbox");
+  const a=document.createElement("img"); a.className="tour-layer"; a.alt="";
+  const b=document.createElement("img"); b.className="tour-layer"; b.alt="";
+  stage.insertBefore(b, _tBox); stage.insertBefore(a, _tBox);
+  _tLayers=[a,b];
+}
+
+function updateRoomName(){
+  if(!_tStage) return;
+  const el=_tStage.querySelector(".tour-roomname"); if(!el) return;
+  const r=(tourState.mode==="edit")?selectedRoom():currentRoom();
+  el.textContent=r?(r.name||"Ambiente"):"";
+}
+
+async function showRoom(room, animate){
+  if(!room || !_tStage) return;
+  if(tourState.mode!=="edit") tourState.currentRoomId=room.id;
+  updateRoomName(); hideInfo();
+  const url=await resolveImage(room.imageRef);
+  const front=_tLayers[_tFront], back=_tLayers[_tFront^1];
+  const focal=(typeof room.focalX==="number"?room.focalX:50)+"% "+(typeof room.focalY==="number"?room.focalY:50)+"%";
+  if(!url){ front.removeAttribute("src"); front.style.opacity="1"; _tStage.classList.remove("loading"); layoutStage(); renderHotspots(); return; }
+  _tStage.classList.add("loading");
+  if(animate && !reducedMotion()){
+    tourState.transitioning=true;
+    whenLoaded(back,url,()=>{
+      _tStage.classList.remove("loading");
+      back.style.objectPosition=focal;
+      back.style.transition="none"; back.style.opacity="0"; back.style.transform="scale(1.05)"; back.style.zIndex="2";
+      void back.offsetWidth;
+      back.style.transition="opacity .45s cubic-bezier(.22,.61,.36,1), transform .45s cubic-bezier(.22,.61,.36,1)";
+      back.style.opacity="1"; back.style.transform="scale(1)";
+      setTimeout(()=>{
+        _tFront^=1;
+        front.style.opacity="0"; front.style.zIndex="1"; back.style.zIndex="1";
+        layoutStage(); renderHotspots();
+        tourState.transitioning=false;
+      }, 470);
+    });
+  } else {
+    whenLoaded(front,url,()=>{
+      _tStage.classList.remove("loading");
+      front.style.objectPosition=focal; front.style.transition="none";
+      front.style.opacity="1"; front.style.transform="scale(1)"; front.style.zIndex="1";
+      back.style.opacity="0";
+      layoutStage(); renderHotspots();
+    });
+  }
+}
+function applyFocalLive(){ const r=selectedRoom(); const img=_tLayers[_tFront]; if(!r||!img) return; img.style.objectPosition=(r.focalX??50)+"% "+(r.focalY??50)+"%"; }
+
+/* ---- Hotspots ---- */
+function renderHotspots(){
+  if(!_tBox) return;
+  _tBox.querySelectorAll(".hotspot").forEach(n=>n.remove());
+  const room=(tourState.mode==="edit")?selectedRoom():currentRoom();
+  if(!room) return;
+  const interactive=(tourState.mode==="edit");
+  room.hotspots.forEach(hs=>{
+    const b=document.createElement("button");
+    b.className="hotspot hs-"+hs.kind;
+    b.style.left=hs.x+"%"; b.style.top=hs.y+"%";
+    b.setAttribute("aria-label", hs.label || (hs.kind==="move"?"Ir para ambiente":"Informação"));
+    b.innerHTML="<span class='hs-dot'>"+(hs.kind==="move"?"❯":"ⓘ")+"</span><span class='hs-label'>"+esc(hs.label||"")+"</span>";
+    if(hs.kind==="move" && (!hs.targetRoomId || !roomById(hs.targetRoomId))) b.classList.add("hs-incomplete");
+    if(interactive){
+      if(hs.id===tourState.selectedHotspotId) b.classList.add("hs-selected");
+      wireHotspotEdit(b,hs);
+    } else {
+      b.addEventListener("click",()=>activateHotspot(hs,b));
+    }
+    _tBox.appendChild(b);
+  });
+}
+function activateHotspot(hs,b){
+  if(tourState.transitioning) return;
+  if(hs.kind==="info"){ showInfo(hs,b); return; }
+  if(!hs.targetRoomId || !roomById(hs.targetRoomId)){ toast("Este destino não existe mais 🤔"); return; }
+  gotoRoom(hs.targetRoomId);
+}
+function wireHotspotEdit(b,hs){
+  let sx=0, sy=0, moved=false, dragging=false;
+  b.addEventListener("pointerdown",(e)=>{
+    e.preventDefault(); e.stopPropagation();
+    try{ b.setPointerCapture(e.pointerId); }catch(_){}
+    sx=e.clientX; sy=e.clientY; moved=false; dragging=true;
+    selectHotspot(hs.id, true); b.classList.add("hs-selected");
+  });
+  b.addEventListener("pointermove",(e)=>{
+    if(!dragging) return;
+    if(Math.abs(e.clientX-sx)>3 || Math.abs(e.clientY-sy)>3) moved=true;
+    if(!moved || !_tBox) return;
+    const r=_tBox.getBoundingClientRect();
+    let x=(e.clientX-r.left)/r.width*100, y=(e.clientY-r.top)/r.height*100;
+    x=Math.max(0,Math.min(100,x)); y=Math.max(0,Math.min(100,y));
+    hs.x=+x.toFixed(2); hs.y=+y.toFixed(2);
+    b.style.left=hs.x+"%"; b.style.top=hs.y+"%";
+  });
+  const end=(e)=>{ if(!dragging) return; dragging=false; try{ b.releasePointerCapture(e.pointerId); }catch(_){}
+    if(moved){ persistTour(); } else { selectHotspot(hs.id); } };
+  b.addEventListener("pointerup",end);
+  b.addEventListener("pointercancel",end);
+}
+function selectHotspot(id, noRender){ tourState.selectedHotspotId=id; renderInspector(); if(!noRender) renderHotspots(); }
+function addHotspot(x,y){
+  const r=selectedRoom(); if(!r) return;
+  const hs={ id:tuid("hs"), x:+(+x).toFixed(2), y:+(+y).toFixed(2), kind:"move", targetRoomId:null, label:"Novo ponto", info:"" };
+  r.hotspots.push(hs);
+  tourState.selectedHotspotId=hs.id;
+  tourState.addingHotspot=false; if(_tStage) _tStage.classList.remove("adding");
+  const btn=document.querySelector('[data-e="addhs"]'); if(btn) btn.classList.remove("primary");
+  const hint=$("#tour-edit-hint"); if(hint) hint.textContent="Ponto criado — defina o destino no inspetor.";
+  persistTour(); renderHotspots(); renderInspector(); renderRoomsList();
+}
+function moveHotspot(id,x,y){ const r=selectedRoom(); if(!r) return; const hs=r.hotspots.find(h=>h.id===id); if(!hs) return; hs.x=+(+x).toFixed(2); hs.y=+(+y).toFixed(2); persistTour(); }
+function updateHotspot(id,patch,light){
+  const r=selectedRoom(); if(!r) return;
+  const hs=r.hotspots.find(h=>h.id===id); if(!hs) return;
+  Object.assign(hs,patch); persistTour();
+  renderHotspots(); renderRoomsList();
+  if(!light) renderInspector();
+}
+function deleteHotspot(id){
+  const r=selectedRoom(); if(!r) return;
+  r.hotspots=r.hotspots.filter(h=>h.id!==id);
+  if(tourState.selectedHotspotId===id) tourState.selectedHotspotId=null;
+  persistTour(); renderHotspots(); renderInspector(); renderRoomsList();
+}
+
+/* ---- Navegação (viewer) ---- */
+function gotoRoom(id){
+  if(tourState.transitioning) return;
+  const room=roomById(id);
+  if(!room){ toast("Este destino não existe mais 🤔"); return; }
+  if(tourState.currentRoomId) tourState.history.push(tourState.currentRoomId);
+  showRoom(room,true);
+  if(_tStage) buildRoomList(_tStage);
+}
+function back(){
+  if(tourState.transitioning) return;
+  if(!tourState.history.length){ toast("Você está no ambiente inicial"); return; }
+  const id=tourState.history.pop();
+  const room=roomById(id) || roomById(tourState.config.startRoomId);
+  if(room){ showRoom(room,true); if(_tStage) buildRoomList(_tStage); }
+}
+function home(){
+  if(tourState.transitioning) return;
+  tourState.history=[];
+  const room=roomById(tourState.config.startRoomId) || tourState.config.rooms[0];
+  if(room){ showRoom(room,true); if(_tStage) buildRoomList(_tStage); }
+}
+function showInfo(hs,b){
+  if(!_tStage) return;
+  const bal=_tStage.querySelector(".tour-info-balloon"); if(!bal) return;
+  bal.textContent=hs.info || hs.label || "";
+  bal.classList.remove("hidden");
+  const sr=_tStage.getBoundingClientRect(), br=b.getBoundingClientRect();
+  bal.style.left=(br.left-sr.left+br.width/2)+"px";
+  bal.style.top=(br.top-sr.top)+"px";
+}
+function hideInfo(){ const bal=_tStage && _tStage.querySelector(".tour-info-balloon"); if(bal) bal.classList.add("hidden"); }
+function buildRoomList(stage){
+  const list=stage.querySelector(".tour-roomlist"); if(!list) return;
+  list.innerHTML=tourState.config.rooms.map(r=>"<button role='option' data-room='"+r.id+"' class='"+(r.id===tourState.currentRoomId?"cur":"")+"'>"+esc(r.name||"Ambiente")+"</button>").join("");
+  list.querySelectorAll("[data-room]").forEach(btn=>btn.onclick=()=>{ list.classList.add("hidden"); gotoRoom(btn.dataset.room); });
+}
+function toggleRoomList(){ const l=_tStage&&_tStage.querySelector(".tour-roomlist"); if(!l) return; const willShow=l.classList.contains("hidden"); if(willShow) buildRoomList(_tStage); l.classList.toggle("hidden"); }
+function toggleFullscreen(){
+  const el=_tStage; if(!el) return;
+  const fsEl=document.fullscreenElement||document.webkitFullscreenElement;
+  if(!fsEl){ (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
+  else { (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }
+}
+function onStageKey(e){
+  if(tourState.mode!=="view") return;
+  if(e.key==="Backspace"||e.key==="Escape"){ e.preventDefault(); back(); }
+}
+
+/* ---- Render principal ---- */
+function renderTourTab(){
+  const root=$("#tour-root"); if(!root) return;
+  root.innerHTML=""; _tStage=null; _tLayers=[null,null]; _tBox=null;
+  if(!tourState.config || !tourState.config.rooms.length){ tourEmptyState(root); return; }
+  if(tourState.mode==="edit") renderEditor(root); else renderViewer(root);
+}
+function setTourMode(m){ tourState.mode=m; tourState.addingHotspot=false; tourState.selectedHotspotId=null; renderTourTab(); }
+
+function tourEmptyState(root){
+  root.innerHTML="<div class='panel tour-empty'>"
+    +"<h2><span class='ic'>◎</span> Tour Virtual</h2>"
+    +"<p class='hint'>Monte um passeio navegável com seus renders — cada imagem é um ambiente e o cliente “caminha” clicando nas portas, com transição suave. Tudo <strong>100% local</strong> neste navegador.</p>"
+    +"<div class='tour-empty-cta'>"
+    +"<button class='btn primary' id='tour-add-first'>＋ Adicionar primeiro ambiente</button>"
+    +"<button class='btn ghost' id='tour-load-sample'>Carregar tour de exemplo</button>"
+    +"</div>"
+    +"<p class='gsub' style='margin-top:14px'>Dica: você pode puxar renders já salvos no <strong>Histórico</strong> do ArchPrompter.</p></div>";
+  $("#tour-add-first").onclick=()=>{ if(!tourState.config) tourState.config={id:tuid("tour"),title:"Meu tour",startRoomId:null,rooms:[]}; tourState.mode="edit"; addRoom(); persistTour(); renderTourTab(); };
+  $("#tour-load-sample").onclick=()=>{ tourState.config=makeSampleTour(); tourState.currentRoomId=tourState.config.startRoomId; tourState.selectedRoomId=tourState.config.startRoomId; tourState.history=[]; persistTour(); renderTourTab(); };
+}
+
+function renderViewer(root){
+  const wrap=document.createElement("div"); wrap.className="tour-view";
+  wrap.innerHTML=
+    "<div class='tour-stage' id='tour-stage' tabindex='0' aria-label='Palco do tour virtual'>"
+    +"<div class='tour-imgbox' aria-hidden='true'></div>"
+    +"<div class='tour-roomname'></div>"
+    +"<div class='tour-info-balloon hidden' role='status'></div>"
+    +"<div class='tour-ctrls'>"
+    +"<button class='tctl' data-act='back' title='Voltar (Backspace)'>‹ Voltar</button>"
+    +"<button class='tctl' data-act='home' title='Início'>⌂ Início</button>"
+    +"<span class='tctl-rooms'><button class='tctl' data-act='rooms' aria-haspopup='listbox'>☰ Ambientes</button><div class='tour-roomlist hidden' role='listbox'></div></span>"
+    +"<button class='tctl' data-act='fs' title='Tela cheia'>⛶ Tela cheia</button>"
+    +"<button class='tctl tctl-edit' data-act='edit' title='Montar o tour'>✎ Montar</button>"
+    +"</div></div>";
+  root.appendChild(wrap);
+  const stage=wrap.querySelector("#tour-stage");
+  mountLayers(stage);
+  stage.querySelector("[data-act='back']").onclick=back;
+  stage.querySelector("[data-act='home']").onclick=home;
+  stage.querySelector("[data-act='fs']").onclick=toggleFullscreen;
+  stage.querySelector("[data-act='edit']").onclick=()=>setTourMode("edit");
+  stage.querySelector("[data-act='rooms']").onclick=toggleRoomList;
+  buildRoomList(stage);
+  stage.addEventListener("keydown",onStageKey);
+  stage.addEventListener("click",(e)=>{ if(!e.target.closest(".hotspot") && !e.target.closest(".tctl")) hideInfo(); });
+  let room=currentRoom() || tourState.config.rooms[0];
+  tourState.currentRoomId=room.id;
+  showRoom(room,false);
+}
+
+/* ---- Modo Montagem (editor) ---- */
+function renderEditor(root){
+  const cfg=tourState.config;
+  if(!tourState.selectedRoomId || !roomById(tourState.selectedRoomId)) tourState.selectedRoomId=cfg.startRoomId||(cfg.rooms[0]&&cfg.rooms[0].id)||null;
+  const wrap=document.createElement("div"); wrap.className="tour-edit";
+  wrap.innerHTML=
+    "<div class='tour-edit-top'>"
+    +"<input class='tour-title-in' id='tour-title' value='"+esc(cfg.title||"")+"' placeholder='Título do tour' aria-label='Título do tour'/>"
+    +"<div class='tour-edit-actions'>"
+    +"<button class='btn ghost sm' data-e='export'>⭳ Exportar JSON</button>"
+    +"<button class='btn ghost sm' data-e='export-emb' title='JSON com imagens embutidas em dataURL'>⭳ + imagens</button>"
+    +"<button class='btn ghost sm' data-e='import'>⭱ Importar</button>"
+    +"<button class='btn sm' data-e='save'>💾 Salvar</button>"
+    +"<button class='btn primary sm' data-e='play'>▶ Visualizar</button>"
+    +"</div></div>"
+    +"<div class='tour-edit-grid'>"
+    +"<div class='tour-edit-side'>"
+    +"<div class='tour-card'><div class='tour-card-h'><span>Ambientes</span><button class='btn sm' data-e='addroom'>＋ Ambiente</button></div><div class='tour-rooms' id='tour-rooms'></div></div>"
+    +"<div class='tour-card' id='tour-room-card'></div>"
+    +"<div class='tour-card' id='tour-inspector'></div>"
+    +"</div>"
+    +"<div class='tour-edit-stagewrap'>"
+    +"<div class='tour-editbar'><button class='btn sm' data-e='addhs'>＋ Adicionar ponto</button><span class='tour-hint-inline' id='tour-edit-hint'>Clique numa porta/passagem para criar um ponto.</span></div>"
+    +"<div class='tour-stage tour-stage-edit' id='tour-stage' tabindex='0' aria-label='Palco de edição'><div class='tour-imgbox'></div><div class='tour-roomname'></div></div>"
+    +"</div></div>";
+  root.appendChild(wrap);
+  wrap.querySelector("[data-e='play']").onclick=()=>{ const cfg2=tourState.config; tourState.currentRoomId=cfg2.startRoomId||(cfg2.rooms[0]&&cfg2.rooms[0].id); tourState.history=[]; setTourMode("view"); };
+  wrap.querySelector("[data-e='save']").onclick=()=>{ toast(persistTour()?"Tour salvo neste navegador ✓":"Não foi possível salvar (armazenamento cheio?)"); };
+  wrap.querySelector("[data-e='export']").onclick=()=>exportJSON(false);
+  wrap.querySelector("[data-e='export-emb']").onclick=()=>exportJSON(true);
+  wrap.querySelector("[data-e='import']").onclick=importJSONPrompt;
+  wrap.querySelector("[data-e='addroom']").onclick=()=>addRoom();
+  wrap.querySelector("[data-e='addhs']").onclick=toggleAddHotspot;
+  const ti=wrap.querySelector("#tour-title"); ti.oninput=()=>{ cfg.title=ti.value; persistTour(); };
+  const stage=wrap.querySelector("#tour-stage");
+  mountLayers(stage);
+  stage.addEventListener("click",onEditStageClick);
+  stage.addEventListener("keydown",onEditStageKey);
+  renderRoomsList(); renderRoomCard(); renderInspector();
+  const room=selectedRoom();
+  if(room) showRoom(room,false); else { layoutStage(); }
+}
+function renderRoomsList(){
+  const host=$("#tour-rooms"); if(!host) return;
+  const cfg=tourState.config;
+  host.innerHTML = cfg.rooms.map((r,i)=>
+    "<div class='tour-room-row "+(r.id===tourState.selectedRoomId?"sel":"")+"' data-room='"+r.id+"'>"
+    +"<button class='tour-room-pick' data-pick='"+r.id+"'>"
+    +"<span class='tour-room-name'>"+esc(r.name||"Ambiente")+"</span>"
+    +(r.id===cfg.startRoomId?"<span class='tour-badge'>início</span>":"")
+    +(r.hotspots.length?"<span class='tour-mini'>"+r.hotspots.length+" ponto"+(r.hotspots.length>1?"s":"")+"</span>":"<span class='tour-mini muted'>sem pontos</span>")
+    +"</button>"
+    +"<div class='tour-room-ops'>"
+    +"<button class='iconbtn' data-up='"+r.id+"' "+(i===0?"disabled":"")+" title='Subir'>↑</button>"
+    +"<button class='iconbtn' data-down='"+r.id+"' "+(i===cfg.rooms.length-1?"disabled":"")+" title='Descer'>↓</button>"
+    +"<button class='iconbtn' data-start='"+r.id+"' title='Definir como início' "+(r.id===cfg.startRoomId?"disabled":"")+">⌂</button>"
+    +"<button class='iconbtn danger' data-delroom='"+r.id+"' title='Excluir ambiente'>🗑</button>"
+    +"</div></div>"
+  ).join("") || "<div class='gsub'>Nenhum ambiente ainda.</div>";
+  host.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>selectRoom(b.dataset.pick));
+  host.querySelectorAll("[data-up]").forEach(b=>b.onclick=()=>moveRoom(b.dataset.up,-1));
+  host.querySelectorAll("[data-down]").forEach(b=>b.onclick=()=>moveRoom(b.dataset.down,1));
+  host.querySelectorAll("[data-start]").forEach(b=>b.onclick=()=>{ tourState.config.startRoomId=b.dataset.start; persistTour(); renderRoomsList(); });
+  host.querySelectorAll("[data-delroom]").forEach(b=>b.onclick=()=>deleteRoom(b.dataset.delroom));
+}
+function selectRoom(id){
+  tourState.selectedRoomId=id; tourState.selectedHotspotId=null; tourState.addingHotspot=false;
+  if(_tStage) _tStage.classList.remove("adding");
+  renderRoomsList(); renderRoomCard(); renderInspector();
+  const r=selectedRoom(); if(r) showRoom(r,false);
+}
+function renderRoomCard(){
+  const host=$("#tour-room-card"); if(!host) return;
+  const r=selectedRoom();
+  if(!r){ host.innerHTML="<div class='tour-card-h'><span>Ambiente</span></div><div class='gsub'>Selecione ou crie um ambiente para definir o render.</div>"; return; }
+  host.innerHTML=
+    "<div class='tour-card-h'><span>Ambiente</span></div>"
+    +"<label class='tour-field'>Nome<input id='tour-room-name' value='"+esc(r.name||"")+"' placeholder='ex.: Cozinha'/></label>"
+    +"<div class='drop tour-drop' id='tour-drop'><div class='big'>◎</div><p>Arraste o render aqui ou clique</p><small>PNG · JPG · WEBP — recomendado ≥ 1600px</small><input type='file' id='tour-file' accept='image/*' hidden/></div>"
+    +"<button class='btn ghost sm' id='tour-pull-hist' style='margin-top:8px'>🕘 Puxar do Histórico</button>"
+    +"<div id='tour-hist-pick' class='tour-hist-pick hidden'></div>"
+    +"<div class='tour-focal'><label>Foco X <input type='range' min='0' max='100' value='"+(r.focalX??50)+"' id='tour-fx'></label><label>Foco Y <input type='range' min='0' max='100' value='"+(r.focalY??50)+"' id='tour-fy'></label></div>"
+    +"<div id='tour-img-warn' class='gsub'></div>";
+  const nm=$("#tour-room-name"); nm.oninput=()=>{ r.name=nm.value; persistTour(); renderRoomsList(); updateRoomName(); };
+  wireTourDrop();
+  $("#tour-pull-hist").onclick=toggleHistPick;
+  $("#tour-fx").oninput=(e)=>{ r.focalX=+e.target.value; applyFocalLive(); layoutStage(); persistTour(); };
+  $("#tour-fy").oninput=(e)=>{ r.focalY=+e.target.value; applyFocalLive(); layoutStage(); persistTour(); };
+}
+function wireTourDrop(){
+  const drop=$("#tour-drop"), file=$("#tour-file"); if(!drop||!file) return;
+  drop.addEventListener("click",(e)=>{ if(e.target!==file) file.click(); });
+  file.addEventListener("change",(e)=>{ const f=e.target.files[0]; const r=selectedRoom(); if(f&&r) setRoomImage(r.id,f); e.target.value=""; });
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,(e)=>{ e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,(e)=>{ e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop",(e)=>{ const f=e.dataTransfer.files[0]; const r=selectedRoom(); if(f&&r&&f.type.startsWith("image/")) setRoomImage(r.id,f); });
+}
+function toggleHistPick(){
+  const host=$("#tour-hist-pick"); if(!host) return;
+  if(!host.classList.contains("hidden")){ host.classList.add("hidden"); return; }
+  let h=[]; try{ h=JSON.parse(localStorage.getItem("archp_history")||"[]"); }catch(_){}
+  const withImg=h.filter(e=>e && e.thumb);
+  if(!withImg.length) host.innerHTML="<div class='gsub'>Nenhum render no Histórico ainda. Gere metaprompts e renders no app primeiro.</div>";
+  else host.innerHTML=withImg.map(e=>"<button class='tour-hist-thumb' data-thumb='"+e.id+"' title='"+esc(e.label||"")+"'><img src='"+e.thumb+"' alt=''></button>").join("");
+  host.classList.remove("hidden");
+  host.querySelectorAll("[data-thumb]").forEach(b=>b.onclick=()=>{
+    const e=withImg.find(x=>x.id===b.dataset.thumb); const r=selectedRoom(); if(!e||!r) return;
+    r.imageRef=e.thumb; _tImgCache.delete(e.thumb); persistTour();
+    host.classList.add("hidden"); renderRoomsList(); showRoom(r,false);
+    toast("Render do histórico aplicado (miniatura). Para nitidez, faça upload do render final.");
+  });
+}
+async function setRoomImage(roomId, blob){
+  const r=roomById(roomId); if(!r) return;
+  try{ const d=await imgDims(blob); const warn=$("#tour-img-warn"); if(warn) warn.textContent=(d.w && d.w<1600)?("⚠ Render com "+d.w+"px de largura — recomendado ≥ 1600px para nitidez em tela cheia."):""; }catch(_){}
+  const old=r.imageRef;
+  const ref=await tourPutImage(blob);
+  r.imageRef=ref; _tImgCache.delete(ref); persistTour();
+  if(old && old.indexOf&&old.indexOf("idb:")===0 && !refUsed(old)) tourRepo.delBlob(old.slice(4));
+  const cur=selectedRoom(); if(cur && cur.id===roomId) showRoom(r,false);
+  renderRoomsList();
+}
+function addRoom(){
+  const cfg=tourState.config;
+  const r={ id:tuid("room"), name:"Ambiente "+(cfg.rooms.length+1), imageRef:"", focalX:50, focalY:50, hotspots:[] };
+  cfg.rooms.push(r);
+  if(!cfg.startRoomId) cfg.startRoomId=r.id;
+  tourState.selectedRoomId=r.id; tourState.selectedHotspotId=null;
+  persistTour();
+  if(tourState.mode==="edit"){ renderRoomsList(); renderRoomCard(); renderInspector(); showRoom(r,false); }
+  return r;
+}
+function updateRoom(id,patch){ const r=roomById(id); if(!r) return; Object.assign(r,patch); persistTour(); }
+function deleteRoom(id){
+  if(!confirm("Excluir este ambiente? Os pontos que levam a ele ficam sem destino.")) return;
+  const cfg=tourState.config; const r=roomById(id);
+  cfg.rooms=cfg.rooms.filter(x=>x.id!==id);
+  cfg.rooms.forEach(rm=>rm.hotspots.forEach(h=>{ if(h.targetRoomId===id) h.targetRoomId=null; }));
+  if(cfg.startRoomId===id) cfg.startRoomId=cfg.rooms[0]?cfg.rooms[0].id:null;
+  if(tourState.selectedRoomId===id) tourState.selectedRoomId=cfg.startRoomId;
+  if(tourState.currentRoomId===id) tourState.currentRoomId=cfg.startRoomId;
+  if(r && r.imageRef && r.imageRef.indexOf&&r.imageRef.indexOf("idb:")===0 && !refUsed(r.imageRef)) tourRepo.delBlob(r.imageRef.slice(4));
+  persistTour(); renderTourTab();
+}
+function moveRoom(id,dir){
+  const rooms=tourState.config.rooms;
+  const i=rooms.findIndex(r=>r.id===id); const j=i+dir;
+  if(i<0||j<0||j>=rooms.length) return;
+  const t=rooms[i]; rooms[i]=rooms[j]; rooms[j]=t;
+  persistTour(); renderRoomsList();
+}
+function toggleAddHotspot(){
+  if(!selectedRoom()){ toast("Crie ou selecione um ambiente primeiro 🙂"); return; }
+  tourState.addingHotspot=!tourState.addingHotspot;
+  if(_tStage) _tStage.classList.toggle("adding", tourState.addingHotspot);
+  const btn=document.querySelector('[data-e="addhs"]'); if(btn) btn.classList.toggle("primary", tourState.addingHotspot);
+  const hint=$("#tour-edit-hint"); if(hint) hint.textContent=tourState.addingHotspot?"Clique sobre a porta/passagem para posicionar o ponto.":"Clique numa porta/passagem para criar um ponto.";
+}
+function onEditStageClick(e){
+  if(!tourState.addingHotspot || !_tBox) return;
+  if(e.target.closest(".hotspot")) return;
+  const r=_tBox.getBoundingClientRect();
+  let x=(e.clientX-r.left)/r.width*100, y=(e.clientY-r.top)/r.height*100;
+  x=Math.max(0,Math.min(100,x)); y=Math.max(0,Math.min(100,y));
+  addHotspot(x,y);
+}
+function onEditStageKey(e){
+  if(e.key==="Delete" && tourState.selectedHotspotId){ e.preventDefault(); deleteHotspot(tourState.selectedHotspotId); }
+}
+function renderInspector(){
+  const host=$("#tour-inspector"); if(!host) return;
+  const r=selectedRoom();
+  const hs=r && r.hotspots.find(h=>h.id===tourState.selectedHotspotId);
+  if(!hs){ host.innerHTML="<div class='tour-card-h'><span>Ponto</span></div><div class='gsub'>Selecione um ponto na imagem, ou clique em “Adicionar ponto”.</div>"; return; }
+  const incomplete = hs.kind==="move" && (!hs.targetRoomId || !roomById(hs.targetRoomId));
+  const opts="<option value=''>— escolher destino —</option>"+tourState.config.rooms.filter(x=>x.id!==r.id).map(x=>"<option value='"+x.id+"' "+(x.id===hs.targetRoomId?"selected":"")+">"+esc(x.name||"Ambiente")+"</option>").join("");
+  host.innerHTML=
+    "<div class='tour-card-h'><span>Ponto"+(incomplete?" <span class='tour-badge warn'>incompleto</span>":"")+"</span><button class='btn ghost sm danger' data-delhs>🗑 Excluir</button></div>"
+    +"<label class='tour-field'>Tipo<select id='hs-kind'><option value='move' "+(hs.kind==="move"?"selected":"")+">Mover (navegar)</option><option value='info' "+(hs.kind==="info"?"selected":"")+">Informação (balão)</option></select></label>"
+    +"<label class='tour-field'>Rótulo<input id='hs-label' value='"+esc(hs.label||"")+"' placeholder='ex.: Ir para a Sala'/></label>"
+    +"<label class='tour-field "+(hs.kind==="move"?"":"hidden")+"' id='hs-target-f'>Destino<select id='hs-target' class='"+(incomplete?"invalid":"")+"'>"+opts+"</select></label>"
+    +"<label class='tour-field "+(hs.kind==="info"?"":"hidden")+"' id='hs-info-f'>Texto do balão<textarea id='hs-info' rows='3' placeholder='Texto exibido ao clicar'>"+esc(hs.info||"")+"</textarea></label>";
+  host.querySelector("[data-delhs]").onclick=()=>deleteHotspot(hs.id);
+  host.querySelector("#hs-kind").onchange=(e)=>updateHotspot(hs.id,{kind:e.target.value});
+  host.querySelector("#hs-label").oninput=(e)=>updateHotspot(hs.id,{label:e.target.value},true);
+  const tg=host.querySelector("#hs-target"); if(tg) tg.onchange=(e)=>updateHotspot(hs.id,{targetRoomId:e.target.value||null});
+  const inf=host.querySelector("#hs-info"); if(inf) inf.oninput=(e)=>updateHotspot(hs.id,{info:e.target.value},true);
+}
+
+/* ---- Exportar / Importar ---- */
+async function exportJSON(embed){
+  if(!tourState.config){ toast("Nada para exportar"); return; }
+  let cfg=JSON.parse(JSON.stringify(tourState.config));
+  if(embed){
+    for(const r of cfg.rooms){
+      if(r.imageRef && r.imageRef.indexOf("idb:")===0){
+        try{ const blob=await tourRepo.getBlob(r.imageRef.slice(4)); r.imageRef=await blobToDataURL(blob); }catch(_){}
+      }
+    }
+  }
+  const txt=JSON.stringify(cfg,null,2);
+  copyRaw(txt);
+  try{
+    const blob=new Blob([txt],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=((cfg.title||"tour").replace(/[^\w\-]+/g,"_")||"tour")+".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(_){}
+  toast(embed?"JSON com imagens exportado e copiado ✓":"JSON exportado e copiado ✓");
+}
+function importJSONPrompt(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="application/json,.json";
+  inp.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>importJSON(String(rd.result)); rd.readAsText(f); };
+  inp.click();
+}
+function importJSON(text){
+  let cfg; try{ cfg=JSON.parse(text); }catch(_){ toast("JSON inválido"); return; }
+  if(!cfg || !Array.isArray(cfg.rooms)){ toast("JSON não é um tour válido"); return; }
+  if(!cfg.id) cfg.id=tuid("tour");
+  cfg.title=typeof cfg.title==="string"?cfg.title:"Tour importado";
+  cfg.rooms.forEach(r=>{ r.hotspots=Array.isArray(r.hotspots)?r.hotspots:[]; if(typeof r.focalX!=="number")r.focalX=50; if(typeof r.focalY!=="number")r.focalY=50; if(!r.id)r.id=tuid("room"); });
+  if(!cfg.rooms.some(r=>r.id===cfg.startRoomId)) cfg.startRoomId=cfg.rooms[0]?cfg.rooms[0].id:null;
+  tourState.config=cfg;
+  tourState.selectedRoomId=cfg.startRoomId;
+  tourState.currentRoomId=cfg.startRoomId;
+  tourState.history=[]; tourState.selectedHotspotId=null;
+  _tImgCache.clear();
+  persistTour(); renderTourTab();
+  toast("Tour importado ✓");
+}
+
+/* ---- Init do tour (chamado uma vez) ---- */
+function tourInit(){
+  const id=tourRepo.activeId();
+  let cfg=id?tourRepo.loadCfg(id):null;
+  if(!cfg){ cfg=makeSampleTour(); tourRepo.saveCfg(cfg); }
+  tourState.config=cfg;
+  tourState.currentRoomId=cfg.startRoomId||(cfg.rooms[0]&&cfg.rooms[0].id)||null;
+  tourState.selectedRoomId=tourState.currentRoomId;
+  tourState.history=[];
+  window.addEventListener("resize", tourRelayout);
+  document.addEventListener("fullscreenchange", tourRelayout);
+  document.addEventListener("webkitfullscreenchange", tourRelayout);
+}
+
 /* ---- Modes ---- */
 function setMode(m){
   if(recording && m!=="describe") stopRec();
   $$(".mode").forEach(el=>el.classList.add("hidden"));
   $("#mode-"+m).classList.remove("hidden");
   $$("#modebar button").forEach(b=>b.classList.toggle("active",b.dataset.mode===m));
+  if(m==="tour") renderTourTab();
 }
 
 /* ---- Init ---- */
@@ -1729,6 +2435,7 @@ function init(){
     saveHistory([]); renderHistory(); toast("Histórico limpo ✓");
   });
   renderHistory();
+  tourInit();
   setupMic();
   $("#btn-analyze").addEventListener("click",analyzeText);
   $("#btn-generate").addEventListener("click",generate);
