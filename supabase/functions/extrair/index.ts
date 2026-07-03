@@ -30,9 +30,13 @@ const CLIENTE_PROPS = {
   email: { type: "string" },
   nasc: { type: "string", description: "Data de nascimento em aaaa-mm-dd" },
   endereco: { type: "string" },
+  sexo: { type: "string", enum: ["F", "M", ""], description: "F para mulher, M para homem (pela concordância: brasileira/casada = F)" },
+  nacionalidade: { type: "string", description: "Ex.: brasileira, brasileiro" },
+  estado_civil: { type: "string", description: "Ex.: casada, solteiro, divorciada, viúvo" },
+  profissao: { type: "string", description: "Profissão/ocupação" },
   area: { type: "string", description: "Área do direito (ex.: Família, Cível)" },
   origem: { type: "string" },
-  obs: { type: "string", description: "Estado civil, profissão, nacionalidade, filiação e outros dados úteis" },
+  obs: { type: "string", description: "Filiação, naturalidade e outros dados úteis que não têm campo próprio" },
 };
 const TOOL = {
   name: "registrar",

@@ -185,11 +185,32 @@ export function extractClient(text) {
   out.area = labeled(text, "[aá]rea(?:\\s+do\\s+direito)?|[aá]rea\\s+jur[ií]dica");
   out.origem = labeled(text, "origem|indica[cç][aã]o|como\\s+chegou|captado\\s+por");
 
-  // Campos sem lugar próprio → viram Observações (nada se perde).
+  // ---- Qualificação (para gerar procuração/declaração): nacionalidade, estado
+  // civil, profissão e sexo. Vem de rótulos ("Estado civil: X") OU da prosa da
+  // petição ("NOME, brasileiro, solteiro, pintor, inscrito no CPF…"). ----
+  out.nacionalidade = labeled(text, "nacionalidade");
+  out.estado_civil = labeled(text, "estado\\s+civil");
+  out.profissao = labeled(text, "profiss[aã]o|ocupa[cç][aã]o");
+  if ((!out.nacionalidade || !out.estado_civil || !out.profissao) && out.nome) {
+    // pega o trecho entre o nome e "inscrit/portador/CPF/RG/residente/nascid"
+    const nEsc = out.nome.split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const qm = text.match(new RegExp(nEsc + "[^,\\n]*,\\s*([^\\n]*?)(?:,\\s*)?(?:inscrit|portador|CPF|RG|residente|domiciliad|nascid|E-?mail|\\bfone|tel)", "i"));
+    if (qm) {
+      const toks = qm[1].split(",").map((s) => clean(s)).filter((s) => s && !/^maior|capaz$/i.test(s) && s.length <= 40);
+      const isNac = (s) => /brasileir|estrangeir|naturaliza|portugu[êe]s|argentin|uruguai/i.test(s);
+      const isCivil = (s) => /solteir|casad|divorciad|vi[úu]v|separad|uni[ãa]o|companheir|amasiad/i.test(s);
+      if (!out.nacionalidade) out.nacionalidade = toks.find(isNac) || "";
+      if (!out.estado_civil) out.estado_civil = toks.find(isCivil) || "";
+      if (!out.profissao) out.profissao = toks.find((s) => !isNac(s) && !isCivil(s)) || "";
+    }
+  }
+  // Sexo pela concordância (brasileira/casada… = F).
+  out.sexo = /\b(brasileira|estrangeira|solteira|casada|divorciada|vi[úu]va|separada|companheira|portadora|inscrita|residente e domiciliada)\b/i.test(text)
+    ? "F" : /\b(brasileiro|solteiro|casado|divorciado|vi[úu]vo|separado|companheiro|portador|inscrito|residente e domiciliado)\b/i.test(text) ? "M" : "";
+
+  // Observações: só o que não tem campo próprio (filiação/naturalidade).
   const extras = [];
-  const civil = labeled(text, "estado\\s+civil"); if (civil) extras.push("Estado civil: " + civil);
-  const prof = labeled(text, "profiss[aã]o|ocupa[cç][aã]o"); if (prof) extras.push("Profissão: " + prof);
-  const nat = labeled(text, "nacionalidade|naturalidade"); if (nat) extras.push("Nacionalidade/naturalidade: " + nat);
+  const nat = labeled(text, "naturalidade"); if (nat) extras.push("Naturalidade: " + nat);
   const fil = labeled(text, "filia[cç][aã]o|m[aã]e|pai"); if (fil) extras.push("Filiação: " + fil);
   out.obs = extras.join(" · ");
 
