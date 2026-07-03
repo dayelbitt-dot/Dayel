@@ -92,6 +92,18 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   let cards = [];       // controladores dos cartões ({ key, node, collect })
   let sessionUndo = [];      // {table,id} ou {gcalId} criados nesta captura
   let sessionClientIds = []; // ids dos clientes já cadastrados nesta captura (p/ vincular o processo)
+  let principal = null;      // botão principal do rodapé (definido em prepare)
+
+  // Quando tudo já foi cadastrado, o botão principal vira "Concluir": ATIVO,
+  // e ao tocar limpa a captura e volta ao Início (antes ele ficava desativado
+  // como "✓ Concluído" e o toque não fazia nada).
+  function toConcluir() {
+    if (!principal) return;
+    principal.disabled = false;
+    principal.classList.add("btn-primary");
+    principal.textContent = "✓ Concluir";
+    principal.onclick = reset;
+  }
 
   // Rascunho persistente: o que você escreve/dita e os destinos escolhidos ficam
   // salvos NESTE aparelho, então dá para sair, fechar o app e continuar de onde
@@ -279,11 +291,16 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       cardsWrap.append(ctrl.node);
     });
 
-    const principal = el("button", { type: "button", class: "btn btn-primary btn-block" }, multi ? "✓ Cadastrar todos os pendentes" : (CARD_ACTION[cards[0] ? cards[0].key : ""] || "✓ Gerar"));
+    principal = el("button", { type: "button", class: "btn btn-primary btn-block" }, multi ? "✓ Cadastrar todos os pendentes" : (CARD_ACTION[cards[0] ? cards[0].key : ""] || "✓ Gerar"));
     const limpar = el("button", { type: "button", class: "btn btn-ghost btn-block" }, "Limpar");
     // Um só cartão: cadastra e já limpa (fluxo rápido de sempre). Vários: cada um
-    // tem seu botão; este cadastra os que faltam.
-    principal.onclick = async () => { if (multi) { await createAllPending(principal); } else if (cards[0] && await createOne(cards[0], principal)) { reset(); } };
+    // tem seu botão; este cadastra os que faltam. Se já estava tudo cadastrado
+    // (o usuário usou os botões de cada cartão), o principal já é "Concluir".
+    principal.onclick = async () => {
+      if (cards.length && cards.every((c) => c.done)) { reset(); return; }
+      if (multi) { await createAllPending(principal); }
+      else if (cards[0] && await createOne(cards[0], principal)) { reset(); }
+    };
     limpar.onclick = reset;
     cardsWrap.append(el("div", { class: "cap-gen" }, [limpar, principal]));
 
@@ -370,7 +387,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       // NÃO re-renderiza aqui (isso recriaria a captura e apagaria os outros
       // cartões ainda pendentes). O Início é atualizado ao Limpar/concluir.
       toast("✅ " + label, { action: entry ? { label: "Desfazer", onClick: async () => { await undoAll([entry]); onDone(); toast("Cadastro desfeito."); } } : null });
-      if (cards.every((c) => c.done)) toast("Tudo cadastrado. ✅");
+      if (cards.every((c) => c.done)) { toast("Tudo cadastrado. ✅"); if (cards.length > 1) toConcluir(); }
       return true;
     } catch (e) {
       if (btn) { btn.disabled = false; btn.textContent = prev; }
@@ -384,7 +401,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     for (const c of cards) { if (c.done) continue; const err = c.validate && c.validate(); if (err) { toast(err.msg); err.focus && err.focus(); return; } }
     btn.disabled = true; btn.textContent = "Salvando…";
     for (const c of cards) { if (!c.done) { const ok = await createOne(c, c._btn); if (!ok) { btn.disabled = false; btn.textContent = "✓ Cadastrar todos os pendentes"; return; } } }
-    btn.disabled = true; btn.textContent = "✓ Concluído";
+    toConcluir();   // tudo cadastrado → botão ATIVO "Concluir" (toque limpa e volta ao Início)
   }
 
   function reset() {
