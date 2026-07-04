@@ -1412,7 +1412,15 @@ function pageHeaderBack(title, sub, backRoute) {
 // ---------- Lista de contatos (cartões) ----------
 async function renderContacts() {
   loading();
-  const contacts = await list("contacts", { orderBy: "nome", asc: true });
+  const [contacts, clients] = await Promise.all([
+    list("contacts", { orderBy: "nome", asc: true }),
+    list("clients", { orderBy: "nome", asc: true }).catch(() => []),
+  ]);
+  // Quantos clientes ainda NÃO estão nos contatos (para oferecer a importação).
+  const norm = (s) => (s || "").trim().toLowerCase();
+  const jaContato = new Set(contacts.map((c) => norm(c.nome)));
+  const clientesFaltando = clients.filter((c) => c.nome && !jaContato.has(norm(c.nome)));
+
   const main = $("#main");
   main.innerHTML = "";
   const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nome, telefone…" });
@@ -1425,9 +1433,50 @@ async function renderContacts() {
     rows.forEach((c) => listWrap.append(contactCard(c)));
   };
   search.addEventListener("input", () => draw(search.value));
-  main.append(pageHeaderBack("Contatos", `${contacts.length} pessoa${contacts.length === 1 ? "" : "s"}`, "personal"), search, listWrap);
+
+  // Cabeçalho com botão de "Importar clientes" (traz os clientes que ainda não
+  // estão nos contatos). Só aparece quando há clientes faltando.
+  const header = el("div", {}, [
+    el("button", { class: "btn btn-ghost btn-sm", style: "margin-bottom:8px", onclick: () => navigate("personal") }, "‹ Voltar"),
+    el("div", { class: "section-head", style: "align-items:center; gap:8px" }, [
+      el("div", {}, [el("h1", { class: "page-title" }, "Contatos"), el("p", { class: "page-sub" }, `${contacts.length} pessoa${contacts.length === 1 ? "" : "s"}`)]),
+      clientesFaltando.length
+        ? el("button", { class: "btn btn-ghost btn-sm", style: "flex-shrink:0", onclick: () => importClientsToContacts(clientesFaltando), title: "Trazer seus clientes para os contatos" }, `⬇ Clientes (${clientesFaltando.length})`)
+        : null,
+    ]),
+  ]);
+
+  main.append(header, search, listWrap);
+  // Sem nenhum contato ainda, mas com clientes: oferece a importação em destaque.
+  if (!contacts.length && clientesFaltando.length) {
+    main.append(el("button", { class: "btn btn-primary btn-block", onclick: () => importClientsToContacts(clientesFaltando) }, `Importar meus ${clientesFaltando.length} clientes para os contatos`));
+  }
   draw();
   addFab(() => openContactModal());
+}
+
+// Traz os clientes (do CRM) para a pasta de Contatos, sem duplicar quem já existe.
+async function importClientsToContacts(clientesFaltando) {
+  let faltando = clientesFaltando;
+  if (!faltando) {
+    const [clients, contacts] = await Promise.all([list("clients", { orderBy: "nome", asc: true }).catch(() => []), list("contacts")]);
+    const jaContato = new Set(contacts.map((c) => (c.nome || "").trim().toLowerCase()));
+    faltando = clients.filter((c) => c.nome && !jaContato.has((c.nome || "").trim().toLowerCase()));
+  }
+  if (!faltando.length) { toast("Todos os seus clientes já estão nos contatos."); return; }
+  toast(`Importando ${faltando.length} cliente${faltando.length === 1 ? "" : "s"}…`, { duration: 60000 });
+  let ok = 0;
+  for (const c of faltando) {
+    try {
+      await insert("contacts", {
+        nome: c.nome, relacao: "Cliente", tel: c.tel || "", email: c.email || "",
+        nasc: c.nasc || null, endereco: c.endereco || "", obs: "",
+      });
+      ok++;
+    } catch {}
+  }
+  toast(`✅ ${ok} cliente${ok === 1 ? "" : "s"} adicionado${ok === 1 ? "" : "s"} aos contatos.`);
+  renderContacts();
 }
 
 function contactCard(c) {
