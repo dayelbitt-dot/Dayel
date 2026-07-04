@@ -480,11 +480,11 @@ function mergeFields(ai, heur) {
   return out;
 }
 
-function cardShell(ico, title, autofilled, children) {
-  const head = el("div", { class: "cap-card-head" }, [icon(ico), el("span", {}, title)]);
+function cardShell(icoId, title, autofilled, children) {
+  const head = el("div", { class: "cap-card-head" }, [svgIcon(icoId), el("span", {}, title)]);
   // autofilled: 'ai' → preenchido pela IA · true → preenchido pelas regras
-  if (autofilled === "ai") head.append(el("span", { class: "cap-autofill" }, "🤖 preenchido pela IA"));
-  else if (autofilled) head.append(el("span", { class: "cap-autofill" }, "✨ preenchido automaticamente"));
+  if (autofilled === "ai") head.append(el("span", { class: "cap-autofill" }, "preenchido pela IA"));
+  else if (autofilled) head.append(el("span", { class: "cap-autofill" }, "preenchido automaticamente"));
   return el("div", { class: "cap-card" }, [head, ...children]);
 }
 function hasAny(obj, keys) { return keys.some((k) => obj[k] != null && obj[k] !== "" && obj[k] !== "1"); }
@@ -509,7 +509,7 @@ function buildClientCard(ex, cmdName, aiUsed, idx) {
   const origem = inp("Ex: Indicação, Instagram…", ex.origem);
   const obs = txt("Resumo do caso, histórico…", ex.obs, 2);
 
-  const node = cardShell("👤", idx ? `Novo cliente ${idx}` : "Novo cliente", auto, [
+  const node = cardShell("i-users", idx ? `Novo cliente ${idx}` : "Novo cliente", auto, [
     field("Nome *", nome),
     el("div", { class: "cap-row" }, [field("CPF / CNPJ", cpf), field("RG", rg)]),
     el("div", { class: "cap-row" }, [field("Telefone / WhatsApp", tel), field("Nascimento", nasc)]),
@@ -576,7 +576,7 @@ function buildProcessCard(ex, det, clients, linkedToNewClient, partyNames, aiUse
     field("Observações / Estratégia", obs),
   );
 
-  const node = cardShell("⚖️", "Novo processo", auto, children);
+  const node = cardShell("i-scale", "Novo processo", auto, children);
   return {
     key: "processo", node,
     validate: () => (!nome.value.trim() ? { msg: "Dê um nome/descrição ao processo.", focus: () => nome.focus() } : null),
@@ -601,8 +601,8 @@ function buildTaskCard(p, det, clients, processes, raw) {
   const time = inp("", p.due_time || "", { type: "time" });
   const prio = sel([["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]], p.priority || "media");
 
-  const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
-  const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
+  const segP = el("button", { type: "button", class: "seg-p" }, "Pessoal");
+  const segT = el("button", { type: "button", class: "seg-t" }, "Trabalho");
   const seg = el("div", { class: "seg" }, [segP, segT]);
   const cliSel = el("select", { class: "form-control" });
   cliSel.append(el("option", { value: "" }, "— nenhum —"));
@@ -634,8 +634,8 @@ function buildTaskCard(p, det, clients, processes, raw) {
   const cliHint = el("div", { class: "t2", style: "margin-top:-4px" });
   const updateLabels = () => {
     const pessoal = area === "pessoal";
-    cliLabel.textContent = pessoal ? "🔒 Vincular a um cliente (opcional, só seu)" : "Cliente (opcional)";
-    procLabel.textContent = pessoal ? "🔒 Processo (opcional, só seu)" : "Processo (opcional)";
+    cliLabel.textContent = pessoal ? "Vincular a um cliente (opcional, só seu)" : "Cliente (opcional)";
+    procLabel.textContent = pessoal ? "Processo (opcional, só seu)" : "Processo (opcional)";
     cliHint.textContent = pessoal ? "Vínculo só para seu controle — NÃO aparece na pasta do cliente." : "";
     cliHint.style.display = pessoal ? "block" : "none";
   };
@@ -647,7 +647,7 @@ function buildTaskCard(p, det, clients, processes, raw) {
   paintSeg(); fillProcs();
   if (det.process && area === "profissional" && processes.some((p2) => p2.id === det.process.id)) { procSel.value = det.process.id; showProcInfo(); }
 
-  const node = cardShell("✅", "Nova tarefa", false, [
+  const node = cardShell("i-check", "Nova tarefa", false, [
     field("Título *", title),
     field("Descrição", desc),
     field("Área", seg),
@@ -671,8 +671,8 @@ function buildAgendaCard(p, raw) {
   const date = inp("", p.due_date || todayISO(), { type: "date" });
   const time = inp("", p.due_time || "", { type: "time" });
   const desc = txt("Detalhes (opcional)…", isLongText(raw) ? raw.trim() : "", 2);
-  const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
-  const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
+  const segP = el("button", { type: "button", class: "seg-p" }, "Pessoal");
+  const segT = el("button", { type: "button", class: "seg-t" }, "Trabalho");
   const seg = el("div", { class: "seg" }, [segP, segT]);
   const paintSeg = () => { segP.classList.toggle("active", area === "pessoal"); segT.classList.toggle("active", area === "profissional"); };
   segP.onclick = () => { area = "pessoal"; paintSeg(); };
@@ -680,9 +680,9 @@ function buildAgendaCard(p, raw) {
   paintSeg();
 
   const gChk = el("input", { type: "checkbox" });
-  const gRow = gcal.isConnected() ? el("label", { class: "cap-field", style: "flex-direction:row; align-items:center; gap:8px" }, [gChk, el("span", {}, "📅 Criar também no Google Agenda")]) : null;
+  const gRow = gcal.isConnected() ? el("label", { class: "cap-field", style: "flex-direction:row; align-items:center; gap:8px" }, [gChk, el("span", {}, "Criar também no Google Agenda")]) : null;
 
-  const node = cardShell("🗓️", "Novo compromisso", !!(p.due_date || p.due_time), [
+  const node = cardShell("i-cal", "Novo compromisso", !!(p.due_date || p.due_time), [
     field("O que é? *", title),
     el("div", { class: "cap-row" }, [field("Data", date), field("Hora", time)]),
     field("Área", seg),
@@ -704,7 +704,7 @@ function buildNoteCard(p, raw) {
   const longo = isLongText(raw);
   const title = inp("Título", longo ? shortTitle(p.title || raw) : (p.title || raw || ""));
   const body = txt("Escreva aqui…", longo ? raw.trim() : "", 4);
-  const node = cardShell("📝", "Nova nota", false, [field("Título", title), field("Conteúdo", body)]);
+  const node = cardShell("i-note", "Nova nota", false, [field("Título", title), field("Conteúdo", body)]);
   return {
     key: "nota", node,
     validate: () => ((!title.value.trim() && !body.value.trim()) ? { msg: "Escreva algo na nota.", focus: () => title.focus() } : null),

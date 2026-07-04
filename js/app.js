@@ -936,7 +936,7 @@ function noteRow(n) {
       del,
     ]),
     n.body ? el("div", { class: "t2", style: "margin-top:6px; white-space:pre-wrap; line-height:1.5" }, n.body) : null,
-    el("div", { class: "t2", style: "margin-top:8px; opacity:.7" }, "🖊 toque para editar · " + prettyDate(n.created_at)),
+    el("div", { class: "t2", style: "margin-top:8px; opacity:.7" }, "Toque para editar · " + prettyDate(n.created_at)),
   ]);
 }
 

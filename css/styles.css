@@ -24,7 +24,12 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; overflow-x: hidden; }
+/* Nunca deixar um texto longo sem espaços (chave, link, CPF colado) esticar a
+   tela para os lados: quebra dentro do próprio elemento. */
+.card, .t1, .t2, .cap-chip, .empty, .page-sub, .note-body, .modal { overflow-wrap: anywhere; word-break: break-word; }
+.section-head { min-width: 0; }
+.section-head > .t1, .section-head > div:first-child { min-width: 0; overflow-wrap: anywhere; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: radial-gradient(1200px 600px at 80% -10%, #efe6d6 0%, var(--bg) 55%);
@@ -71,6 +76,12 @@ input:focus, select:focus, textarea:focus {
   outline: none; border-color: var(--accent); background: var(--card);
   box-shadow: var(--inset), var(--ring);
 }
+/* Checkbox/radio não devem herdar a largura total nem o "caixote" dos campos. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; min-width: 0; flex: 0 0 auto; padding: 0; border-radius: 4px;
+  box-shadow: none; accent-color: var(--accent); vertical-align: middle;
+}
+input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 .auth-msg { font-size: 13px; min-height: 18px; margin: 0; }
 .auth-msg.error { color: var(--red); }
 .auth-msg.ok { color: var(--green); }
@@ -153,7 +164,7 @@ input:focus, select:focus, textarea:focus {
 .pill.alta { color: var(--red); border-color: rgba(248,113,113,.4); }
 .pill.media { color: var(--amber); border-color: rgba(251,191,36,.4); }
 .pill.baixa { color: var(--muted); }
-.del { color: var(--muted); background: transparent; border: 0; font-size: 18px; padding: 4px; }
+.del { color: var(--muted); background: transparent; border: 0; font-size: 18px; padding: 4px; flex: 0 0 auto; }
 
 .empty { text-align: center; color: var(--muted); padding: 26px 10px; font-size: 14px; }
 
@@ -304,6 +315,8 @@ input:focus, select:focus, textarea:focus {
 .cap-svg { display: inline-flex; }
 .cap-svg svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; display: block; }
 .capture-head .cap-svg { color: var(--accent); }
+.cap-card-head .cap-svg { color: var(--accent); }
+.cap-card-head .cap-svg svg { width: 19px; height: 19px; }
 .cap-type .cap-svg svg { width: 16px; height: 16px; }
 .cap-submit { padding: 9px 18px; }
 
