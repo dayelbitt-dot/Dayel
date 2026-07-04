@@ -1020,6 +1020,7 @@ async function renderClients() {
       el("div", {}, [el("h1", { class: "page-title" }, "Clientes"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
       el("div", { style: "display:flex; gap:6px; flex-shrink:0" }, [
         el("button", { class: "btn btn-ghost btn-sm", onclick: openImportsManager, title: "Desfazer importações" }, "↩︎"),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openBackupClientes(clients), title: "Baixar backup (Excel / JSON)" }, "⬇ Backup"),
         el("button", { class: "btn btn-ghost btn-sm", onclick: () => importInput.click() }, "⬆ Importar"),
       ]),
     ]),
@@ -1027,6 +1028,65 @@ async function renderClients() {
   );
   draw();
   addFab(() => openClientModal());
+}
+
+// Baixa um arquivo (blob) com o nome dado.
+function baixarArquivo(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { href: url, download: filename });
+  document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+}
+function backupData() {
+  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+// Colunas amigáveis da planilha de clientes.
+function clienteParaLinha(c) {
+  return {
+    "Nome": c.nome || "", "CPF/CNPJ": c.cpf || "", "RG": c.rg || "",
+    "Telefone": c.tel || "", "E-mail": c.email || "", "Nascimento": c.nasc || "",
+    "Endereço": c.endereco || "", "Nacionalidade": c.nacionalidade || "",
+    "Estado civil": c.estado_civil || "", "Profissão": c.profissao || "",
+    "Área": c.area || "", "Origem": c.origem || "", "Observações": c.obs || "",
+  };
+}
+async function exportClientsJSON(clients) {
+  const payload = { app: "Meu Assistente", tipo: "backup-clientes", exportado_em: new Date().toISOString(), total: clients.length, clientes: clients };
+  baixarArquivo(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `clientes-${backupData()}.json`);
+}
+async function exportClientsXLSX(clients) {
+  const XLSX = await loadXLSX();
+  const ws = XLSX.utils.json_to_sheet(clients.map(clienteParaLinha));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Clientes");
+  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  baixarArquivo(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `clientes-${backupData()}.xlsx`);
+}
+
+// Modal de backup: baixar os clientes em Excel (.xlsx) ou JSON (.json).
+function openBackupClientes(clients) {
+  if (!clients || !clients.length) { toast("Você ainda não tem clientes para fazer backup."); return; }
+  const doExcel = el("button", { class: "btn btn-primary btn-block" }, "⬇ Baixar Excel (.xlsx)");
+  const doJson = el("button", { class: "btn btn-block" }, "⬇ Baixar JSON (.json)");
+  doExcel.onclick = async () => {
+    doExcel.disabled = true; doExcel.textContent = "Gerando planilha…";
+    try { await exportClientsXLSX(clients); toast("✅ Planilha gerada. Verifique os downloads."); closeModal(); }
+    catch (e) { doExcel.disabled = false; doExcel.textContent = "⬇ Baixar Excel (.xlsx)"; toast("Não consegui gerar o Excel (a 1ª vez precisa de internet): " + (e?.message || "")); }
+  };
+  doJson.onclick = async () => {
+    try { await exportClientsJSON(clients); toast("✅ Arquivo JSON gerado. Verifique os downloads."); closeModal(); }
+    catch (e) { toast("Não consegui gerar o JSON: " + (e?.message || "")); }
+  };
+  openModal(el("div", {}, [
+    el("h3", {}, "Backup dos clientes"),
+    el("p", { class: "page-sub", style: "margin:0 0 14px" }, `${clients.length} cliente${clients.length === 1 ? "" : "s"}. Baixe uma cópia para guardar ou levar para outro sistema.`),
+    el("div", { style: "display:flex; flex-direction:column; gap:10px" }, [
+      doExcel, doJson,
+      el("p", { class: "t2", style: "margin:2px 0 0" }, "O JSON pode ser reimportado aqui depois (botão Importar). O Excel é ideal para abrir e ler."),
+    ]),
+    el("div", { class: "modal-actions" }, [el("button", { class: "btn btn-ghost", onclick: closeModal }, "Fechar")]),
+  ]));
 }
 
 // Importa um backup .json exportado do sistema DB Advocacia
