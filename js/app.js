@@ -116,9 +116,11 @@ function wireShell() {
 
 function navigate(route) {
   state.route = route;
-  $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === route));
+  // Contatos e Aniversários vivem "dentro" da aba Pessoal — mantêm ela destacada.
+  const activeTab = (route === "contacts" || route === "birthdays") ? "personal" : route;
+  $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === activeTab));
   removeFab();
-  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes };
+  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays };
   (routes[route] || renderDashboard)();
 }
 
@@ -233,25 +235,31 @@ async function renderTasksPage() {
   const tasks = all.filter((t) => (t.area || "pessoal") === area);
   const open = tasks.filter((t) => !t.done);
   const done = tasks.filter((t) => t.done);
+  // Só na aba Pessoal: seção "Pessoas" (contatos + aniversários).
+  let contacts = [];
+  if (area === "pessoal") { try { contacts = await list("contacts", { orderBy: "nome", asc: true }); } catch {} }
 
   const main = $("#main");
   main.innerHTML = "";
   main.append(
-    el("div", {}, [el("h1", { class: "page-title" }, meta.title), el("p", { class: "page-sub" }, meta.sub)]),
-    el("div", { class: "stat-grid" }, [
-      stat("Abertas", String(open.length)),
-      stat("Feitas", String(done.length), "pos"),
-      stat("Total", String(tasks.length)),
-    ]),
-    el("div", { class: "card" }, [
-      el("div", { class: "card-title" }, "A fazer"),
-      open.length
-        ? el("div", { class: "list" }, sortTasks(open).map((t) => taskRow(t)))
-        : el("div", { class: "empty" }, "Nada por aqui. Toque em + para criar."),
-    ]),
-    done.length
-      ? el("div", { class: "card" }, [el("div", { class: "card-title" }, "Concluídas"), el("div", { class: "list" }, done.slice(-8).reverse().map((t) => taskRow(t)))])
-      : null,
+    ...[
+      el("div", {}, [el("h1", { class: "page-title" }, meta.title), el("p", { class: "page-sub" }, meta.sub)]),
+      area === "pessoal" ? contactsHub(contacts) : null,
+      el("div", { class: "stat-grid" }, [
+        stat("Abertas", String(open.length)),
+        stat("Feitas", String(done.length), "pos"),
+        stat("Total", String(tasks.length)),
+      ]),
+      el("div", { class: "card" }, [
+        el("div", { class: "card-title" }, "A fazer"),
+        open.length
+          ? el("div", { class: "list" }, sortTasks(open).map((t) => taskRow(t)))
+          : el("div", { class: "empty" }, "Nada por aqui. Toque em + para criar."),
+      ]),
+      done.length
+        ? el("div", { class: "card" }, [el("div", { class: "card-title" }, "Concluídas"), el("div", { class: "list" }, done.slice(-8).reverse().map((t) => taskRow(t)))])
+        : null,
+    ].filter(Boolean),
   );
   addFab(() => openTaskModal(area));
 }
@@ -1319,6 +1327,245 @@ function openClientModal(existing) {
   };
   openModal(el("div", {}, [el("h3", {}, existing ? "Editar cliente" : "Novo cliente"), form]));
   setTimeout(() => nome.focus(), 50);
+}
+
+// ==================== PESSOAS / CONTATOS ====================
+const MES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const RELACOES = ["Amigo(a)", "Familiar", "Cliente", "Colega", "Contato", "Outro"];
+
+// Ícone de traço (referencia o sprite do index.html).
+function svgUse(id, cls = "ico-line") {
+  const s = el("span", { class: cls });
+  s.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${id}"/></svg>`;
+  return s;
+}
+
+// Extrai dia/mês/ano de uma data de nascimento (aaaa-mm-dd).
+function parseBday(nasc) {
+  const m = String(nasc || "").slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const month = +m[2], day = +m[3];
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return { year: +m[1], month, day };
+}
+// Situação do aniversário em relação a HOJE: se é hoje, quantos dias faltam,
+// quantos anos completa. (Comparação por dia local, ignorando horas.)
+function bdayStatus(nasc, ref = new Date()) {
+  const b = parseBday(nasc); if (!b) return null;
+  const today = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
+  let next = new Date(today.getFullYear(), b.month - 1, b.day);
+  if (next < today) next = new Date(today.getFullYear() + 1, b.month - 1, b.day);
+  const daysUntil = Math.round((next - today) / 86400000);
+  const isToday = (b.month - 1 === today.getMonth()) && (b.day === today.getDate());
+  const hasYear = b.year > 1900;
+  const turning = hasYear ? next.getFullYear() - b.year : null;
+  return { ...b, next, daysUntil, isToday, turning, hasYear };
+}
+function bdayBadge(b) {
+  return el("div", { class: "bday-badge" + (b.isToday ? " today" : "") }, [
+    el("span", { class: "d" }, String(b.day).padStart(2, "0")),
+    el("span", { class: "m" }, MES_ABREV[b.month - 1]),
+  ]);
+}
+
+// Seção "Pessoas" que aparece na aba Pessoal: dois botões + aviso de aniversários.
+function contactsHub(contacts) {
+  const withB = contacts.map((c) => ({ c, b: bdayStatus(c.nasc) })).filter((x) => x.b);
+  const hoje = withB.filter((x) => x.b.isToday);
+  const semana = withB.filter((x) => !x.b.isToday && x.b.daysUntil <= 7).sort((a, z) => a.b.daysUntil - z.b.daysUntil);
+
+  const hub = (icoId, titulo, sub, route) =>
+    el("button", { class: "hub-btn", onclick: () => navigate(route) }, [
+      el("span", { class: "hub-ico" }, svgUse(icoId)),
+      el("span", { class: "hub-t" }, titulo),
+      el("span", { class: "hub-s" }, sub),
+    ]);
+
+  const kids = [
+    el("div", { class: "card-title" }, "Pessoas"),
+    el("div", { class: "hub-grid" }, [
+      hub("i-users", "Contatos", `${contacts.length} pessoa${contacts.length === 1 ? "" : "s"}`, "contacts"),
+      hub("i-cake", "Aniversários", hoje.length ? `${hoje.length} hoje` : (semana.length ? `${semana.length} esta semana` : "ver por mês"), "birthdays"),
+    ]),
+  ];
+  if (hoje.length) {
+    kids.push(el("div", { class: "bday-teaser today", onclick: () => navigate("birthdays") }, [
+      svgUse("i-cake"), el("span", {}, "Aniversário hoje: " + hoje.map((x) => x.c.nome).join(", ")),
+    ]));
+  } else if (semana.length) {
+    kids.push(el("div", { class: "bday-teaser", onclick: () => navigate("birthdays") }, [
+      svgUse("i-cake"), el("span", {}, "Esta semana: " + semana.slice(0, 3).map((x) => `${x.c.nome} (${String(x.b.day).padStart(2, "0")}/${String(x.b.month).padStart(2, "0")})`).join(", ")),
+    ]));
+  }
+  return el("div", { class: "card" }, kids);
+}
+
+// Cabeçalho de página com botão de voltar.
+function pageHeaderBack(title, sub, backRoute) {
+  return el("div", {}, [
+    el("button", { class: "btn btn-ghost btn-sm", style: "margin-bottom:8px", onclick: () => navigate(backRoute) }, "‹ Voltar"),
+    el("h1", { class: "page-title" }, title),
+    sub ? el("p", { class: "page-sub" }, sub) : null,
+  ]);
+}
+
+// ---------- Lista de contatos (cartões) ----------
+async function renderContacts() {
+  loading();
+  const contacts = await list("contacts", { orderBy: "nome", asc: true });
+  const main = $("#main");
+  main.innerHTML = "";
+  const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nome, telefone…" });
+  const listWrap = el("div", { class: "list" });
+  const draw = (q = "") => {
+    const f = q.trim().toLowerCase();
+    const rows = contacts.filter((c) => !f || [c.nome, c.tel, c.email, c.relacao].some((x) => (x || "").toLowerCase().includes(f)));
+    listWrap.innerHTML = "";
+    if (!rows.length) { listWrap.append(el("div", { class: "empty" }, contacts.length ? "Nenhum contato encontrado." : "Nenhuma pessoa cadastrada. Toque em + para adicionar.")); return; }
+    rows.forEach((c) => listWrap.append(contactCard(c)));
+  };
+  search.addEventListener("input", () => draw(search.value));
+  main.append(pageHeaderBack("Contatos", `${contacts.length} pessoa${contacts.length === 1 ? "" : "s"}`, "personal"), search, listWrap);
+  draw();
+  addFab(() => openContactModal());
+}
+
+function contactCard(c) {
+  const b = bdayStatus(c.nasc);
+  const sub = [c.relacao, c.tel].filter(Boolean).join(" · ");
+  let right;
+  if (b) right = el("span", { class: "pill" + (b.isToday ? " today-pill" : "") }, b.isToday ? "faz hoje" : `${String(b.day).padStart(2, "0")}/${String(b.month).padStart(2, "0")}`);
+  else right = el("span", { class: "pill" }, "abrir ›");
+  return el("div", { class: "row", onclick: () => openContact(c.id) }, [
+    avatar(c.nome),
+    el("div", { class: "grow" }, [el("div", { class: "t1" }, c.nome), sub ? el("div", { class: "t2" }, sub) : null]),
+    right,
+  ]);
+}
+
+// Cartão de contato aberto (detalhes + ações: WhatsApp, ligar, e-mail).
+async function openContact(id) {
+  const contacts = await list("contacts");
+  const c = contacts.find((x) => x.id === id);
+  if (!c) { renderContacts(); return; }
+  const b = bdayStatus(c.nasc);
+  const kv = (label, val) => val ? el("div", { class: "kv" }, [el("span", { class: "kv-k" }, label), el("span", { class: "kv-v" }, val)]) : null;
+  const digits = (c.tel || "").replace(/\D/g, "");
+  const dataNasc = b ? `${String(b.day).padStart(2, "0")}/${String(b.month).padStart(2, "0")}${b.hasYear ? "/" + b.year : ""}` : null;
+  const idadeTxt = (b && b.turning != null) ? `${b.isToday ? "faz" : "fará"} ${b.turning} anos${b.isToday ? " hoje 🎉" : ""}` : "";
+
+  const acoes = [
+    digits ? el("a", { class: "btn btn-sm", href: `https://wa.me/55${digits}`, target: "_blank", rel: "noopener" }, "WhatsApp") : null,
+    c.tel ? el("a", { class: "btn btn-sm", href: `tel:${(c.tel || "").replace(/\s/g, "")}` }, "Ligar") : null,
+    c.email ? el("a", { class: "btn btn-sm", href: `mailto:${c.email}` }, "E-mail") : null,
+  ].filter(Boolean);
+
+  const body = el("div", {}, [
+    el("div", { class: "contact-head" }, [
+      avatar(c.nome),
+      el("div", {}, [el("div", { class: "t1", style: "font-weight:700; font-size:17px" }, c.nome), c.relacao ? el("div", { class: "t2" }, c.relacao) : null]),
+    ]),
+    dataNasc ? kv("Aniversário", [dataNasc, idadeTxt].filter(Boolean).join(" · ")) : null,
+    kv("Telefone", c.tel),
+    kv("E-mail", c.email),
+    kv("Endereço", c.endereco),
+    c.obs ? el("div", { class: "t2", style: "margin-top:10px; white-space:pre-wrap" }, c.obs) : null,
+    acoes.length ? el("div", { class: "modal-actions", style: "flex-wrap:wrap" }, acoes) : null,
+    el("div", { class: "modal-actions" }, [
+      el("button", { class: "btn btn-danger", onclick: async () => { if (confirm("Excluir este contato?")) { await remove("contacts", c.id); closeModal(); renderContacts(); } } }, "Excluir"),
+      el("button", { class: "btn btn-primary", onclick: () => openContactModal(c) }, "Editar"),
+    ]),
+  ]);
+  openModal(el("div", {}, [el("h3", {}, "Contato"), body]));
+}
+
+function openContactModal(existing) {
+  const f = existing || {};
+  const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val || "", ...attrs });
+  const nome = inp("Nome *", f.nome, { required: "" });
+  const rel = el("select", { class: "form-control" }, [
+    el("option", { value: "" }, "Relação (opcional)"),
+    ...RELACOES.map((r) => el("option", { value: r, ...(f.relacao === r ? { selected: "" } : {}) }, r)),
+    ...(f.relacao && !RELACOES.includes(f.relacao) ? [el("option", { value: f.relacao, selected: "" }, f.relacao)] : []),
+  ]);
+  const tel = inp("(51) 9 0000-0000", f.tel);
+  const email = inp("email@exemplo.com", f.email, { type: "email" });
+  const nasc = inp("", f.nasc, { type: "date" });
+  const endereco = inp("Cidade, bairro…", f.endereco);
+  const obs = el("textarea", { rows: "3", placeholder: "Como conheceu, preferências, observações…" }, f.obs || "");
+
+  const form = el("form", {}, [
+    lbl("Nome *", nome), lbl("Relação", rel), lbl("Telefone / WhatsApp", tel), lbl("E-mail", email),
+    lbl("Aniversário", nasc), lbl("Endereço / cidade", endereco), lbl("Observações", obs),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!nome.value.trim()) { nome.focus(); return; }
+    const data = { nome: nome.value.trim(), relacao: rel.value, tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), obs: obs.value.trim() };
+    if (existing) { await update("contacts", existing.id, data); closeModal(); openContact(existing.id); }
+    else { const saved = await insert("contacts", data); closeModal(); if (saved) openContact(saved.id); else renderContacts(); }
+  };
+  openModal(el("div", {}, [el("h3", {}, existing ? "Editar contato" : "Nova pessoa"), form]));
+  setTimeout(() => nome.focus(), 50);
+}
+
+// ---------- Lista de aniversários (hoje / próximos 7 dias / por mês) ----------
+async function renderBirthdays() {
+  loading();
+  const contacts = await list("contacts", { orderBy: "nome", asc: true });
+  const withB = contacts.map((c) => ({ c, b: bdayStatus(c.nasc) })).filter((x) => x.b);
+  const byName = (a, z) => (a.c.nome || "").localeCompare(z.c.nome || "");
+  const hoje = withB.filter((x) => x.b.isToday).sort(byName);
+  const semana = withB.filter((x) => !x.b.isToday && x.b.daysUntil <= 7).sort((a, z) => a.b.daysUntil - z.b.daysUntil);
+
+  const secao = (titulo, arr, vazio) => el("div", { class: "card" }, [
+    el("div", { class: "card-title" }, titulo),
+    arr.length ? el("div", { class: "list" }, arr.map(bdayRow)) : el("div", { class: "empty" }, vazio),
+  ]);
+
+  let selMonth = new Date().getMonth();
+  const monthCard = el("div", { class: "card" });
+  const drawMonth = () => {
+    const rows = withB.filter((x) => x.b.month - 1 === selMonth).sort((a, z) => a.b.day - z.b.day);
+    monthCard.innerHTML = "";
+    monthCard.append(
+      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => { selMonth = (selMonth + 11) % 12; drawMonth(); } }, "‹"),
+        el("div", { class: "card-title", style: "margin:0; text-transform:capitalize" }, MESES[selMonth]),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => { selMonth = (selMonth + 1) % 12; drawMonth(); } }, "›"),
+      ]),
+      rows.length ? el("div", { class: "list" }, rows.map(bdayRow)) : el("div", { class: "empty" }, "Ninguém faz aniversário neste mês."),
+    );
+  };
+  drawMonth();
+
+  const main = $("#main");
+  main.innerHTML = "";
+  main.append(
+    pageHeaderBack("Aniversários", withB.length ? `${withB.length} com data cadastrada` : null, "personal"),
+    secao("Hoje", hoje, "Ninguém faz aniversário hoje."),
+    secao("Próximos 7 dias", semana, "Nada nos próximos 7 dias."),
+    monthCard,
+  );
+  if (!withB.length) main.append(el("div", { class: "empty" }, "Cadastre as datas de nascimento em Contatos para ver os aniversários aqui."));
+}
+
+function bdayRow(x) {
+  const { c, b } = x;
+  const idade = (b.turning != null) ? `${b.isToday ? "faz" : "fará"} ${b.turning}` : null;
+  const meta = [c.relacao, idade].filter(Boolean).join(" · ");
+  const when = b.isToday
+    ? el("span", { class: "pill today-pill" }, "hoje")
+    : el("span", { class: "pill" }, b.daysUntil === 1 ? "amanhã" : `em ${b.daysUntil}d`);
+  return el("div", { class: "row bday-row", onclick: () => openContact(c.id) }, [
+    bdayBadge(b),
+    el("div", { class: "grow" }, [el("div", { class: "t1" }, c.nome), meta ? el("div", { class: "t2" }, meta) : null]),
+    when,
+  ]);
 }
 
 // ==================== PROCESSOS ====================

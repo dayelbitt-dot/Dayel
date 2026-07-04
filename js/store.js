@@ -28,7 +28,7 @@ export function client() { return sb; }
 export const isCloud = () => CLOUD_ENABLED;
 
 // ---- Tabelas suportadas ----
-const TABLES = ["tasks", "notes", "reminders", "clients", "processes"];
+const TABLES = ["tasks", "notes", "reminders", "clients", "processes", "contacts"];
 
 // =================== MODO LOCAL (localStorage) ===================
 const LKEY = (t) => `assist:${t}`;

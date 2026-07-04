@@ -396,3 +396,48 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
   *, *::before, *::after { transition: none !important; }
   .btn:hover, .btn-primary:hover, .cap-type:hover, .cap-btn:hover, .stat:hover, .icon-btn:hover, .fab:hover { transform: none; }
 }
+
+/* ===== Pessoas / Contatos / Aniversários ===== */
+.hub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.hub-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: 14px; border-radius: 14px; border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card), var(--bg-elev)); box-shadow: var(--shadow-sm);
+  cursor: pointer; text-align: left; color: var(--text);
+  transition: transform .12s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.hub-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--accent); }
+.hub-btn:active { transform: translateY(1px); box-shadow: var(--inset); }
+.hub-btn .hub-ico { color: var(--accent); }
+.hub-btn .hub-t { font-weight: 700; font-size: 14px; }
+.hub-btn .hub-s { font-size: 11px; color: var(--muted); }
+
+.ico-line svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; display: block; }
+.hub-ico svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.bday-teaser {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px;
+  border-radius: 12px; background: var(--bg-elev); border: 1px solid var(--border);
+  font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.bday-teaser .ico-line { color: var(--accent); flex: 0 0 auto; }
+.bday-teaser.today { background: linear-gradient(180deg, rgba(165,101,43,.10), rgba(165,101,43,.05)); border-color: var(--accent); }
+
+.bday-row { align-items: center; }
+.bday-badge {
+  flex: 0 0 auto; width: 46px; height: 52px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--bg-elev); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+.bday-badge .d { font-size: 18px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.bday-badge .m { font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+.bday-badge.today { background: linear-gradient(180deg, #b9773a, var(--accent) 55%, var(--accent-2)); border-color: transparent; }
+.bday-badge.today .d, .bday-badge.today .m { color: #fff; }
+
+.today-pill { background: var(--accent) !important; color: #fff !important; border-color: transparent !important; }
+
+.contact-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.kv:first-of-type { border-top: 0; }
+.kv-k { color: var(--muted); font-weight: 600; flex: 0 0 auto; }
+.kv-v { text-align: right; overflow-wrap: anywhere; }

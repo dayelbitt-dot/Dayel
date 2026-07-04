@@ -102,6 +102,20 @@ alter table public.clients   add column if not exists attachments jsonb not null
 alter table public.processes add column if not exists attachments jsonb not null default '[]';
 alter table public.notes     add column if not exists attachments jsonb not null default '[]';
 
+-- ---------- Pessoas / contatos (agenda pessoal: amigos, família, contatos) ----------
+create table if not exists public.contacts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  nome text not null,
+  relacao text,
+  tel text,
+  email text,
+  nasc date,
+  endereco text,
+  obs text,
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 --  Segurança: Row Level Security (cada usuário só acessa o seu)
 -- ============================================================
@@ -110,11 +124,12 @@ alter table public.notes enable row level security;
 alter table public.reminders enable row level security;
 alter table public.clients enable row level security;
 alter table public.processes enable row level security;
+alter table public.contacts enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['tasks', 'notes', 'reminders', 'clients', 'processes'] loop
+  foreach t in array array['tasks', 'notes', 'reminders', 'clients', 'processes', 'contacts'] loop
     execute format('drop policy if exists "own_select" on public.%I;', t);
     execute format('drop policy if exists "own_insert" on public.%I;', t);
     execute format('drop policy if exists "own_update" on public.%I;', t);
@@ -134,3 +149,4 @@ create index if not exists idx_rem_user  on public.reminders (user_id, remind_on
 create index if not exists idx_client_user on public.clients (user_id, nome);
 create index if not exists idx_proc_user   on public.processes (user_id, status);
 create index if not exists idx_proc_client on public.processes (client_id);
+create index if not exists idx_contact_user on public.contacts (user_id, nome);
