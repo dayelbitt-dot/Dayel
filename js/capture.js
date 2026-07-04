@@ -16,13 +16,13 @@ import * as gcal from "./gcal.js";
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const normalize = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-// Destinos possíveis (multi-seleção).
+// Destinos possíveis (multi-seleção). icoId = ícone de traço fino (sprite no index.html).
 const TYPES = [
-  { key: "tarefa", ico: "✅", label: "Tarefa" },
-  { key: "agenda", ico: "🗓️", label: "Agenda" },
-  { key: "nota", ico: "📝", label: "Nota" },
-  { key: "cliente", ico: "👤", label: "Cliente" },
-  { key: "processo", ico: "⚖️", label: "Processo" },
+  { key: "tarefa", icoId: "i-check", label: "Tarefa" },
+  { key: "agenda", icoId: "i-cal", label: "Agenda" },
+  { key: "nota", icoId: "i-note", label: "Nota" },
+  { key: "cliente", icoId: "i-users", label: "Cliente" },
+  { key: "processo", icoId: "i-scale", label: "Processo" },
 ];
 // Ordem de criação (cliente antes do processo, para poder vincular).
 const ORDER = ["cliente", "processo", "tarefa", "agenda", "nota"];
@@ -131,7 +131,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   const typeBtns = {};
   const paintTypes = () => TYPES.forEach((t) => typeBtns[t.key].classList.toggle("active", selected.has(t.key)));
   TYPES.forEach((t) => {
-    const b = el("button", { type: "button", class: "cap-type", "data-k": t.key }, [icon(t.ico), t.label]);
+    const b = el("button", { type: "button", class: "cap-type", "data-k": t.key }, [svgIcon(t.icoId), t.label]);
     b.onclick = () => { typesTouched = true; selected.has(t.key) ? selected.delete(t.key) : selected.add(t.key); paintTypes(); saveDraft(); };
     typeBtns[t.key] = b;
     typesRow.append(b);
@@ -139,8 +139,8 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   paintTypes();
   const typeHint = el("div", { class: "cap-typehint" }, "Escolha os destinos — ou anexe um documento e escreva a instrução (ex.: “cadastre o cliente” / “cadastre o processo”) que eu marco sozinho e puxo os dados do arquivo.");
 
-  const micBtn = el("button", { type: "button", class: "cap-btn", title: "Gravar áudio" }, [icon("🎤"), "Falar"]);
-  const fileBtn = el("button", { type: "button", class: "cap-btn", title: "Subir arquivos" }, [icon("📎"), "Arquivos"]);
+  const micBtn = el("button", { type: "button", class: "cap-btn", title: "Gravar áudio" }, [svgIcon("i-mic"), "Falar"]);
+  const fileBtn = el("button", { type: "button", class: "cap-btn", title: "Subir arquivos" }, [svgIcon("i-clip"), "Arquivos"]);
   const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.txt,.md,.csv,text/plain", multiple: "" });
   const prepBtn = el("button", { type: "button", class: "btn btn-primary cap-submit" }, "Preparar →");
 
@@ -148,7 +148,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   const cardsWrap = el("div", { class: "cap-cards hidden" });
 
   const card = el("div", { class: "card capture" }, [
-    el("div", { class: "capture-head" }, [icon("✨"), el("span", {}, "Captura rápida")]),
+    el("div", { class: "capture-head" }, [svgIcon("i-spark"), el("span", {}, "Captura rápida")]),
     textarea,
     typesRow,
     typeHint,
@@ -421,7 +421,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     if (rec) { rec.stop(); return; }
     rec = new SR(); rec.lang = "pt-BR"; rec.interimResults = true; rec.continuous = true;
     let base = textarea.value ? textarea.value.trim() + " " : "";
-    micBtn.classList.add("recording"); micBtn.innerHTML = ""; micBtn.append(icon("⏺"), "Ouvindo…");
+    micBtn.classList.add("recording"); micBtn.innerHTML = ""; micBtn.append(svgIcon("i-mic"), "Ouvindo…");
     status.textContent = "🎙️ Fale agora… (toque de novo para parar)";
     rec.onresult = (e) => {
       let interim = "", final = "";
@@ -433,7 +433,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       textarea.value = (base + interim).replace(/\s+/g, " ").trimStart();
       saveDraft();
     };
-    const stop = () => { rec = null; micBtn.classList.remove("recording"); micBtn.innerHTML = ""; micBtn.append(icon("🎤"), "Falar"); status.textContent = ""; };
+    const stop = () => { rec = null; micBtn.classList.remove("recording"); micBtn.innerHTML = ""; micBtn.append(svgIcon("i-mic"), "Falar"); status.textContent = ""; };
     rec.onend = stop;
     rec.onerror = (ev) => { stop(); if (ev.error === "not-allowed" || ev.error === "service-not-allowed") toast("Permita o acesso ao microfone para gravar."); };
     rec.start();
@@ -717,6 +717,12 @@ function buildNoteCard(p, raw) {
 // ============================================================
 function field(label, control) { return el("label", { class: "cap-field" }, [label, control]); }
 function icon(emoji) { return el("span", { class: "cap-ico" }, emoji); }
+// Ícone de traço fino (referencia o sprite SVG do index.html).
+function svgIcon(id, cls = "cap-svg") {
+  const span = el("span", { class: cls });
+  span.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${id}"/></svg>`;
+  return span;
+}
 function inp(ph, val, attrs = {}) { return el("input", { class: "form-control", placeholder: ph, value: val ?? "", ...attrs }); }
 function txt(ph, val, rows = 2) { return el("textarea", { class: "form-control", rows: String(rows), placeholder: ph }, val || ""); }
 function sel(opts, val) { const s = el("select", { class: "form-control" }); opts.forEach(([v, l]) => s.append(el("option", { value: v, ...(v === val ? { selected: "" } : {}) }, l))); return s; }

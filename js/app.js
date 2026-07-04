@@ -161,26 +161,26 @@ async function renderDashboard() {
       stat("Atrasadas", String(overdue.length), overdue.length ? "neg" : ""),
       stat("Concluídas", String(tasks.filter((t) => t.done).length), "pos"),
     ]),
-    dashCard("📌 Para hoje", "Ver tarefas", "personal",
+    dashCard("Para hoje", "Ver tarefas", "personal",
       dueToday.length || overdue.length
         ? el("div", { class: "list" }, [
             ...overdue.slice(0, 4).map((t) => taskRow(t, true)),
             ...dueToday.slice(0, 4).map((t) => taskRow(t, true)),
           ])
-        : el("div", { class: "empty" }, "Nada para hoje. Tudo em dia! 🎉")),
-    dashCard("🧑 Pessoal", "Ver tudo", "personal",
+        : el("div", { class: "empty" }, "Nada para hoje. Tudo em dia!")),
+    dashCard("Pessoal", "Ver tudo", "personal",
       personalOpen.length
         ? el("div", { class: "list" }, sortTasks(personalOpen).slice(0, 3).map((t) => taskRow(t, true)))
         : el("div", { class: "empty" }, "Sem tarefas pessoais abertas.")),
-    dashCard("💼 Trabalho", "Ver tudo", "professional",
+    dashCard("Trabalho", "Ver tudo", "professional",
       workOpen.length
         ? el("div", { class: "list" }, sortTasks(workOpen).slice(0, 3).map((t) => taskRow(t, true)))
         : el("div", { class: "empty" }, "Sem tarefas de trabalho abertas.")),
-    dashCard("🔔 Lembretes", "Ver tudo", "reminders",
+    dashCard("Lembretes", "Ver tudo", "reminders",
       upcomingReminders.length
         ? el("div", { class: "list" }, upcomingReminders.map((r) => reminderRow(r, true)))
         : el("div", { class: "empty" }, "Nenhum lembrete próximo.")),
-    dashCard("📝 Notas", "Ver tudo", "notes",
+    dashCard("Notas", "Ver tudo", "notes",
       notes.length
         ? el("div", { class: "list" }, notes.slice(0, 3).map((n) =>
             el("div", { class: "row" }, [
@@ -194,7 +194,7 @@ async function renderDashboard() {
 }
 
 function resumoLinha(abertas, atrasadas) {
-  if (abertas === 0) return "Tudo em dia! Nenhuma tarefa aberta. 🎉";
+  if (abertas === 0) return "Tudo em dia! Nenhuma tarefa aberta.";
   const base = `${abertas} tarefa${abertas > 1 ? "s" : ""} aberta${abertas > 1 ? "s" : ""}`;
   return atrasadas ? `${base} · ${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}` : base;
 }
@@ -217,9 +217,9 @@ function dashCard(title, linkLabel, route, body) {
 
 function saudacao() {
   const h = new Date().getHours();
-  if (h < 12) return "Bom dia ☀️";
-  if (h < 18) return "Boa tarde 🌤️";
-  return "Boa noite 🌙";
+  if (h < 12) return "Bom dia";
+  if (h < 18) return "Boa tarde";
+  return "Boa noite";
 }
 
 // ==================== TAREFAS (Pessoal / Profissional) ====================
@@ -227,8 +227,8 @@ async function renderTasksPage() {
   loading();
   const area = state.route === "professional" ? "profissional" : "pessoal";
   const meta = area === "profissional"
-    ? { title: "Trabalho 💼", sub: "Projetos, prazos e compromissos" }
-    : { title: "Meu cadastro pessoal 🧑", sub: "Suas tarefas e prazos pessoais — só seus, fora das pastas de clientes" };
+    ? { title: "Trabalho", sub: "Projetos, prazos e compromissos" }
+    : { title: "Meu cadastro pessoal", sub: "Suas tarefas e prazos pessoais — só seus, fora das pastas de clientes" };
   const all = await list("tasks", { orderBy: "created_at", asc: true });
   const tasks = all.filter((t) => (t.area || "pessoal") === area);
   const open = tasks.filter((t) => !t.done);
@@ -299,8 +299,8 @@ async function openTaskEditModal(t, onDone) {
   const prio = el("select", { class: "form-control" });
   [["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]].forEach(([v, l]) => prio.append(el("option", { value: v, ...(v === (t.priority || "media") ? { selected: "" } : {}) }, l)));
 
-  const segP = el("button", { type: "button", class: "seg-p" }, "🧑 Pessoal");
-  const segT = el("button", { type: "button", class: "seg-t" }, "💼 Trabalho");
+  const segP = el("button", { type: "button", class: "seg-p" }, "Pessoal");
+  const segT = el("button", { type: "button", class: "seg-t" }, "Trabalho");
   const seg = el("div", { class: "seg" }, [segP, segT]);
   const cliLabel = el("span"), procLabel = el("span");
   const cliHint = el("div", { class: "t2", style: "margin-top:-4px" });
@@ -418,7 +418,7 @@ async function openTask(tOrId, backFn) {
 
   // ---- detalhes ----
   const linhas = [
-    ["Área", pessoal ? "🧑 Pessoal" : "💼 Trabalho"],
+    ["Área", pessoal ? "Pessoal" : "Trabalho"],
     ["Prazo", t.due_date ? prettyDate(t.due_date) + (t.due_time ? " às " + t.due_time : "") : (t.due_time ? "🕐 " + t.due_time : "")],
     ["Prioridade", t.priority ? ({ alta: "🔴 Alta", media: "🟡 Média", baixa: "🟢 Baixa" }[t.priority] || t.priority) : ""],
     ["Situação", t.done ? "Concluída" : "Em aberto"],
@@ -661,7 +661,7 @@ async function renderAgenda() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(...[
-    el("div", {}, [el("h1", { class: "page-title" }, "Agenda 🗓️"), el("p", { class: "page-sub" }, "Calendário e todos os compromissos")]),
+    el("div", {}, [el("h1", { class: "page-title" }, "Agenda"), el("p", { class: "page-sub" }, "Calendário e todos os compromissos")]),
     googleBar(gStatus),
     el("div", { class: "card" }, [head, grid]),
     el("div", { class: "agenda-day" }, "Todos os compromissos"),
@@ -847,7 +847,7 @@ async function renderReminders() {
   main.innerHTML = "";
   main.append(
     el("div", {}, [
-      el("h1", { class: "page-title" }, "Lembretes 🔔"),
+      el("h1", { class: "page-title" }, "Lembretes"),
       el("p", { class: "page-sub" }, "Tudo que você precisa lembrar, em ordem cronológica"),
     ]),
   );
@@ -919,7 +919,7 @@ async function renderNotes() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(
-    el("div", {}, [el("h1", { class: "page-title" }, "Notas 📝"), el("p", { class: "page-sub" }, "Ideias, anotações e lembretes")]),
+    el("div", {}, [el("h1", { class: "page-title" }, "Notas"), el("p", { class: "page-sub" }, "Ideias, anotações e lembretes")]),
     notes.length
       ? el("div", { class: "list" }, notes.map(noteRow))
       : el("div", { class: "empty" }, "Nenhuma nota ainda. Toque em + para criar."),
@@ -1009,7 +1009,7 @@ async function renderClients() {
   });
   main.append(
     el("div", { class: "section-head" }, [
-      el("div", {}, [el("h1", { class: "page-title" }, "Clientes 👤"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
+      el("div", {}, [el("h1", { class: "page-title" }, "Clientes"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
       el("div", { style: "display:flex; gap:6px; flex-shrink:0" }, [
         el("button", { class: "btn btn-ghost btn-sm", onclick: openImportsManager, title: "Desfazer importações" }, "↩︎"),
         el("button", { class: "btn btn-ghost btn-sm", onclick: () => importInput.click() }, "⬆ Importar"),
@@ -1347,7 +1347,7 @@ async function renderProcesses() {
   };
   search.addEventListener("input", draw);
   main.append(
-    el("div", {}, [el("h1", { class: "page-title" }, "Processos ⚖️"), el("p", { class: "page-sub" }, `${procs.length} cadastrado${procs.length === 1 ? "" : "s"}`)]),
+    el("div", {}, [el("h1", { class: "page-title" }, "Processos"), el("p", { class: "page-sub" }, `${procs.length} cadastrado${procs.length === 1 ? "" : "s"}`)]),
     search, chips, listWrap,
   );
   draw();
@@ -1651,7 +1651,7 @@ async function renderGerarDocs() {
   };
 
   main.append(
-    el("div", {}, [el("h1", { class: "page-title" }, "Gerar Documentos 📄"), el("p", { class: "page-sub" }, "Procuração e declaração de hipossuficiência, prontas e no seu modelo")]),
+    el("div", {}, [el("h1", { class: "page-title" }, "Gerar Documentos"), el("p", { class: "page-sub" }, "Procuração e declaração de hipossuficiência, prontas e no seu modelo")]),
     el("div", { class: "card" }, [
       el("div", { class: "card-title" }, "1. Dados da parte"),
       lbl("Usar um cliente já cadastrado", cliSel),
