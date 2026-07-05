@@ -441,3 +441,26 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 .kv:first-of-type { border-top: 0; }
 .kv-k { color: var(--muted); font-weight: 600; flex: 0 0 auto; }
 .kv-v { text-align: right; overflow-wrap: anywhere; }
+
+/* ===== Publicações oficiais (EPROC) ===== */
+.pub-table { width: 100%; min-width: 940px; border-collapse: collapse; font-size: 13px; background: var(--card); }
+.pub-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--card-2); color: var(--muted);
+  font-weight: 700; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.pub-table tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.pub-table tbody tr:last-child td { border-bottom: 0; }
+.pub-table tbody tr:hover { background: var(--bg-elev); }
+.pub-table td .mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pub-table td:nth-child(7), .pub-table td:nth-child(8) { max-width: 220px; }
+.pub-teor { white-space: nowrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.pub-kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 14px; margin: 4px 0 0; }
+.pub-kv dt { color: var(--muted); font-weight: 600; }
+.pub-kv dd { margin: 0; overflow-wrap: anywhere; }
+.pub-teor-full {
+  white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13px; line-height: 1.5;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  max-height: 46vh; overflow: auto; margin: 6px 0 0;
+}

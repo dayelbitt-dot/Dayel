@@ -8,6 +8,7 @@ import { extractClient } from "./extract.js";
 import { aiEnabled, aiExtract } from "./ai.js";
 import { DOCS, gerarDocumentos } from "./docs.js";
 import * as gcal from "./gcal.js";
+import * as gmail from "./gmail.js";
 
 let state = { route: "dashboard" };
 
@@ -55,6 +56,10 @@ async function showApp(session) {
       if (connected) { googleLoadedKey = null; } // token novo → rebuscar eventos
       if (state.route === "agenda") renderAgenda();
     });
+  } catch {}
+  // Mantém o Gmail conectado sozinho (para as Publicações oficiais).
+  try {
+    gmail.startAutoConnect(() => { if (state.route === "publicacoes") renderPublicacoes(); });
   } catch {}
 }
 
@@ -120,7 +125,7 @@ function navigate(route) {
   const activeTab = (route === "contacts" || route === "birthdays") ? "personal" : route;
   $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === activeTab));
   removeFab();
-  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays };
+  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, publicacoes: renderPublicacoes, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays };
   (routes[route] || renderDashboard)();
 }
 
@@ -1911,6 +1916,153 @@ function parseValor(s) {
   else if (v.includes(",")) v = v.replace(",", ".");
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
+}
+
+// ==================== PUBLICAÇÕES OFICIAIS ====================
+// Busca no Gmail os e-mails de "Movimentações Processuais - EPROC" e monta uma
+// tabela com o teor de cada publicação (processo, órgão, evento, prazo, data…).
+// Usa o Gmail em modo leitura (gmail.js), no próprio navegador.
+let pubState = { query: gmail.DEFAULT_QUERY, rows: null, loading: false, error: "", progress: null };
+
+async function renderPublicacoes() {
+  const main = $("#main");
+  main.innerHTML = "";
+
+  const head = el("div", {}, [
+    el("h1", { class: "page-title" }, "Publicações oficiais"),
+    el("p", { class: "page-sub" }, "Movimentações processuais (EPROC) buscadas no seu Gmail"),
+  ]);
+
+  if (!gmail.googleEnabled()) {
+    main.append(head, el("div", { class: "empty" }, "Para usar esta aba, configure o Google (GOOGLE_CLIENT_ID) — veja o README."));
+    return;
+  }
+
+  // Barra de conexão / ações
+  const bar = el("div", { class: "gbar" });
+  if (!gmail.isConnected()) {
+    bar.append(
+      el("span", { class: "t2" }, "Conecte seu Gmail para trazer as publicações do EPROC."),
+      el("button", { class: "btn btn-sm btn-primary", onclick: async () => {
+        try { await gmail.connect(true); loadPublicacoes(); }
+        catch (e) { toast("Não foi possível conectar ao Gmail. " + (e.message || "")); }
+      } }, "🔗 Conectar Gmail"),
+    );
+  } else {
+    bar.append(
+      el("span", { class: "t2" }, pubState.loading
+        ? ("🔄 Buscando… " + (pubState.progress ? `${pubState.progress.done}/${pubState.progress.total}` : ""))
+        : "✅ Gmail conectado"),
+      el("div", { style: "display:flex; gap:8px" }, [
+        el("button", { class: "btn btn-sm btn-primary", onclick: () => loadPublicacoes(), disabled: pubState.loading ? "" : null }, "↻ Atualizar"),
+        el("button", { class: "btn btn-sm btn-ghost", onclick: () => { gmail.disconnect(); pubState.rows = null; renderPublicacoes(); } }, "Desconectar"),
+      ]),
+    );
+  }
+
+  // Campo de busca (refina a query do Gmail)
+  const search = el("input", { class: "form-control search-box", value: pubState.query, placeholder: "Filtro do Gmail (ex: eproc \"movimentações processuais\")" });
+  search.addEventListener("change", () => { pubState.query = search.value.trim() || gmail.DEFAULT_QUERY; });
+  search.addEventListener("keydown", (e) => { if (e.key === "Enter") { pubState.query = search.value.trim() || gmail.DEFAULT_QUERY; loadPublicacoes(); } });
+
+  main.append(head, bar);
+  if (gmail.isConnected()) main.append(search);
+
+  // Corpo: erro, carregando, vazio ou tabela.
+  if (pubState.error) {
+    main.append(el("div", { class: "empty" }, pubState.error));
+  } else if (pubState.loading) {
+    main.append(el("div", { class: "empty" }, "Buscando suas publicações no Gmail…"));
+  } else if (pubState.rows == null) {
+    if (gmail.isConnected()) main.append(el("div", { class: "empty" }, "Toque em “Atualizar” para buscar as publicações."));
+  } else if (pubState.rows.length === 0) {
+    main.append(el("div", { class: "empty" }, "Nenhum e-mail encontrado com esse filtro."));
+  } else {
+    main.append(pubTable(pubState.rows));
+  }
+
+  // Se acabou de conectar e ainda não buscou, busca sozinho.
+  if (gmail.isConnected() && pubState.rows == null && !pubState.loading) loadPublicacoes();
+}
+
+async function loadPublicacoes() {
+  if (pubState.loading) return;
+  pubState.loading = true; pubState.error = ""; pubState.progress = null;
+  if (state.route === "publicacoes") renderPublicacoes();
+  try {
+    pubState.rows = await gmail.fetchPublicacoes(pubState.query, {
+      max: 80,
+      onProgress: (done, total) => {
+        pubState.progress = { done, total };
+        if (state.route === "publicacoes") {
+          const bar = $("#main .gbar .t2");
+          if (bar && pubState.loading) bar.textContent = `🔄 Buscando… ${done}/${total}`;
+        }
+      },
+    });
+  } catch (e) {
+    pubState.error = e.message || "Falha ao buscar no Gmail.";
+    pubState.rows = pubState.rows || [];
+  } finally {
+    pubState.loading = false; pubState.progress = null;
+    if (state.route === "publicacoes") renderPublicacoes();
+  }
+}
+
+function pubTable(rows) {
+  const COLS = [
+    ["Data", "data"], ["Processo", "numero"], ["Órgão / Vara", "orgao"],
+    ["Classe", "classe"], ["Evento", "evento"], ["Prazo", "prazo"],
+    ["Partes", "partes"], ["Assunto do e-mail", "subject"], ["Teor", "teor"],
+  ];
+  const thead = el("tr", {}, COLS.map(([label]) => el("th", {}, label)));
+  const body = el("tbody", {});
+  rows.forEach((r) => {
+    const dataTxt = r.dateMs ? new Date(r.dateMs).toLocaleDateString("pt-BR") : "";
+    const teorCell = el("td", { class: "pub-teor" }, [
+      el("button", { class: "btn btn-ghost btn-sm", onclick: () => openPublicacao(r) }, "Ver teor"),
+    ]);
+    const cells = [
+      el("td", {}, dataTxt),
+      el("td", {}, r.numero ? el("span", { class: "mono" }, r.numero) : "—"),
+      el("td", {}, r.orgao || "—"),
+      el("td", {}, r.classe || "—"),
+      el("td", {}, r.evento || "—"),
+      el("td", {}, r.prazo || "—"),
+      el("td", {}, r.partes || "—"),
+      el("td", {}, r.subject || "—"),
+      teorCell,
+    ];
+    body.append(el("tr", {}, cells));
+  });
+  const table = el("table", { class: "pub-table" }, [el("thead", {}, thead), body]);
+  return el("div", {}, [
+    el("p", { class: "page-sub", style: "margin:2px 0 8px" }, `${rows.length} publicaç${rows.length === 1 ? "ão" : "ões"} encontrada${rows.length === 1 ? "" : "s"}. Arraste a tabela para o lado para ver todas as colunas.`),
+    el("div", { class: "wk-scroll" }, table),
+  ]);
+}
+
+function openPublicacao(r) {
+  const dataTxt = r.dateMs ? new Date(r.dateMs).toLocaleString("pt-BR") : "";
+  const linhas = [
+    ["Data", dataTxt], ["Processo", r.numero], ["Órgão / Vara", r.orgao],
+    ["Classe", r.classe], ["Assunto", r.assunto], ["Evento / Movimento", r.evento],
+    ["Prazo", r.prazo], ["Disponibilização", r.disponibilizacao], ["Partes", r.partes],
+    ["Remetente", r.from], ["Assunto do e-mail", r.subject],
+  ].filter(([, v]) => v);
+  const kv = el("dl", { class: "pub-kv" });
+  linhas.forEach(([k, v]) => { kv.append(el("dt", {}, k), el("dd", {}, v)); });
+  const content = el("div", {}, [
+    el("h3", {}, "Teor da publicação"),
+    kv,
+    el("div", { class: "group-head", style: "margin-top:12px" }, "Teor completo"),
+    el("pre", { class: "pub-teor-full" }, r.teor || "(sem conteúdo)"),
+    el("div", { class: "modal-actions" }, [
+      el("button", { class: "btn btn-ghost", onclick: closeModal }, "Fechar"),
+      el("a", { class: "btn btn-primary", href: r.link, target: "_blank", rel: "noopener" }, "Abrir no Gmail"),
+    ]),
+  ]);
+  openModal(content);
 }
 
 // ==================== GERAR DOCUMENTOS ====================

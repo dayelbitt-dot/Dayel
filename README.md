@@ -12,6 +12,7 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
 - 🔔 **Lembretes gerais** — tudo que você precisa lembrar, organizado por data (ordem cronológica), agrupado em Atrasados · Hoje · Próximos 7 dias · Mais adiante · Sem data
 - 📄 **Gerar Documentos** — cria **procuração** (judicial/extrajudicial) e **declaração de hipossuficiência** no seu modelo (mesma fonte e formatação), preenchendo com os dados da parte (de um cliente, de documentos anexados ou digitados) e baixa o `.docx`
+- 📬 **Publicações oficiais** — busca no seu **Gmail** os e-mails de *Movimentações Processuais – EPROC* e monta uma **tabela** com o teor de cada publicação (processo, órgão/vara, classe, evento, prazo, partes e o teor completo)
 - 📝 **Notas** — anotações rápidas
 
 Visual em **tema claro**, otimizado para celular e computador.
@@ -145,6 +146,38 @@ repositório público.
 
 ---
 
+## 📬 Publicações oficiais (EPROC, direto do seu Gmail)
+
+A aba **Publicações oficiais** busca no seu **Gmail** os e-mails de
+**Movimentações Processuais – EPROC** (intimações/publicações eletrônicas) e monta
+uma **tabela** com o teor de cada publicação: **data, número do processo (CNJ),
+órgão/vara, classe, evento/movimento, prazo, partes** e o **teor completo** (em
+“Ver teor”). Tudo é lido **no próprio navegador**, em modo **somente leitura** — nada
+é enviado para servidores de IA.
+
+1. Abra a aba **Publicações oficiais** e toque em **🔗 Conectar Gmail** (usa o mesmo
+   login do Google do Agenda).
+2. O app busca sozinho e mostra a tabela. Use **↻ Atualizar** para rebuscar e o campo
+   de filtro para refinar a busca do Gmail (ex.: `eproc "movimentações processuais"`).
+
+> Depois de conectar uma vez, o Gmail é **reconectado sozinho** em segundo plano —
+> você não precisa clicar em “Conectar” de novo.
+
+### ⚙️ Habilitar o acesso ao Gmail (uma vez, no Google Cloud)
+
+Como esta aba usa o **mesmo** `GOOGLE_CLIENT_ID` do Google Agenda, no projeto do
+Google Cloud desse Client ID você precisa:
+
+1. **Ativar a Gmail API** — em *APIs & Services → Library*, procure **Gmail API** e
+   clique em **Enable**.
+2. **Liberar o escopo de leitura** — na *OAuth consent screen*, adicione o escopo
+   `https://www.googleapis.com/auth/gmail.readonly` (leitura de e-mails).
+
+Se faltar algum desses, o app avisa (“Gmail sem permissão…”) e o resto continua
+funcionando normalmente.
+
+---
+
 ## 📲 Como usar no celular
 
 Depois de publicado (ex: GitHub Pages), abra o link no navegador do celular:
@@ -178,6 +211,8 @@ js/nlp.js               # interpretador de linguagem natural (prazo, prioridade,
 js/extract.js           # extração de dados de cliente/processo por REGRAS (pt-BR)
 js/ai.js                # leitura de documentos por IA (opcional, via função do Supabase)
 js/files.js             # extrai texto de PDF/imagem (OCR)/txt
+js/gcal.js              # integração com o Google Agenda
+js/gmail.js             # busca e-mails do EPROC no Gmail (Publicações oficiais)
 js/app.js               # telas e navegação
 supabase/schema.sql     # banco de dados
 supabase/functions/extrair/  # função de IA (chave da API fica no servidor)
