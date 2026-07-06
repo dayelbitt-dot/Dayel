@@ -23,7 +23,7 @@ jobs:
         with:
           version: latest
 
-      - name: Publicar a função "extrair"
+      - name: Publicar as funções (extrair e assistente)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_PAT }}
           PROJECT_REF: pugquehxhquetjwzfgyq
@@ -33,6 +33,8 @@ jobs:
             echo "    Configure em: Settings → Secrets and variables → Actions → New repository secret"
             exit 0
           fi
-          echo "Publicando a função 'extrair' no projeto $PROJECT_REF…"
-          supabase functions deploy extrair --project-ref "$PROJECT_REF"
-          echo "✅ Função 'extrair' publicada."
+          for fn in extrair assistente; do
+            echo "Publicando a função '$fn' no projeto $PROJECT_REF…"
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
+            echo "✅ Função '$fn' publicada."
+          done
