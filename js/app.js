@@ -1033,7 +1033,7 @@ async function renderClients() {
       el("div", {}, [el("h1", { class: "page-title" }, "Clientes"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
       el("div", { style: "display:flex; gap:6px; flex-shrink:0" }, [
         el("button", { class: "btn btn-ghost btn-sm", onclick: openImportsManager, title: "Desfazer importações" }, "↩︎"),
-        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openBackupClientes(clients), title: "Baixar backup (Excel / JSON)" }, "⬇ Backup"),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openBackupClientes(clients), title: "Backup / exportar todos os dados (para guardar ou análise)" }, "⬇ Exportar"),
         el("button", { class: "btn btn-ghost btn-sm", onclick: () => importInput.click() }, "⬆ Importar"),
       ]),
     ]),
@@ -1077,26 +1077,53 @@ async function exportClientsXLSX(clients) {
   baixarArquivo(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `clientes-${backupData()}.xlsx`);
 }
 
-// Modal de backup: baixar os clientes em Excel (.xlsx) ou JSON (.json).
+// Exporta TODOS os dados do sistema num único JSON (para backup ou análise).
+// Remove anexos (arquivos embutidos) para o arquivo ficar leve.
+async function exportarTudo() {
+  const tabelas = ["clients", "processes", "tasks", "notes", "reminders", "contacts"];
+  const semAnexos = (r) => { const { attachments, ...rest } = r || {}; return rest; };
+  const dump = { app: "Meu Assistente", versao: 1, exportadoEm: new Date().toISOString(), tabelas: {} };
+  const contagem = {};
+  for (const t of tabelas) {
+    try { const rows = await list(t); dump.tabelas[t] = (rows || []).map(semAnexos); contagem[t] = dump.tabelas[t].length; }
+    catch { dump.tabelas[t] = []; contagem[t] = 0; }
+  }
+  baixarArquivo(new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" }), `dados-assistente-${backupData()}.json`);
+  return contagem;
+}
+
+// Modal de backup / exportação de dados.
 function openBackupClientes(clients) {
-  if (!clients || !clients.length) { toast("Você ainda não tem clientes para fazer backup."); return; }
-  const doExcel = el("button", { class: "btn btn-primary btn-block" }, "⬇ Baixar Excel (.xlsx)");
-  const doJson = el("button", { class: "btn btn-block" }, "⬇ Baixar JSON (.json)");
+  clients = clients || [];
+  const doExcel = el("button", { class: "btn btn-block" + (clients.length ? "" : " btn-ghost"), disabled: clients.length ? null : "" }, "⬇ Clientes em Excel (.xlsx)");
+  const doJson = el("button", { class: "btn btn-block", disabled: clients.length ? null : "" }, "⬇ Clientes em JSON (.json)");
+  const doTudo = el("button", { class: "btn btn-primary btn-block" }, "⬇ Exportar TODOS os dados (JSON)");
   doExcel.onclick = async () => {
     doExcel.disabled = true; doExcel.textContent = "Gerando planilha…";
     try { await exportClientsXLSX(clients); toast("✅ Planilha gerada. Verifique os downloads."); closeModal(); }
-    catch (e) { doExcel.disabled = false; doExcel.textContent = "⬇ Baixar Excel (.xlsx)"; toast("Não consegui gerar o Excel (a 1ª vez precisa de internet): " + (e?.message || "")); }
+    catch (e) { doExcel.disabled = false; doExcel.textContent = "⬇ Clientes em Excel (.xlsx)"; toast("Não consegui gerar o Excel (a 1ª vez precisa de internet): " + (e?.message || "")); }
   };
   doJson.onclick = async () => {
     try { await exportClientsJSON(clients); toast("✅ Arquivo JSON gerado. Verifique os downloads."); closeModal(); }
     catch (e) { toast("Não consegui gerar o JSON: " + (e?.message || "")); }
   };
+  doTudo.onclick = async () => {
+    doTudo.disabled = true; doTudo.textContent = "Exportando…";
+    try {
+      const c = await exportarTudo();
+      toast(`✅ Exportado: ${c.clients} clientes · ${c.processes} processos · ${c.tasks} tarefas. Verifique os downloads.`, { duration: 9000 });
+      closeModal();
+    } catch (e) { doTudo.disabled = false; doTudo.textContent = "⬇ Exportar TODOS os dados (JSON)"; toast("Não consegui exportar: " + (e?.message || "")); }
+  };
   openModal(el("div", {}, [
-    el("h3", {}, "Backup dos clientes"),
-    el("p", { class: "page-sub", style: "margin:0 0 14px" }, `${clients.length} cliente${clients.length === 1 ? "" : "s"}. Baixe uma cópia para guardar ou levar para outro sistema.`),
+    el("h3", {}, "Backup e exportação"),
+    el("p", { class: "page-sub", style: "margin:0 0 14px" }, "Baixe uma cópia dos seus dados para guardar, levar para outro sistema ou enviar para análise."),
     el("div", { style: "display:flex; flex-direction:column; gap:10px" }, [
+      doTudo,
+      el("p", { class: "t2", style: "margin:0" }, "“Exportar TODOS os dados” gera um único arquivo .json com clientes, processos, tarefas, notas, lembretes e contatos (sem os arquivos anexados). É o ideal para me enviar e eu analisar os vínculos/cadastros."),
+      el("div", { style: "height:6px" }),
       doExcel, doJson,
-      el("p", { class: "t2", style: "margin:2px 0 0" }, "O JSON pode ser reimportado aqui depois (botão Importar). O Excel é ideal para abrir e ler."),
+      el("p", { class: "t2", style: "margin:2px 0 0" }, "O JSON de clientes pode ser reimportado aqui depois (botão Importar). ⚠️ Os arquivos contêm dados pessoais (CPF etc.) — guarde/compartilhe com cuidado."),
     ]),
     el("div", { class: "modal-actions" }, [el("button", { class: "btn btn-ghost", onclick: closeModal }, "Fechar")]),
   ]));
