@@ -24,6 +24,11 @@ export async function extractTextFromFile(file, onProgress = () => {}) {
     return await file.text();
   }
 
+  // Planilha Excel (.xlsx/.xls) → texto (converte a 1ª aba para linhas de texto)
+  if (/\.(xlsx|xls)$/.test(name) || /sheet|excel|ms-excel/.test(type)) {
+    return await excelToText(file, onProgress);
+  }
+
   // PDF
   if (type === "application/pdf" || name.endsWith(".pdf")) {
     return await pdfToText(file, onProgress);
@@ -36,6 +41,27 @@ export async function extractTextFromFile(file, onProgress = () => {}) {
 
   // Última tentativa: ler como texto
   try { return await file.text(); } catch { return ""; }
+}
+
+// Converte uma planilha Excel (.xlsx/.xls) em texto: cada aba vira um bloco de
+// linhas (colunas separadas por " | "), para as regras/IA lerem o conteúdo.
+async function excelToText(file, onProgress) {
+  onProgress("📊 Lendo a planilha… (a 1ª vez carrega o leitor — precisa de internet)");
+  const XLSX = await loadFirst([
+    "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm",
+    "https://esm.sh/xlsx@0.18.5",
+    "https://unpkg.com/xlsx@0.18.5/xlsx.mjs",
+  ]);
+  const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
+  const partes = [];
+  for (const nome of wb.SheetNames) {
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, raw: false, blankrows: false });
+    const linhas = aoa
+      .map((row) => (row || []).map((c) => (c == null ? "" : String(c)).replace(/\s+/g, " ").trim()).join(" | ").replace(/(\s*\|\s*)+$/, "").trim())
+      .filter((l) => l.replace(/[|\s]/g, ""));
+    if (linhas.length) partes.push((wb.SheetNames.length > 1 ? `# ${nome}\n` : "") + linhas.join("\n"));
+  }
+  return partes.join("\n\n").trim();
 }
 
 async function pdfToText(file, onProgress) {

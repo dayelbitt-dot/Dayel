@@ -144,7 +144,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
 
   const micBtn = el("button", { type: "button", class: "cap-btn", title: "Gravar áudio" }, [svgIcon("i-mic"), "Falar"]);
   const fileBtn = el("button", { type: "button", class: "cap-btn", title: "Subir arquivos" }, [svgIcon("i-clip"), "Arquivos"]);
-  const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.txt,.md,.csv,text/plain", multiple: "" });
+  const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.txt,.md,.csv,.xlsx,.xls,text/plain", multiple: "" });
   const prepBtn = el("button", { type: "button", class: "btn btn-primary cap-submit" }, "Preparar →");
   // Botão da IA: pergunta (consulta seus dados) OU ordem (a IA propõe e você confirma).
   const askBtn = assistEnabled()

@@ -2077,6 +2077,7 @@ function savePubCache(rows) {
       snippet: r.snippet, teor: (r.teor || "").slice(0, PUB_TEOR_MAX), link: r.link,
       numero: r.numero, orgao: r.orgao, classe: r.classe, assunto: r.assunto,
       evento: r.evento, partes: r.partes, prazo: r.prazo, disponibilizacao: r.disponibilizacao,
+      desvincular: r.desvincular || undefined,
     }));
     localStorage.setItem(PUB_CACHE_KEY, JSON.stringify(enxuto));
   } catch { /* cota estourada: ignora silenciosamente */ }
@@ -2086,7 +2087,12 @@ function savePubCache(rows) {
 function mesclarPubs(existentes, novas) {
   const byId = new Map();
   (existentes || []).forEach((p) => { if (p && p.id) byId.set(p.id, p); });
-  (novas || []).forEach((p) => { if (p && p.id) byId.set(p.id, p); });
+  (novas || []).forEach((p) => {
+    if (!p || !p.id) return;
+    const antigo = byId.get(p.id);
+    // Preserva a correção manual ("desvincular") ao rebuscar do Gmail.
+    byId.set(p.id, antigo && antigo.desvincular ? { ...p, desvincular: true } : p);
+  });
   return [...byId.values()].sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
 }
 
@@ -2129,16 +2135,15 @@ function vincularPublicacao(r, procs, clients) {
   }
 
   // 2) Fallback pelo nome — SOMENTE no campo de partes, por palavra inteira.
-  // (Não varre o teor inteiro para não casar juiz/advogado/outras partes.)
+  // Identifica apenas o CLIENTE; NUNCA adivinha o processo (o cliente pode ter
+  // vários casos, e esta publicação é de UM deles — só o CNJ diz qual). Antes o
+  // app "chutava" o único processo do cliente e grudava em publicações de outros
+  // casos (o problema da cliente Liz).
   const haySet = new Set(normNome(r.partes).split(" ").filter(Boolean));
   if (!haySet.size) return { proc: null, clientes: [], via: null, ambiguo: false };
   const citados = clients.filter((c) => clienteCitado(c, haySet));
   if (!citados.length) return { proc: null, clientes: [], via: null, ambiguo: false };
-
-  // Processos ligados aos clientes citados. Só vincula o processo se for único.
-  const procsDosCitados = procs.filter((p) => procClientIds(p).some((id) => citados.some((c) => c.id === id)));
-  const unico = procsDosCitados.length === 1 ? procsDosCitados[0] : null;
-  return { proc: unico, clientes: citados, via: "nome", ambiguo: procsDosCitados.length > 1 };
+  return { proc: null, clientes: citados, via: "nome", ambiguo: false };
 }
 
 async function renderPublicacoes() {
@@ -2160,10 +2165,13 @@ async function renderPublicacoes() {
   if (pubState.rows == null) pubState.rows = loadPubCache();
 
   // Vincula cada publicação ao processo/cliente cadastrados (casando pelo CNJ).
+  // Respeita a correção manual: se você marcou "desvincular", não vincula.
   if (pubState.rows && pubState.rows.length) {
     try {
       const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
-      pubState.rows.forEach((r) => { r.vinculo = vincularPublicacao(r, procs, clients); });
+      pubState.rows.forEach((r) => {
+        r.vinculo = r.desvincular ? { proc: null, clientes: [], via: null, ambiguo: false } : vincularPublicacao(r, procs, clients);
+      });
     } catch { /* se falhar, segue sem vínculo */ }
   }
 
@@ -2341,21 +2349,35 @@ function openPublicacao(r) {
   // Faixa de vínculo. Três casos: processo identificado; só cliente (nome casou,
   // mas há vários/nenhum processo); ou nada cadastrado.
   const porNomeAviso = v.via === "nome" ? " (vínculo por nome — confira)" : "";
+  // Botão para CORRIGIR um vínculo errado: remove o vínculo só desta publicação
+  // (fica salvo). Útil quando um processo cadastrado está com número/cliente errado.
+  const desvincularBtn = el("button", { class: "btn btn-sm btn-ghost", onclick: () => {
+    r.desvincular = true;
+    r.vinculo = { proc: null, clientes: [], via: null, ambiguo: false };
+    try { savePubCache(pubState.rows || []); } catch {}
+    closeModal();
+    if (state.route === "publicacoes") renderPublicacoes();
+    toast("Vínculo removido desta publicação.");
+  } }, "✕ Desvincular");
   let vincBox;
   if (v.proc) {
+    const numDif = v.proc.num && cnjKey(v.proc.num) !== cnjKey(r.numero);
     vincBox = el("div", { class: "pub-vinc-box ok" }, [
-      el("span", {}, "🔗 Vinculado a " + (nomesCli ? nomesCli + " · " : "") + (v.proc.nome || v.proc.num) + porNomeAviso),
+      el("span", {}, "🔗 Vinculado a " + (nomesCli ? nomesCli + " · " : "") + (v.proc.nome || v.proc.num) + (v.proc.num ? " (nº " + v.proc.num + ")" : "") + porNomeAviso),
+      numDif ? el("span", { class: "pub-naovinc" }, "⚠️ O nº do processo cadastrado é diferente do nº desta publicação — confira o cadastro do processo.") : null,
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
         el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openProcess(v.proc.id, () => navigate("publicacoes")); } }, "⚖️ Abrir processo"),
         v.clientes[0] ? el("button", { class: "btn btn-sm btn-ghost", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente") : null,
         el("button", { class: "btn btn-sm btn-ghost", onclick: () => lancarAndamento(r, v.proc) }, "➕ Lançar como andamento"),
+        desvincularBtn,
       ].filter(Boolean)),
-    ]);
+    ].filter(Boolean));
   } else if (v.clientes.length) {
     vincBox = el("div", { class: "pub-vinc-box ok" }, [
-      el("span", {}, "🔗 Cliente identificado por nome: " + nomesCli + ". " + (v.ambiguo ? "Este cliente tem mais de um processo — abra o cliente e escolha o processo certo." : "Sem processo cadastrado para vincular.")),
+      el("span", {}, "🔗 Cliente identificado por nome: " + nomesCli + ". Abra o cliente e escolha o processo certo (não vinculo o processo automaticamente pelo nome para não errar)."),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
         el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente"),
+        desvincularBtn,
       ]),
     ]);
   } else {
