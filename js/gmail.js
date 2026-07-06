@@ -24,6 +24,28 @@ let gisLoaded = false;
 let accessToken = null;
 let tokenExpiry = 0;
 
+// Guarda o token de acesso no aparelho enquanto for válido (~1h). Assim, reabrir
+// o app dentro desse tempo já fica conectado, sem depender da reconexão
+// silenciosa do Google (que costuma falhar em PWA no iPhone).
+const TOKEN_KEY = "gmail_token";
+function persistToken() {
+  try { localStorage.setItem(TOKEN_KEY, JSON.stringify({ token: accessToken, expiry: tokenExpiry })); } catch {}
+}
+function clearToken() {
+  accessToken = null; tokenExpiry = 0;
+  try { localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+// Recupera um token ainda válido guardado numa sessão anterior.
+(function restoreToken() {
+  try {
+    const raw = localStorage.getItem(TOKEN_KEY);
+    if (!raw) return;
+    const { token, expiry } = JSON.parse(raw);
+    if (token && expiry && Date.now() < expiry) { accessToken = token; tokenExpiry = expiry; }
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+})();
+
 export const googleEnabled = () => Boolean(GOOGLE_CLIENT_ID);
 export const isConnected = () => Boolean(accessToken) && Date.now() < tokenExpiry;
 export const wasLinked = () => localStorage.getItem("gmail_linked") === "1";
@@ -70,6 +92,7 @@ export async function connect(interactive = true) {
           accessToken = resp.access_token;
           tokenExpiry = Date.now() + ((resp.expires_in ? resp.expires_in * 1000 : 3600000) - 60000);
           localStorage.setItem("gmail_linked", "1");
+          persistToken();
           finish(resolve, true);
         },
         error_callback: (err) => { finish(reject, new Error(err?.type || "google_error")); },
@@ -110,7 +133,7 @@ export function startAutoConnect(onChange) {
 
 export function disconnect() {
   try { if (accessToken && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(accessToken, () => {}); } catch {}
-  accessToken = null; tokenExpiry = 0;
+  clearToken();
   localStorage.removeItem("gmail_linked");
 }
 
@@ -124,7 +147,7 @@ async function api(path, opts = {}) {
       headers: { Authorization: "Bearer " + accessToken, ...(opts.headers || {}) },
     });
   } finally { clearTimeout(timer); }
-  if (res.status === 401) { accessToken = null; tokenExpiry = 0; throw new Error("Sessão do Google expirou — reconecte."); }
+  if (res.status === 401) { clearToken(); throw new Error("Sessão do Google expirou — reconecte."); }
   if (res.status === 403) throw new Error("Gmail sem permissão. Ative a Gmail API e o escopo de leitura (README).");
   if (!res.ok) throw new Error("Gmail " + res.status + ": " + (await res.text()).slice(0, 160));
   return res.json();
