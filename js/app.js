@@ -1692,7 +1692,7 @@ async function openContact(id) {
   const c = contacts.find((x) => x.id === id);
   if (!c) { renderContacts(); return; }
   const b = bdayStatus(c.nasc);
-  const kv = (label, val) => val ? el("div", { class: "kv" }, [el("span", { class: "kv-k" }, label), el("span", { class: "kv-v" }, val)]) : null;
+  const kv = (label, val) => val ? el("div", { class: "ckv" }, [el("span", { class: "ckv-k" }, label), el("span", { class: "ckv-v" }, val)]) : null;
   const digits = (c.tel || "").replace(/\D/g, "");
   const dataNasc = b ? `${String(b.day).padStart(2, "0")}/${String(b.month).padStart(2, "0")}${b.hasYear ? "/" + b.year : ""}` : null;
   const idadeTxt = (b && b.turning != null) ? `${b.isToday ? "faz" : "fará"} ${b.turning} anos${b.isToday ? " hoje 🎉" : ""}` : "";
