@@ -554,7 +554,9 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   let aiBusy = false;
   async function askAI() {
     const q = textarea.value.trim();
-    if (!q) { textarea.focus(); return; }
+    // Conteúdo dos arquivos anexados (planilha, PDF, foto…) já lido.
+    const docs = attachments.map((a) => (a.text && a.text.trim()) ? `📎 ${a.name}:\n${a.text.trim()}` : "").filter(Boolean).join("\n\n----\n\n");
+    if (!q && !docs) { textarea.focus(); return; }
     if (aiBusy) return;
     aiBusy = true;
     aiPanel.classList.remove("hidden");
@@ -562,8 +564,12 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     aiPanel.append(el("div", { class: "cap-ai-msg" }, "🤖 Pensando…"));
 
     let r;
-    try { r = await perguntar(q, await buildSnapshot()); }
-    catch (e) { r = { error: e?.message || "falha" }; }
+    try {
+      const snapshot = await buildSnapshot();
+      if (docs) snapshot.documentoAnexado = docs.slice(0, 70000);
+      // Se houver anexo sem instrução, assume o pedido padrão.
+      r = await perguntar(q || "Use o documento anexado para cumprir o que ele indica.", snapshot);
+    } catch (e) { r = { error: e?.message || "falha" }; }
     aiBusy = false;
     aiPanel.innerHTML = "";
 

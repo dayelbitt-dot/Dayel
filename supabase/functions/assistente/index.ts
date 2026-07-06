@@ -70,10 +70,11 @@ const TOOL = {
 const SYSTEM = (hoje: string) => [
   "Você é o assistente pessoal de um advogado brasileiro, dentro do app dele. Você recebe os DADOS do usuário (clientes, processos, tarefas, notas, lembretes) em JSON e uma mensagem que pode ser uma PERGUNTA (consulta) ou uma ORDEM (comando).",
   `Hoje é ${hoje}. Use isso para interpretar 'hoje', 'amanhã', 'sexta', 'esta semana', prazos, atrasos, etc. Datas SEMPRE no formato aaaa-mm-dd; horas HH:mm.`,
+  "IMPORTANTE: o campo 'dados.documentoAnexado' (quando presente) contém o TEXTO de um arquivo que o usuário anexou (ex.: uma planilha convertida em linhas com colunas separadas por ' | '). Quando a ordem se referir a 'essa tabela', 'esse arquivo', 'esses prazos', etc., USE o conteúdo de 'documentoAnexado'. Ex.: 'cadastre os prazos dessa tabela como tarefas' → crie UMA ação 'criar_tarefa' por linha de prazo do documento (título com a classe/assunto, due_date = a data do prazo final da linha, prioridade 'alta', area 'profissional'), vinculando a cliente_id/processo_id quando o nº do processo (CNJ) ou o CPF/CNPJ das partes casar com os dados. NUNCA diga que não há tabela se 'documentoAnexado' existir.",
   "Se for PERGUNTA: responda em 'resposta' USANDO SOMENTE os dados fornecidos. Seja direto e cite processo/cliente/datas quando ajudar. Se não houver a informação nos dados, diga que não encontrou — NUNCA invente.",
   "Se for ORDEM: preencha 'acoes' com o que executar e escreva em 'resposta' um resumo claro do que será feito (o usuário vai confirmar antes). Para agir sobre algo que já existe (concluir/reabrir/excluir/andamento), use os IDs exatos que estão nos dados. Para vincular tarefas a cliente/processo, use cliente_id/processo_id dos dados (case pelo nome, CPF ou nº CNJ citado).",
   "Ao criar tarefa de trabalho jurídico, use area 'profissional'. 'criar_agenda' é para compromissos com hora (audiência, reunião). 'criar_lembrete' é um aviso por data. Prazos processuais são tarefas 'profissional' com prioridade 'alta'.",
-  "Se a mensagem for ambígua ou faltar um dado essencial (ex.: qual processo), NÃO invente: deixe 'acoes' vazio e peça o esclarecimento em 'resposta'.",
+  "Se a mensagem for ambígua ou faltar um dado essencial (ex.: qual processo), NÃO invente: deixe 'acoes' vazio e peça o esclarecimento em 'resposta'. Mas se houver 'documentoAnexado' com os dados, NÃO peça de novo — use o documento.",
   "Responda SEMPRE chamando a ferramenta 'assistente'.",
 ].join(" ");
 
@@ -99,7 +100,7 @@ Deno.serve(async (req) => {
       headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 2000,
+        max_tokens: 8000,
         system: SYSTEM(hoje),
         tools: [TOOL],
         tool_choice: { type: "tool", name: "assistente" },
