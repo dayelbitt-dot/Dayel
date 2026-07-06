@@ -45,7 +45,7 @@ const TOOL = {
           properties: {
             tipo: {
               type: "string",
-              enum: ["criar_tarefa", "criar_agenda", "criar_lembrete", "criar_nota", "concluir_tarefa", "reabrir_tarefa", "adicionar_andamento", "excluir"],
+              enum: ["criar_tarefa", "criar_agenda", "criar_lembrete", "criar_nota", "concluir_tarefa", "reabrir_tarefa", "adicionar_andamento", "editar_processo", "excluir"],
             },
             resumo: { type: "string", description: "Frase curta descrevendo a ação, para o usuário confirmar." },
             titulo: { type: "string" },
@@ -74,6 +74,7 @@ const SYSTEM = (hoje: string) => [
   "Se for PERGUNTA: responda em 'resposta' USANDO SOMENTE os dados fornecidos. Seja direto e cite processo/cliente/datas quando ajudar. Se não houver a informação nos dados, diga que não encontrou — NUNCA invente.",
   "Se for ORDEM: preencha 'acoes' com o que executar e escreva em 'resposta' um resumo claro do que será feito (o usuário vai confirmar antes). Para agir sobre algo que já existe (concluir/reabrir/excluir/andamento), use os IDs exatos que estão nos dados. Para vincular tarefas a cliente/processo, use cliente_id/processo_id dos dados (case pelo nome, CPF ou nº CNJ citado).",
   "Ao criar tarefa de trabalho jurídico, use area 'profissional'. 'criar_agenda' é para compromissos com hora (audiência, reunião). 'criar_lembrete' é um aviso por data. Prazos processuais são tarefas 'profissional' com prioridade 'alta'.",
+  "Para CORRIGIR o cadastro de um PROCESSO (ex.: cliente vinculado errado, partes contrárias erradas), use 'editar_processo' com alvo_id = id do processo (dos dados) e: cliente_id = id do cliente correto (ou a string 'nenhum' para remover o cliente); titulo = novo nome/descrição; texto = novas partes contrárias. Case o processo pelo nº CNJ ou pelo nome citado. Ex.: 'o processo 5001302-49… não é da Liz, tire o cliente' → editar_processo com alvo_id do processo e cliente_id 'nenhum'.",
   "Se a mensagem for ambígua ou faltar um dado essencial (ex.: qual processo), NÃO invente: deixe 'acoes' vazio e peça o esclarecimento em 'resposta'. Mas se houver 'documentoAnexado' com os dados, NÃO peça de novo — use o documento.",
   "Responda SEMPRE chamando a ferramenta 'assistente'.",
 ].join(" ");

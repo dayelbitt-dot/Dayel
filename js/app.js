@@ -1,6 +1,6 @@
 import { initSupabase, isCloud, list, insert, update, remove } from "./store.js";
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
-import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast } from "./ui.js";
+import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast, asText } from "./ui.js";
 import { mountCapture } from "./capture.js";
 import { detectColumns, matchClient, buildProcessFromRow, parseCSV, inferGrau, extractProcessesFromText } from "./planilha.js";
 import { extractTextFromFile } from "./files.js";
@@ -478,7 +478,7 @@ async function openTask(tOrId, backFn) {
       ["Partes contrárias", processo.partes], ["Fase atual", processo.fase],
       ["Valor da causa", processo.valor != null ? BRLnum(processo.valor) : ""],
       ["Status", processo.status || "Ativo"],
-    ].filter(([, v]) => v);
+    ].map(([k, v]) => [k, asText(v)]).filter(([, v]) => v);
     const ands = Array.isArray(processo.andamentos) ? processo.andamentos : [];
     const tl = el("div", { class: "timeline" });
     ands.slice(-3).reverse().forEach((a) => tl.append(el("div", { class: "and-item" }, [
@@ -1895,7 +1895,7 @@ async function openProcess(id, backFn) {
     ["Vara / Juízo", p.vara], ["Tribunal", p.tribunal], ["Partes contrárias", p.partes],
     ["Distribuição", p.data_distribuicao ? prettyDate(p.data_distribuicao) : ""],
     ["Fase atual", p.fase], ["Valor da causa", p.valor != null ? BRLnum(p.valor) : ""],
-  ].filter(([, v]) => v);
+  ].map(([k, v]) => [k, asText(v)]).filter(([, v]) => v);
 
   const ands = Array.isArray(p.andamentos) ? p.andamentos : [];
   const timeline = el("div", { class: "timeline" });
@@ -1952,6 +1952,8 @@ async function openProcess(id, backFn) {
 
 function openProcessModal(existing, fixedClientId, onDone, defaultGrau) {
   const f = existing || {};
+  // Limpa campos que possam ter sido salvos como objeto ("[object Object]").
+  ["nome", "tipo", "vara", "tribunal", "partes", "fase", "obs"].forEach((k) => { if (f[k] != null) f[k] = asText(f[k]); });
   const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val ?? "", ...attrs });
   const sel = (opts, val) => { const s = el("select", { class: "form-control" }); opts.forEach((o) => s.append(el("option", { value: o, ...(o === val ? { selected: "" } : {}) }, o))); return s; };
 

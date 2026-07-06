@@ -5,6 +5,18 @@
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY, CLOUD_ENABLED } from "./config.js";
 import { client } from "./store.js";
+import { asText } from "./ui.js";
+
+// Garante que os campos de texto vindos da IA sejam strings (a IA pode devolver
+// "partes"/endereço como objeto/array; sem isso viraria "[object Object]").
+function normObj(o) {
+  if (!o || typeof o !== "object") return o;
+  const out = {};
+  for (const [k, v] of Object.entries(o)) {
+    out[k] = (v && typeof v === "object" && k !== "andamentos") ? asText(v) : v;
+  }
+  return out;
+}
 
 let unavailable = false; // depois de um 404 (função não instalada) para de tentar
 
@@ -43,11 +55,12 @@ export async function aiExtract(text, want, command) {
     const data = await res.json();
     if (!data || data.error) return null;
     // Aceita a versão nova (clientes: []) e a antiga (cliente: {}).
-    const clientes = Array.isArray(data.clientes) ? data.clientes.filter(Boolean)
-      : (data.cliente ? [data.cliente] : []);
+    const clientes = (Array.isArray(data.clientes) ? data.clientes.filter(Boolean)
+      : (data.cliente ? [data.cliente] : [])).map(normObj);
     const destinos = Array.isArray(data.destinos) ? data.destinos.filter(Boolean) : null;
-    if (clientes.length || data.processo || (destinos && destinos.length))
-      return { destinos, clientes, processo: data.processo || null };
+    const processo = data.processo ? normObj(data.processo) : null;
+    if (clientes.length || processo || (destinos && destinos.length))
+      return { destinos, clientes, processo };
     return null;
   } catch { return null; }
   finally { clearTimeout(timer); }

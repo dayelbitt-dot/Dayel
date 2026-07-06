@@ -18,6 +18,17 @@ export function el(tag, attrs = {}, children = []) {
   return node;
 }
 
+// Converte qualquer valor em texto legível. Se vier um objeto/array (ex.: a IA
+// devolveu "partes" como {autor,reu} em vez de string), achata em texto em vez
+// de virar "[object Object]". Também limpa "[object Object]" já salvo por engano.
+export function asText(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v.replace(/\[object Object\]/g, "").trim();
+  if (Array.isArray(v)) return v.map(asText).filter(Boolean).join(", ");
+  if (typeof v === "object") return Object.values(v).map(asText).filter(Boolean).join(", ");
+  return String(v);
+}
+
 export const BRL = (n) =>
   (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 

@@ -539,6 +539,21 @@ export function mountCapture(defaultArea, onDone = () => {}) {
         await update("processes", a.processo_id, { andamentos: [...ands, novo] });
         return { undo: () => update("processes", a.processo_id, { andamentos: ands }) };
       }
+      case "editar_processo": {
+        // Corrige o cadastro de um processo (ex.: cliente trocado, partes erradas).
+        if (!a.alvo_id) throw new Error("sem processo");
+        const procs = await list("processes");
+        const p = procs.find((x) => x.id === a.alvo_id);
+        if (!p) throw new Error("processo não encontrado");
+        const patch = {};
+        if ("cliente_id" in a) patch.client_id = (a.cliente_id && a.cliente_id !== "nenhum") ? a.cliente_id : null;
+        if (a.titulo) patch.nome = a.titulo;
+        if (a.texto) patch.partes = a.texto;
+        if (!Object.keys(patch).length) throw new Error("nada para alterar");
+        const antes = {}; Object.keys(patch).forEach((k) => { antes[k] = p[k] ?? null; });
+        await update("processes", a.alvo_id, patch);
+        return { undo: () => update("processes", a.alvo_id, antes) };
+      }
       case "excluir": {
         if (!a.alvo_tabela || !a.alvo_id) throw new Error("sem alvo");
         const rows = await list(a.alvo_tabela);
