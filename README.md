@@ -147,6 +147,41 @@ repositório público.
 
 ---
 
+## 💬 Assistente por IA — perguntar e mandar fazer (na Captura rápida)
+
+Na **Captura rápida** (tela Início), com a IA ligada, aparece o botão
+**🤖 Perguntar / Fazer**. Escreva em linguagem natural e a IA decide:
+
+- **Pergunta** (consulta seus dados) — ex.: *“qual o prazo do Luciano?”*,
+  *“quantos processos de alimentos eu tenho?”*, *“tem tarefa atrasada da Cassiane?”*.
+  A IA lê seus **clientes, processos, tarefas, notas e lembretes** e responde.
+- **Ordem** (executa, com confirmação) — ex.: *“crie a tarefa contestar até sexta,
+  processo 5007764”*, *“marque o prazo do Paulo como feito”*, *“agende audiência dia
+  20 às 14h”*, *“anote que o cliente ligou”*. A IA mostra **o que vai fazer** e você
+  toca em **Confirmar** (com **Desfazer** depois). Ações suportadas: criar tarefa,
+  compromisso de agenda, lembrete e nota; concluir/reabrir tarefa; lançar andamento
+  no processo; excluir um registro.
+
+Os dados **não saem do seu navegador para nenhuma IA de terceiros sem passar pelo
+seu servidor**: o app envia um retrato dos seus dados para a **sua** função do
+Supabase, que fala com o Claude usando a **sua** chave (guardada no servidor).
+
+### Ativar (uma vez)
+Igual ao leitor de documentos — se você já fez aquilo, só falta publicar esta função:
+
+1. Chave da **Anthropic** (`https://console.anthropic.com`) e [CLI do Supabase](https://supabase.com/docs/guides/cli) (`supabase login` + `supabase link`).
+2. Publique a função e configure a chave:
+   ```bash
+   supabase functions deploy assistente
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-sua-chave
+   # opcional (respostas melhores em perguntas): supabase secrets set ANTHROPIC_MODEL=claude-sonnet-5
+   ```
+3. Pronto. Se a função não estiver instalada, o botão avisa e nada quebra.
+
+> Custa **centavos por pergunta/ordem**. A função está em [`supabase/functions/assistente/index.ts`](supabase/functions/assistente/index.ts).
+
+---
+
 ## 📬 Publicações oficiais (EPROC, direto do seu Gmail)
 
 A aba **Publicações oficiais** busca no seu **Gmail** os e-mails de

@@ -10,7 +10,8 @@ import { parseNaturalTask, shortTitle, isLongText } from "./nlp.js";
 import { extractTextFromFile } from "./files.js";
 import { extractClient, extractClients, extractProcess, parseMoney } from "./extract.js";
 import { aiEnabled, aiExtract } from "./ai.js";
-import { list, insert, remove } from "./store.js";
+import { list, insert, update, remove } from "./store.js";
+import { assistEnabled, perguntar } from "./assist.js";
 import * as gcal from "./gcal.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -122,7 +123,9 @@ export function mountCapture(defaultArea, onDone = () => {}) {
 
   const textarea = el("textarea", {
     class: "capture-input", rows: "2",
-    placeholder: "Descreva ou cole aqui… ex: “Recurso de Agravo Simone amanhã 14h” — ou os dados do cliente/processo",
+    placeholder: assistEnabled()
+      ? "Escreva, pergunte ou dê uma ordem… ex.: “qual o prazo do Luciano?” · “crie tarefa contestar até sexta” · ou os dados do cliente/processo"
+      : "Descreva ou cole aqui… ex: “Recurso de Agravo Simone amanhã 14h” — ou os dados do cliente/processo",
   });
   const status = el("div", { class: "capture-status" });
 
@@ -143,9 +146,14 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   const fileBtn = el("button", { type: "button", class: "cap-btn", title: "Subir arquivos" }, [svgIcon("i-clip"), "Arquivos"]);
   const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.txt,.md,.csv,text/plain", multiple: "" });
   const prepBtn = el("button", { type: "button", class: "btn btn-primary cap-submit" }, "Preparar →");
+  // Botão da IA: pergunta (consulta seus dados) OU ordem (a IA propõe e você confirma).
+  const askBtn = assistEnabled()
+    ? el("button", { type: "button", class: "btn btn-ghost cap-submit", title: "Perguntar ou dar uma ordem em linguagem natural (IA)" }, "🤖 Perguntar / Fazer")
+    : null;
 
   const attWrap = el("div", { class: "att-list" });
   const cardsWrap = el("div", { class: "cap-cards hidden" });
+  const aiPanel = el("div", { class: "cap-ai hidden" });
 
   const card = el("div", { class: "card capture" }, [
     el("div", { class: "capture-head" }, [svgIcon("i-spark"), el("span", {}, "Captura rápida")]),
@@ -154,10 +162,12 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     typeHint,
     attWrap,
     status,
-    el("div", { class: "capture-actions" }, [micBtn, fileBtn, el("span", { class: "grow" }), prepBtn]),
+    el("div", { class: "capture-actions" }, [micBtn, fileBtn, el("span", { class: "grow" }), askBtn, prepBtn].filter(Boolean)),
+    aiPanel,
     cardsWrap,
     fileInput,
   ]);
+  if (askBtn) askBtn.onclick = () => askAI();
 
   // ---------- anexos: desenha os chips ----------
   const drawAtts = () => {
@@ -464,6 +474,140 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       saveDraft();
     }
   });
+
+  // ================= ASSISTENTE POR IA (pergunta ou ordem) =================
+  // Monta um retrato enxuto dos dados (com IDs) para a IA consultar e/ou agir.
+  async function buildSnapshot() {
+    const [clients, processes, tasks, notes, reminders] = await Promise.all([
+      list("clients"), list("processes"), list("tasks"), list("notes"), list("reminders"),
+    ]);
+    const short = (s, n = 200) => (s == null ? "" : String(s)).slice(0, n);
+    return {
+      hoje: todayISO(),
+      clientes: clients.map((c) => ({ id: c.id, nome: c.nome, cpf: c.cpf, tel: c.tel, email: c.email, area: c.area })),
+      processos: processes.map((p) => ({
+        id: p.id, num: p.num, nome: p.nome, tipo: p.tipo, vara: p.vara, tribunal: p.tribunal,
+        partes: p.partes, fase: p.fase, status: p.status, grau: p.grau, client_id: p.client_id,
+        andamentos: Array.isArray(p.andamentos) ? p.andamentos.slice(-3).map((a) => ({ data: a.data, texto: short(a.texto, 160) })) : [],
+      })),
+      tarefas: tasks.map((t) => ({
+        id: t.id, title: t.title, area: t.area, priority: t.priority, due_date: t.due_date,
+        due_time: t.due_time, done: t.done, client_id: t.client_id, process_id: t.process_id, description: short(t.description, 160),
+      })),
+      notas: notes.map((n) => ({ id: n.id, title: n.title, body: short(n.body, 300) })),
+      lembretes: reminders.map((r) => ({ id: r.id, title: r.title, remind_on: r.remind_on })),
+    };
+  }
+
+  // Executa UMA ação proposta pela IA e devolve como desfazê-la.
+  async function executarAcao(a) {
+    switch (a.tipo) {
+      case "criar_tarefa":
+      case "criar_agenda": {
+        const rec = await insert("tasks", {
+          title: a.titulo || a.texto || "(sem título)", area: a.area || "profissional",
+          priority: a.prioridade || "media", due_date: a.data || null, due_time: a.hora || null,
+          done: false, description: a.texto || null, client_id: a.cliente_id || null, process_id: a.processo_id || null,
+        });
+        return { undo: () => remove("tasks", rec.id) };
+      }
+      case "criar_lembrete": {
+        const rec = await insert("reminders", { title: a.titulo || a.texto || "Lembrete", body: a.texto || "", remind_on: a.data || null });
+        return { undo: () => remove("reminders", rec.id) };
+      }
+      case "criar_nota": {
+        const rec = await insert("notes", { title: a.titulo || "", body: a.texto || a.titulo || "" });
+        return { undo: () => remove("notes", rec.id) };
+      }
+      case "concluir_tarefa": {
+        if (!a.alvo_id) throw new Error("sem alvo");
+        await update("tasks", a.alvo_id, { done: true, done_at: new Date().toISOString() });
+        return { undo: () => update("tasks", a.alvo_id, { done: false, done_at: null }) };
+      }
+      case "reabrir_tarefa": {
+        if (!a.alvo_id) throw new Error("sem alvo");
+        await update("tasks", a.alvo_id, { done: false, done_at: null });
+        return { undo: () => update("tasks", a.alvo_id, { done: true }) };
+      }
+      case "adicionar_andamento": {
+        if (!a.processo_id) throw new Error("sem processo");
+        const procs = await list("processes");
+        const p = procs.find((x) => x.id === a.processo_id);
+        if (!p) throw new Error("processo não encontrado");
+        const ands = Array.isArray(p.andamentos) ? p.andamentos : [];
+        const novo = { data: a.data || todayISO(), hora: a.hora || "", texto: a.texto || a.resumo || "" };
+        await update("processes", a.processo_id, { andamentos: [...ands, novo] });
+        return { undo: () => update("processes", a.processo_id, { andamentos: ands }) };
+      }
+      case "excluir": {
+        if (!a.alvo_tabela || !a.alvo_id) throw new Error("sem alvo");
+        const rows = await list(a.alvo_tabela);
+        const old = rows.find((x) => x.id === a.alvo_id);
+        await remove(a.alvo_tabela, a.alvo_id);
+        return { undo: async () => { if (old) { const { id, user_id, created_at, ...rest } = old; await insert(a.alvo_tabela, rest); } } };
+      }
+      default:
+        throw new Error("ação não suportada: " + a.tipo);
+    }
+  }
+
+  let aiBusy = false;
+  async function askAI() {
+    const q = textarea.value.trim();
+    if (!q) { textarea.focus(); return; }
+    if (aiBusy) return;
+    aiBusy = true;
+    aiPanel.classList.remove("hidden");
+    aiPanel.innerHTML = "";
+    aiPanel.append(el("div", { class: "cap-ai-msg" }, "🤖 Pensando…"));
+
+    let r;
+    try { r = await perguntar(q, await buildSnapshot()); }
+    catch (e) { r = { error: e?.message || "falha" }; }
+    aiBusy = false;
+    aiPanel.innerHTML = "";
+
+    if (r.error) {
+      const msg = r.error === "nao_instalada"
+        ? "A IA ainda não foi ativada no servidor. Veja o passo a passo no README (função “assistente”)."
+        : r.error === "offline"
+        ? "Este recurso precisa da nuvem (Supabase) configurada."
+        : "Não consegui falar com a IA agora: " + r.error;
+      aiPanel.append(el("div", { class: "cap-ai-msg err" }, "⚠️ " + msg));
+      return;
+    }
+
+    if (r.resposta) aiPanel.append(el("div", { class: "cap-ai-msg" }, r.resposta));
+
+    if (r.acoes && r.acoes.length) {
+      const itens = el("ul", { class: "cap-ai-acts" }, r.acoes.map((a) => el("li", {}, a.resumo || a.tipo)));
+      const confirmar = el("button", { type: "button", class: "btn btn-primary btn-sm" }, `✓ Confirmar (${r.acoes.length})`);
+      const cancelar = el("button", { type: "button", class: "btn btn-ghost btn-sm" }, "Cancelar");
+      aiPanel.append(el("div", { class: "cap-ai-confirm" }, [
+        el("div", { class: "cap-ai-lbl" }, "Vou fazer o seguinte — confirma?"),
+        itens,
+        el("div", { class: "cap-ai-btns" }, [cancelar, confirmar]),
+      ]));
+      cancelar.onclick = () => { aiPanel.classList.add("hidden"); aiPanel.innerHTML = ""; };
+      confirmar.onclick = async () => {
+        confirmar.disabled = true; cancelar.disabled = true; confirmar.textContent = "Executando…";
+        const undos = []; let ok = 0, fail = 0;
+        for (const a of r.acoes) {
+          try { const u = await executarAcao(a); if (u) undos.push(u); ok++; }
+          catch { fail++; }
+        }
+        aiPanel.classList.add("hidden"); aiPanel.innerHTML = "";
+        textarea.value = ""; clearDraft();
+        onDone();
+        toast(`✅ ${ok} açã${ok === 1 ? "o" : "ões"} feita${ok === 1 ? "" : "s"}${fail ? ` · ⚠️ ${fail} falhou` : ""}.`, {
+          action: undos.length ? { label: "Desfazer", onClick: async () => { for (const u of undos.reverse()) { try { await u.undo(); } catch {} } onDone(); toast("Desfeito."); } } : null,
+          duration: 9000,
+        });
+      };
+    } else if (!r.resposta) {
+      aiPanel.append(el("div", { class: "cap-ai-msg" }, "Não entendi o que fazer. Tente reformular."));
+    }
+  }
 
   return card;
 }

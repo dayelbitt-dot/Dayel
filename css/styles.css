@@ -477,3 +477,13 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 .pub-vinc-box.ok { background: rgba(90,125,58,.10); border-color: rgba(90,125,58,.35); color: var(--text); }
 .pub-vinc-box.warn { background: rgba(165,101,43,.10); border-color: rgba(165,101,43,.30); color: var(--text); }
 .pub-vtag { display: inline-block; margin-top: 3px; font-size: 10px; font-weight: 700; color: var(--amber); background: rgba(165,101,43,.12); border-radius: 6px; padding: 1px 6px; width: fit-content; }
+
+/* Assistente por IA dentro da captura rápida */
+.cap-ai { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+.cap-ai-msg { font-size: 14px; line-height: 1.5; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cap-ai-msg.err { color: var(--red); }
+.cap-ai-confirm { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.cap-ai-lbl { font-size: 13px; font-weight: 700; color: var(--muted); }
+.cap-ai-acts { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.cap-ai-acts li { line-height: 1.4; }
+.cap-ai-btns { display: flex; gap: 8px; justify-content: flex-end; }
