@@ -162,7 +162,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     typeHint,
     attWrap,
     status,
-    el("div", { class: "capture-actions" }, [micBtn, fileBtn, el("span", { class: "grow" }), askBtn, prepBtn].filter(Boolean)),
+    el("div", { class: "capture-actions" }, [micBtn, fileBtn, askBtn, prepBtn].filter(Boolean)),
     aiPanel,
     cardsWrap,
     fileInput,

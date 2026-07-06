@@ -279,11 +279,14 @@ function labeled(text, labelSrc) {
 //   1) o CNJ que vem depois de um rótulo "Processo:/Autos:/Número único"
 //   2) o CNJ presente no ASSUNTO do e-mail
 //   3) por último, o primeiro CNJ que aparecer no corpo
+// Antes de tudo, REMOVE os links (URLs) do corpo — o EPROC costuma pôr o número
+// dentro de um link (…/processo/5001302-49…) que não é o desta intimação.
 function extrairNumeroProcesso(subject, teor) {
-  const rotulado = labeled(teor, "processo|autos|n[uú]mero\\s+[uú]nico(?:\\s+do\\s+processo)?|n[uú]mero\\s+do\\s+processo|n[uú]mero\\s+cnj");
+  const teorLimpo = String(teor || "").replace(/https?:\/\/\S+/gi, " ").replace(/www\.\S+/gi, " ");
+  const rotulado = labeled(teorLimpo, "processo|autos|n[uú]mero\\s+[uú]nico(?:\\s+do\\s+processo)?|n[uú]mero\\s+do\\s+processo|n[uú]mero\\s+cnj");
   return (String(rotulado).match(CNJ) || [""])[0]
     || (String(subject || "").match(CNJ) || [""])[0]
-    || (String(teor || "").match(CNJ) || [""])[0]
+    || (String(teorLimpo).match(CNJ) || [""])[0]
     || "";
 }
 
