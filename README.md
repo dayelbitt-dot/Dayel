@@ -155,6 +155,13 @@ uma **tabela** com o teor de cada publicação: **data, número do processo (CNJ
 “Ver teor”). Tudo é lido **no próprio navegador**, em modo **somente leitura** — nada
 é enviado para servidores de IA.
 
+Cada publicação é **vinculada automaticamente** ao **processo** e ao(s)
+**cliente(s)** já cadastrados, casando pelo **número do processo (CNJ)** — mesmo que
+a formatação (pontos/traços) seja diferente. Na tabela, a coluna **“Cliente /
+Processo”** mostra o vínculo e leva direto à pasta do processo; em **“Ver teor”**
+há botões para **abrir o processo**, **abrir o cliente** e **lançar a publicação
+como andamento** na linha do tempo do processo (sem duplicar).
+
 1. Abra a aba **Publicações oficiais** e toque em **🔗 Conectar Gmail** (usa o mesmo
    login do Google do Agenda).
 2. O app busca sozinho e mostra a tabela. Use **↻ Atualizar** para rebuscar e o campo

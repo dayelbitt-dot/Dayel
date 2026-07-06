@@ -1921,8 +1921,27 @@ function parseValor(s) {
 // ==================== PUBLICAÇÕES OFICIAIS ====================
 // Busca no Gmail os e-mails de "Movimentações Processuais - EPROC" e monta uma
 // tabela com o teor de cada publicação (processo, órgão, evento, prazo, data…).
-// Usa o Gmail em modo leitura (gmail.js), no próprio navegador.
+// Usa o Gmail em modo leitura (gmail.js), no próprio navegador. Cada publicação
+// é vinculada, na hora, ao processo e ao(s) cliente(s) já cadastrados — casando
+// pelo número do processo (CNJ).
 let pubState = { query: gmail.DEFAULT_QUERY, rows: null, loading: false, error: "", progress: null };
+
+// Só os dígitos do CNJ (ignora pontos, traços e espaços). Um CNJ completo tem 20.
+const cnjDigits = (s) => (s || "").replace(/\D/g, "");
+
+// Casa a publicação com um processo cadastrado e devolve { proc, clientes[] }.
+function vincularPublicacao(r, procs, clients) {
+  const alvo = cnjDigits(r.numero);
+  if (alvo.length < 15) return { proc: null, clientes: [] };
+  const proc = procs.find((p) => {
+    const d = cnjDigits(p.num);
+    return d && d.length >= 15 && (d === alvo || d.endsWith(alvo) || alvo.endsWith(d));
+  });
+  if (!proc) return { proc: null, clientes: [] };
+  const ids = [...new Set([proc.client_id, ...(Array.isArray(proc.client_ids) ? proc.client_ids : [])].filter(Boolean))];
+  const clientes = ids.map((id) => clients.find((c) => c.id === id)).filter(Boolean);
+  return { proc, clientes };
+}
 
 async function renderPublicacoes() {
   const main = $("#main");
@@ -1936,6 +1955,14 @@ async function renderPublicacoes() {
   if (!gmail.googleEnabled()) {
     main.append(head, el("div", { class: "empty" }, "Para usar esta aba, configure o Google (GOOGLE_CLIENT_ID) — veja o README."));
     return;
+  }
+
+  // Vincula cada publicação ao processo/cliente cadastrados (casando pelo CNJ).
+  if (pubState.rows && pubState.rows.length) {
+    try {
+      const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
+      pubState.rows.forEach((r) => { r.vinculo = vincularPublicacao(r, procs, clients); });
+    } catch { /* se falhar, segue sem vínculo */ }
   }
 
   // Barra de conexão / ações
@@ -2009,14 +2036,36 @@ async function loadPublicacoes() {
   }
 }
 
+// Célula com o vínculo (cliente + processo cadastrados). Clicável: abre o
+// processo. Se não houver processo cadastrado com aquele CNJ, mostra um aviso.
+function vinculoCell(r) {
+  const v = r.vinculo || { proc: null, clientes: [] };
+  if (!v.proc) {
+    return el("td", { class: "pub-vinc" }, r.numero
+      ? el("span", { class: "pub-naovinc" }, "Não cadastrado")
+      : "—");
+  }
+  const nomes = v.clientes.map((c) => c.nome).join(", ");
+  return el("td", { class: "pub-vinc" }, [
+    el("button", {
+      class: "pub-link",
+      title: "Abrir o processo cadastrado",
+      onclick: () => openProcess(v.proc.id, () => navigate("publicacoes")),
+    }, [
+      nomes ? el("span", { class: "pub-cli" }, "👤 " + nomes) : null,
+      el("span", { class: "pub-proc" }, "⚖️ " + (v.proc.nome || v.proc.num || "Processo")),
+    ].filter(Boolean)),
+  ]);
+}
+
 function pubTable(rows) {
   const COLS = [
-    ["Data", "data"], ["Processo", "numero"], ["Órgão / Vara", "orgao"],
-    ["Classe", "classe"], ["Evento", "evento"], ["Prazo", "prazo"],
-    ["Partes", "partes"], ["Assunto do e-mail", "subject"], ["Teor", "teor"],
+    "Data", "Processo", "Cliente / Processo", "Órgão / Vara",
+    "Classe", "Evento", "Prazo", "Partes", "Assunto do e-mail", "Teor",
   ];
-  const thead = el("tr", {}, COLS.map(([label]) => el("th", {}, label)));
+  const thead = el("tr", {}, COLS.map((label) => el("th", {}, label)));
   const body = el("tbody", {});
+  const vinculadas = rows.filter((r) => r.vinculo?.proc).length;
   rows.forEach((r) => {
     const dataTxt = r.dateMs ? new Date(r.dateMs).toLocaleDateString("pt-BR") : "";
     const teorCell = el("td", { class: "pub-teor" }, [
@@ -2025,6 +2074,7 @@ function pubTable(rows) {
     const cells = [
       el("td", {}, dataTxt),
       el("td", {}, r.numero ? el("span", { class: "mono" }, r.numero) : "—"),
+      vinculoCell(r),
       el("td", {}, r.orgao || "—"),
       el("td", {}, r.classe || "—"),
       el("td", {}, r.evento || "—"),
@@ -2033,27 +2083,46 @@ function pubTable(rows) {
       el("td", {}, r.subject || "—"),
       teorCell,
     ];
-    body.append(el("tr", {}, cells));
+    body.append(el("tr", { class: r.vinculo?.proc ? "pub-row-vinc" : "" }, cells));
   });
   const table = el("table", { class: "pub-table" }, [el("thead", {}, thead), body]);
   return el("div", {}, [
-    el("p", { class: "page-sub", style: "margin:2px 0 8px" }, `${rows.length} publicaç${rows.length === 1 ? "ão" : "ões"} encontrada${rows.length === 1 ? "" : "s"}. Arraste a tabela para o lado para ver todas as colunas.`),
+    el("p", { class: "page-sub", style: "margin:2px 0 8px" }, `${rows.length} publicaç${rows.length === 1 ? "ão" : "ões"} · ${vinculadas} vinculada${vinculadas === 1 ? "" : "s"} a processo cadastrado. Arraste a tabela para o lado para ver todas as colunas.`),
     el("div", { class: "wk-scroll" }, table),
   ]);
 }
 
 function openPublicacao(r) {
   const dataTxt = r.dateMs ? new Date(r.dateMs).toLocaleString("pt-BR") : "";
+  const v = r.vinculo || { proc: null, clientes: [] };
+  const nomesCli = v.clientes.map((c) => c.nome).join(", ");
   const linhas = [
-    ["Data", dataTxt], ["Processo", r.numero], ["Órgão / Vara", r.orgao],
-    ["Classe", r.classe], ["Assunto", r.assunto], ["Evento / Movimento", r.evento],
-    ["Prazo", r.prazo], ["Disponibilização", r.disponibilizacao], ["Partes", r.partes],
-    ["Remetente", r.from], ["Assunto do e-mail", r.subject],
-  ].filter(([, v]) => v);
+    ["Data", dataTxt], ["Processo", r.numero],
+    ["Cliente vinculado", nomesCli], ["Processo vinculado", v.proc ? (v.proc.nome || v.proc.num) : ""],
+    ["Órgão / Vara", r.orgao], ["Classe", r.classe], ["Assunto", r.assunto],
+    ["Evento / Movimento", r.evento], ["Prazo", r.prazo], ["Disponibilização", r.disponibilizacao],
+    ["Partes", r.partes], ["Remetente", r.from], ["Assunto do e-mail", r.subject],
+  ].filter(([, val]) => val);
   const kv = el("dl", { class: "pub-kv" });
-  linhas.forEach(([k, v]) => { kv.append(el("dt", {}, k), el("dd", {}, v)); });
+  linhas.forEach(([k, val]) => { kv.append(el("dt", {}, k), el("dd", {}, val)); });
+
+  // Faixa de vínculo (ou aviso de que não há processo cadastrado com esse CNJ).
+  const vincBox = v.proc
+    ? el("div", { class: "pub-vinc-box ok" }, [
+        el("span", {}, "🔗 Vinculado a " + (nomesCli ? nomesCli + " · " : "") + (v.proc.nome || v.proc.num)),
+        el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
+          el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openProcess(v.proc.id, () => navigate("publicacoes")); } }, "⚖️ Abrir processo"),
+          v.clientes[0] ? el("button", { class: "btn btn-sm btn-ghost", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente") : null,
+          el("button", { class: "btn btn-sm btn-ghost", onclick: () => lancarAndamento(r, v.proc) }, "➕ Lançar como andamento"),
+        ].filter(Boolean)),
+      ])
+    : el("div", { class: "pub-vinc-box warn" }, r.numero
+        ? "Nenhum processo cadastrado com o nº " + r.numero + ". Cadastre o processo (aba Processos) para vincular automaticamente."
+        : "Sem número de processo identificado nesta publicação.");
+
   const content = el("div", {}, [
     el("h3", {}, "Teor da publicação"),
+    vincBox,
     kv,
     el("div", { class: "group-head", style: "margin-top:12px" }, "Teor completo"),
     el("pre", { class: "pub-teor-full" }, r.teor || "(sem conteúdo)"),
@@ -2063,6 +2132,25 @@ function openPublicacao(r) {
     ]),
   ]);
   openModal(content);
+}
+
+// Lança a publicação como um andamento do processo vinculado (linha do tempo).
+async function lancarAndamento(r, proc) {
+  const dataISO = r.dateMs ? new Date(r.dateMs).toISOString().slice(0, 10) : todayISO();
+  const partes = [r.evento, r.classe].filter(Boolean).join(" — ");
+  const teorCurto = (r.teor || r.snippet || "").replace(/\s+/g, " ").trim().slice(0, 400);
+  const texto = "📬 Publicação (EPROC): " + (partes ? partes + ". " : "") + teorCurto + (r.prazo ? " [Prazo: " + r.prazo + "]" : "");
+  try {
+    const ands = Array.isArray(proc.andamentos) ? proc.andamentos : [];
+    // Evita duplicar: se já houver um andamento com o mesmo id da publicação, não repete.
+    if (ands.some((a) => a && a.pubId === r.id)) { toast("Esta publicação já foi lançada neste processo."); return; }
+    const novo = { data: dataISO, hora: "", texto, pubId: r.id };
+    await update("processes", proc.id, { andamentos: [...ands, novo] });
+    toast("✅ Andamento lançado em " + (proc.nome || proc.num) + ".");
+    closeModal();
+  } catch (e) {
+    toast("Não foi possível lançar o andamento. " + (e.message || ""));
+  }
 }
 
 // ==================== GERAR DOCUMENTOS ====================

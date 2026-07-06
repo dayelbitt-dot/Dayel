@@ -464,3 +464,15 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
   max-height: 46vh; overflow: auto; margin: 6px 0 0;
 }
+
+/* Vínculo da publicação com processo/cliente cadastrados */
+.pub-row-vinc { background: rgba(90,125,58,.06); }
+.pub-vinc { max-width: 240px; }
+.pub-link { display: flex; flex-direction: column; gap: 2px; text-align: left; background: transparent; border: 0; padding: 0; cursor: pointer; color: var(--accent); font: inherit; }
+.pub-link:hover { text-decoration: underline; }
+.pub-link .pub-cli { font-weight: 700; color: var(--text); }
+.pub-link .pub-proc { font-size: 12px; color: var(--accent); }
+.pub-naovinc { font-size: 12px; color: var(--muted); font-style: italic; }
+.pub-vinc-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; font-size: 13px; margin: 4px 0 10px; border: 1px solid var(--border); }
+.pub-vinc-box.ok { background: rgba(90,125,58,.10); border-color: rgba(90,125,58,.35); color: var(--text); }
+.pub-vinc-box.warn { background: rgba(165,101,43,.10); border-color: rgba(165,101,43,.30); color: var(--text); }
