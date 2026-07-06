@@ -13,6 +13,7 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 - 🔔 **Lembretes gerais** — tudo que você precisa lembrar, organizado por data (ordem cronológica), agrupado em Atrasados · Hoje · Próximos 7 dias · Mais adiante · Sem data
 - 📄 **Gerar Documentos** — cria **procuração** (judicial/extrajudicial) e **declaração de hipossuficiência** no seu modelo (mesma fonte e formatação), preenchendo com os dados da parte (de um cliente, de documentos anexados ou digitados) e baixa o `.docx`
 - 📬 **Publicações oficiais** — busca no seu **Gmail** os e-mails de *Movimentações Processuais – EPROC* e monta uma **tabela** com o teor de cada publicação (processo, órgão/vara, classe, evento, prazo, partes e o teor completo)
+- ⏰ **Importar prazos (Excel do tribunal)** — na aba **Processos**, botão *⬆ Importar prazos*: suba o `.xls/.xlsx` de prazos em aberto (EPROC) e o app **cria as tarefas de prazo** (vencimento = *Final Prazo*, prioridade alta), **vinculando ao processo** (pelo nº CNJ) e ao **cliente** (pelo processo cadastrado ou pelo CPF/CNPJ das partes). Reimportar o arquivo do dia **não duplica** os prazos já cadastrados
 - 📝 **Notas** — anotações rápidas
 
 Visual em **tema claro**, otimizado para celular e computador.

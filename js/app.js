@@ -1157,6 +1157,10 @@ async function importarPlanilha(file) {
       const XLSX = await loadXLSX();
       const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
       const sheet = wb.Sheets[wb.SheetNames[0]];
+      // Detecta o Excel de PRAZOS do tribunal (cabeçalho Processo … Final Prazo)
+      // e cria TAREFAS em vez de processos.
+      const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+      if (pareceFolhaDePrazos(aoa)) { await importarPrazosFromAOA(aoa); return; }
       rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
     }
   } catch (e) {
@@ -1207,6 +1211,123 @@ async function importarPlanilha(file) {
   if (corrigidos) partes.push(`${corrigidos} atualizado(s)/corrigido(s)`);
   toast(`✅ ${partes.join(" · ") || "0 processos"}${sem ? " · ⚠️ " + sem + " sem cliente identificado (abra e vincule)" : ""}.`, { duration: 9000 });
   renderClients();
+}
+
+// ---------- Importação de PRAZOS (Excel do tribunal → tarefas) ----------
+const normHdr = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+// É a planilha de prazos do tribunal? (tem cabeçalho "Processo" e "Final Prazo")
+function pareceFolhaDePrazos(aoa) {
+  for (let i = 0; i < Math.min((aoa || []).length, 10); i++) {
+    const cells = (aoa[i] || []).map(normHdr);
+    if (cells.includes("processo") && cells.some((c) => c.includes("final prazo"))) return true;
+  }
+  return false;
+}
+
+// Serial do Excel (nº) OU texto "dd/mm/aaaa …" → ISO aaaa-mm-dd (sem fuso).
+function excelDataParaISO(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number" && isFinite(v) && v > 1) {
+    const day = Math.floor(v);                       // parte inteira = o dia
+    const d = new Date((day - 25569) * 86400000);    // 25569 = 1970-01-01 em serial Excel
+    return isNaN(d) ? null : d.toISOString().slice(0, 10);
+  }
+  const m = String(v).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return null;
+}
+
+async function importarPrazosFromAOA(aoa) {
+  // Acha a linha de cabeçalho e mapeia as colunas por nome.
+  let hi = -1; const H = {};
+  for (let i = 0; i < Math.min(aoa.length, 10); i++) {
+    const cells = (aoa[i] || []).map(normHdr);
+    if (cells.includes("processo") && cells.some((c) => c.includes("final prazo"))) {
+      hi = i; cells.forEach((c, idx) => { if (c && !(c in H)) H[c] = idx; }); break;
+    }
+  }
+  if (hi < 0) { toast("Não reconheci o formato do Excel de prazos."); return; }
+  const col = (...names) => { for (const n of names) { const k = normHdr(n); if (k in H) return H[k]; } return -1; };
+  const ci = {
+    num: col("processo"), orgao: col("orgao"), partes: col("partes"), doc: col("doc partes"),
+    classe: col("classe"), assunto: col("assunto"), evento: col("evento e prazo"),
+    inicio: col("inicio prazo"), final: col("final prazo"),
+  };
+  const g = (row, idx) => (idx >= 0 && row[idx] != null ? row[idx] : "");
+  const limpa = (s) => String(s ?? "").replace(/\r+/g, " ").replace(/\s{2,}/g, " ").trim();
+
+  toast("Cadastrando os prazos…", { duration: 120000 });
+  const [tasks, processes, clients] = await Promise.all([list("tasks"), list("processes"), list("clients")]);
+  // Índice de clientes por CPF/CNPJ (só dígitos).
+  const cpfMap = new Map();
+  clients.forEach((c) => { const d = (c.cpf || "").replace(/\D/g, ""); if (d) cpfMap.set(d, c); });
+
+  const jaTemSig = (sig) => tasks.some((t) => (t.description || "").includes(sig));
+  const feitasNesteImport = new Set();
+
+  let criadas = 0, repetidas = 0, semProc = 0, semCli = 0;
+  for (const row of aoa.slice(hi + 1)) {
+    if (!row || !row.length) continue;
+    const num = limpa(g(row, ci.num));
+    const numKey = cnjKey(num);
+    if (!numKey) continue; // linha sem número de processo → ignora
+
+    const dueISO = excelDataParaISO(g(row, ci.final));
+    const eventoTxt = limpa(g(row, ci.evento));
+    const dias = (eventoTxt.match(/(\d+)\s*dias?/i) || [])[1] || "";
+    const classe = limpa(g(row, ci.classe));
+    const assunto = limpa(g(row, ci.assunto));
+    const orgao = limpa(g(row, ci.orgao));
+    const partesTxt = limpa(g(row, ci.partes));
+    const inicioISO = excelDataParaISO(g(row, ci.inicio));
+
+    // Assinatura anti-duplicata: processo + vencimento + evento/dias.
+    const sig = `[eproc-prazo:${numKey}|${dueISO || "?"}|${normHdr(dias || eventoTxt).slice(0, 30)}]`;
+    if (jaTemSig(sig) || feitasNesteImport.has(sig)) { repetidas++; continue; }
+    feitasNesteImport.add(sig);
+
+    // Vínculo: processo pelo CNJ; cliente pelo processo, senão por CPF/CNPJ das partes.
+    const proc = processes.find((p) => cnjKey(p.num) === numKey) || null;
+    let clientId = proc ? (proc.client_id || null) : null;
+    if (!clientId) {
+      const docs = ((partesTxt + " " + limpa(g(row, ci.doc))).match(/\d{11,14}/g) || []);
+      for (const d of docs) { if (cpfMap.has(d)) { clientId = cpfMap.get(d).id; break; } }
+    }
+    if (!proc) semProc++;
+    if (!clientId) semCli++;
+
+    const titulo = `Prazo${dias ? ` (${dias} dias)` : ""} — ${assunto || classe || "processo"}`;
+    const desc = [
+      `Processo: ${num}`,
+      classe ? `Classe: ${classe}` : null,
+      assunto ? `Assunto: ${assunto}` : null,
+      eventoTxt ? `Evento: ${eventoTxt}` : null,
+      orgao ? `Órgão: ${orgao}` : null,
+      partesTxt ? `Partes: ${partesTxt}` : null,
+      inicioISO ? `Início do prazo: ${prettyDate(inicioISO)}` : null,
+      dueISO ? `Prazo final: ${prettyDate(dueISO)}` : null,
+      sig,
+    ].filter(Boolean).join("\n");
+
+    try {
+      await insert("tasks", {
+        title: titulo, area: "profissional", priority: "alta",
+        due_date: dueISO || null, done: false, description: desc,
+        client_id: clientId, process_id: proc ? proc.id : null,
+      });
+      criadas++;
+    } catch { /* ignora a linha que falhou */ }
+  }
+
+  const partes = [];
+  if (criadas) partes.push(`${criadas} prazo(s) cadastrado(s)`);
+  if (repetidas) partes.push(`${repetidas} já existente(s) (ignorado(s))`);
+  const alertas = [];
+  if (semProc) alertas.push(`${semProc} sem processo cadastrado`);
+  if (semCli) alertas.push(`${semCli} sem cliente identificado`);
+  toast(`✅ ${partes.join(" · ") || "Nenhum prazo novo"}${alertas.length ? " · ⚠️ " + alertas.join(" · ") : ""}.`, { duration: 10000 });
+  if (criadas) navigate("professional"); else refresh();
 }
 
 // Importa QUALQUER arquivo (PDF, foto, txt, etc.): extrai o texto e localiza
@@ -1707,9 +1828,19 @@ async function renderProcesses() {
     rows.forEach((p) => listWrap.append(processCard(p, false, nameOf(p.client_id))));
   };
   search.addEventListener("input", draw);
+  // Importar prazos do tribunal (Excel .xls/.xlsx) → cria as tarefas de prazo,
+  // vinculando ao processo (CNJ) e ao cliente (CPF/CNPJ das partes).
+  const prazoInput = el("input", { type: "file", class: "hidden", accept: ".xls,.xlsx,.csv" });
+  prazoInput.addEventListener("change", async () => {
+    const f = prazoInput.files[0]; prazoInput.value = "";
+    if (f) await importarPlanilha(f);
+  });
   main.append(
-    el("div", {}, [el("h1", { class: "page-title" }, "Processos"), el("p", { class: "page-sub" }, `${procs.length} cadastrado${procs.length === 1 ? "" : "s"}`)]),
-    search, chips, listWrap,
+    el("div", { class: "section-head" }, [
+      el("div", {}, [el("h1", { class: "page-title" }, "Processos"), el("p", { class: "page-sub" }, `${procs.length} cadastrado${procs.length === 1 ? "" : "s"}`)]),
+      el("button", { class: "btn btn-ghost btn-sm", style: "flex-shrink:0", onclick: () => prazoInput.click(), title: "Importar Excel de prazos do tribunal" }, "⬆ Importar prazos"),
+    ]),
+    prazoInput, search, chips, listWrap,
   );
   draw();
   addFab(() => openProcessModal());
