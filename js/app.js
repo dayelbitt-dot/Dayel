@@ -2173,7 +2173,13 @@ async function renderPublicacoes() {
       // Vínculo 100% AUTOMÁTICO: recalculado a cada abertura (por CNJ; o nome só
       // identifica o cliente). Ignora marcações manuais antigas — assim tudo se
       // religa sozinho conforme você cadastra/corrige processos e clientes.
-      pubState.rows.forEach((r) => { r.vinculo = vincularPublicacao(r, procs, clients); });
+      pubState.rows.forEach((r) => {
+        // Reextrai os campos com o parser mais novo (corrige números já guardados
+        // no cache — ex.: número solto pego do topo do e-mail).
+        try { if (r.teor || r.subject) Object.assign(r, gmail.parseTeor(r.subject, r.teor)); } catch {}
+        r.vinculo = vincularPublicacao(r, procs, clients);
+      });
+      try { savePubCache(pubState.rows); } catch {}
     } catch { /* se falhar, segue sem vínculo */ }
   }
 

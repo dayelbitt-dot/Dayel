@@ -274,16 +274,28 @@ function labeled(text, labelSrc) {
   return m ? m[1].replace(/\s+/g, " ").trim().replace(/[\s;|>]+$/, "") : "";
 }
 
+// Extrai o número do processo com PRIORIDADE (evita pegar um CNJ solto do topo
+// do e-mail, que pode não ser o processo desta intimação):
+//   1) o CNJ que vem depois de um rótulo "Processo:/Autos:/Número único"
+//   2) o CNJ presente no ASSUNTO do e-mail
+//   3) por último, o primeiro CNJ que aparecer no corpo
+function extrairNumeroProcesso(subject, teor) {
+  const rotulado = labeled(teor, "processo|autos|n[uú]mero\\s+[uú]nico(?:\\s+do\\s+processo)?|n[uú]mero\\s+do\\s+processo|n[uú]mero\\s+cnj");
+  return (String(rotulado).match(CNJ) || [""])[0]
+    || (String(subject || "").match(CNJ) || [""])[0]
+    || (String(teor || "").match(CNJ) || [""])[0]
+    || "";
+}
+
 export function parseTeor(subject, teor) {
-  const all = (subject || "") + "\n" + (teor || "");
-  const numero = (all.match(CNJ) || [""])[0] || labeled(teor, "processo|autos|n[uú]mero\\s+do\\s+processo|n[uú]mero\\s+[uú]nico");
+  const numero = extrairNumeroProcesso(subject, teor);
   const orgao = labeled(teor, "[oó]rg[aã]o\\s+julgador|ju[ií]zo|vara|comarca|serventia|unidade\\s+judici[aá]ria");
   const classe = labeled(teor, "classe(?:\\s+(?:da\\s+a[çc][aã]o|processual))?|tipo\\s+de\\s+a[çc][aã]o");
   const assunto = labeled(teor, "assunto");
   const evento = labeled(teor, "evento|movimento|tipo\\s+de\\s+documento|documento|a[çc][aã]o\\s+realizada|descri[çc][aã]o");
   const partes = labeled(teor, "partes|autor(?:\\s*/\\s*r[eé]u)?|requerente|polo\\s+ativo|intimad[oa]s?");
   const prazoTxt = labeled(teor, "prazo") ||
-    ((all.match(/prazo\s+de\s+(\d+)\s*dias?/i) || [])[0] || "");
+    ((((subject || "") + "\n" + (teor || "")).match(/prazo\s+de\s+(\d+)\s*dias?/i) || [])[0] || "");
   const disp = labeled(teor, "data\\s+de\\s+disponibiliza[çc][aã]o|disponibiliza[çc][aã]o|data\\s+da\\s+publica[çc][aã]o|publica[çc][aã]o|intima[çc][aã]o\\s+em|data\\s+da\\s+intima[çc][aã]o");
   return {
     numero: numero || "",
