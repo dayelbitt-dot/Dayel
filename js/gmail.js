@@ -15,8 +15,10 @@ const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 // Busca padrão: e-mails do EPROC com movimentações/intimações. É possível
 // refinar na própria tela. IMPORTANTE: no Gmail o hífen "-" significa EXCLUIR,
 // então nunca usamos "- EPROC" solto — só frases entre aspas e OR.
+// Remetentes ignorados (newsletters que citam termos jurídicos mas não são
+// intimações do EPROC): ConJur.
 export const DEFAULT_QUERY =
-  '("movimentações processuais" OR "movimentação processual" OR "intimação eletrônica" OR eproc)';
+  '("movimentações processuais" OR "movimentação processual" OR "intimação eletrônica" OR eproc) -from:boletim@conjur.com.br';
 
 let gisLoaded = false;
 let accessToken = null;

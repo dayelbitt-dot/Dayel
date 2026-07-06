@@ -1,7 +1,7 @@
 // Service worker: estratégia "rede primeiro" para os arquivos do app.
 // Assim, com internet, o usuário SEMPRE recebe a versão mais nova;
 // sem internet, cai para o cache (funciona offline).
-const CACHE = "assistente-v20";
+const CACHE = "assistente-v21";
 const ASSETS = [
   "./",
   "./index.html",
