@@ -1926,45 +1926,49 @@ function parseValor(s) {
 // pelo número do processo (CNJ).
 let pubState = { query: gmail.DEFAULT_QUERY, rows: null, loading: false, error: "", progress: null };
 
-// Só os dígitos do CNJ (ignora pontos, traços e espaços). Um CNJ completo tem 20.
-const cnjDigits = (s) => (s || "").replace(/\D/g, "");
-
 // Normaliza para comparar nomes: sem acento, minúsculo, só letras/números.
 const normNome = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 // Conectivos que não contam como "parte" do nome (de, da, e, …).
 const NOME_CONN = new Set(["de", "da", "do", "das", "dos", "e", "van", "von", "del", "la"]);
 const nomeTokens = (nome) => normNome(nome).split(" ").filter((t) => t.length >= 3 && !NOME_CONN.has(t));
-// O cliente é citado no texto? Exige nome+sobrenome e que TODOS os tokens
-// significativos apareçam (tolera ordem trocada; evita casar só "Ana").
-function clienteCitado(client, hay) {
+// O cliente é citado nas partes? Casa por PALAVRA INTEIRA (não substring, senão
+// "liz" casaria dentro de "realizado"/"atualização"). Exige nome+sobrenome e
+// que TODOS os tokens significativos apareçam como palavras (tolera ordem
+// trocada). `haySet` é o conjunto de palavras do campo de partes.
+function clienteCitado(client, haySet) {
   const toks = nomeTokens(client.nome);
   if (toks.length < 2) return false;
-  return toks.every((t) => hay.includes(t));
+  return toks.every((t) => haySet.has(t));
 }
 
 const procClientIds = (p) => [...new Set([p.client_id, ...(Array.isArray(p.client_ids) ? p.client_ids : [])].filter(Boolean))];
+
+// CNJ só com os 20 dígitos (descarta pontuação e eventual lixo antes). Vazio se
+// não for um número completo.
+function cnjKey(s) {
+  const d = (s || "").replace(/\D/g, "");
+  return d.length >= 20 ? d.slice(-20) : "";
+}
 
 // Casa a publicação com processo/cliente cadastrados.
 // via: "cnj" (preciso) | "nome" (fallback, confira) | null (sem vínculo).
 // Devolve { proc, clientes[], via, ambiguo }.
 function vincularPublicacao(r, procs, clients) {
-  // 1) Pelo número do processo (CNJ) — preciso.
-  const alvo = cnjDigits(r.numero);
-  if (alvo.length >= 15) {
-    const proc = procs.find((p) => {
-      const d = cnjDigits(p.num);
-      return d && d.length >= 15 && (d === alvo || d.endsWith(alvo) || alvo.endsWith(d));
-    });
+  // 1) Pelo número do processo (CNJ) — igualdade EXATA dos 20 dígitos.
+  const alvo = cnjKey(r.numero);
+  if (alvo) {
+    const proc = procs.find((p) => cnjKey(p.num) === alvo);
     if (proc) {
       const clientes = procClientIds(proc).map((id) => clients.find((c) => c.id === id)).filter(Boolean);
       return { proc, clientes, via: "cnj", ambiguo: false };
     }
   }
 
-  // 2) Fallback pelo nome das partes (menos preciso).
-  const hay = normNome([r.partes, r.subject, r.teor].filter(Boolean).join(" "));
-  if (!hay) return { proc: null, clientes: [], via: null, ambiguo: false };
-  const citados = clients.filter((c) => clienteCitado(c, hay));
+  // 2) Fallback pelo nome — SOMENTE no campo de partes, por palavra inteira.
+  // (Não varre o teor inteiro para não casar juiz/advogado/outras partes.)
+  const haySet = new Set(normNome(r.partes).split(" ").filter(Boolean));
+  if (!haySet.size) return { proc: null, clientes: [], via: null, ambiguo: false };
+  const citados = clients.filter((c) => clienteCitado(c, haySet));
   if (!citados.length) return { proc: null, clientes: [], via: null, ambiguo: false };
 
   // Processos ligados aos clientes citados. Só vincula o processo se for único.
