@@ -170,6 +170,11 @@ do processo (ou do cliente); em **“Ver teor”** há botões para **abrir o pr
 **abrir o cliente** e **lançar a publicação como andamento** na linha do tempo do
 processo (sem duplicar).
 
+As publicações ficam **guardadas no aparelho**: ao reabrir o app elas **continuam
+aparecendo** (mesmo antes de reconectar o Gmail). Ao tocar em **↻ Atualizar** (ou
+automaticamente, uma vez por sessão, quando o Gmail está conectado), as **novas são
+mescladas** com as já existentes — **sem duplicar** (a chave é o id da mensagem).
+
 1. Abra a aba **Publicações oficiais** e toque em **🔗 Conectar Gmail** (usa o mesmo
    login do Google do Agenda).
 2. O app busca sozinho e mostra a tabela. Use **↻ Atualizar** para rebuscar e o campo

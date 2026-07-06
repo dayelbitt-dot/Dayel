@@ -1924,7 +1924,40 @@ function parseValor(s) {
 // Usa o Gmail em modo leitura (gmail.js), no próprio navegador. Cada publicação
 // é vinculada, na hora, ao processo e ao(s) cliente(s) já cadastrados — casando
 // pelo número do processo (CNJ).
-let pubState = { query: gmail.DEFAULT_QUERY, rows: null, loading: false, error: "", progress: null };
+let pubState = { query: gmail.DEFAULT_QUERY, rows: null, loading: false, error: "", progress: null, autoDone: false };
+
+// --- Cache local das publicações (para não sumirem ao fechar o app) ---
+// Guardamos no aparelho as publicações já buscadas. Ao atualizar, mesclamos as
+// novas com as existentes SEM duplicar (chave = id da mensagem do Gmail). O
+// vínculo com processo/cliente NÃO é guardado — é recalculado a cada abertura,
+// então fica sempre atualizado conforme você cadastra processos.
+const PUB_CACHE_KEY = "assist:publicacoes";
+const PUB_CACHE_MAX = 400;      // guarda no máx. as 400 mais recentes
+const PUB_TEOR_MAX = 12000;     // limita o tamanho do teor guardado
+
+function loadPubCache() {
+  try { const v = JSON.parse(localStorage.getItem(PUB_CACHE_KEY)); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+function savePubCache(rows) {
+  try {
+    const enxuto = rows.slice(0, PUB_CACHE_MAX).map((r) => ({
+      id: r.id, threadId: r.threadId, subject: r.subject, from: r.from, dateMs: r.dateMs,
+      snippet: r.snippet, teor: (r.teor || "").slice(0, PUB_TEOR_MAX), link: r.link,
+      numero: r.numero, orgao: r.orgao, classe: r.classe, assunto: r.assunto,
+      evento: r.evento, partes: r.partes, prazo: r.prazo, disponibilizacao: r.disponibilizacao,
+    }));
+    localStorage.setItem(PUB_CACHE_KEY, JSON.stringify(enxuto));
+  } catch { /* cota estourada: ignora silenciosamente */ }
+}
+// Mescla listas por id (novas entram, existentes permanecem; sem duplicar).
+// A versão recém-buscada tem prioridade (dados mais frescos).
+function mesclarPubs(existentes, novas) {
+  const byId = new Map();
+  (existentes || []).forEach((p) => { if (p && p.id) byId.set(p.id, p); });
+  (novas || []).forEach((p) => { if (p && p.id) byId.set(p.id, p); });
+  return [...byId.values()].sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
+}
 
 // Normaliza para comparar nomes: sem acento, minúsculo, só letras/números.
 const normNome = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -1991,6 +2024,10 @@ async function renderPublicacoes() {
     return;
   }
 
+  // Na primeira vez, carrega as publicações guardadas no aparelho (para
+  // aparecerem imediatamente, mesmo sem reconectar o Gmail).
+  if (pubState.rows == null) pubState.rows = loadPubCache();
+
   // Vincula cada publicação ao processo/cliente cadastrados (casando pelo CNJ).
   if (pubState.rows && pubState.rows.length) {
     try {
@@ -1999,15 +2036,19 @@ async function renderPublicacoes() {
     } catch { /* se falhar, segue sem vínculo */ }
   }
 
+  const temCache = pubState.rows && pubState.rows.length > 0;
+
   // Barra de conexão / ações
   const bar = el("div", { class: "gbar" });
   if (!gmail.isConnected()) {
     bar.append(
-      el("span", { class: "t2" }, "Conecte seu Gmail para trazer as publicações do EPROC."),
+      el("span", { class: "t2" }, temCache
+        ? "Conecte o Gmail para buscar novas publicações."
+        : "Conecte seu Gmail para trazer as publicações do EPROC."),
       el("button", { class: "btn btn-sm btn-primary", onclick: async () => {
         try { await gmail.connect(true); loadPublicacoes(); }
         catch (e) { toast("Não foi possível conectar ao Gmail. " + (e.message || "")); }
-      } }, "🔗 Conectar Gmail"),
+      } }, temCache ? "🔗 Conectar e atualizar" : "🔗 Conectar Gmail"),
     );
   } else {
     bar.append(
@@ -2016,7 +2057,7 @@ async function renderPublicacoes() {
         : "✅ Gmail conectado"),
       el("div", { style: "display:flex; gap:8px" }, [
         el("button", { class: "btn btn-sm btn-primary", onclick: () => loadPublicacoes(), disabled: pubState.loading ? "" : null }, "↻ Atualizar"),
-        el("button", { class: "btn btn-sm btn-ghost", onclick: () => { gmail.disconnect(); pubState.rows = null; renderPublicacoes(); } }, "Desconectar"),
+        el("button", { class: "btn btn-sm btn-ghost", onclick: () => { gmail.disconnect(); renderPublicacoes(); } }, "Desconectar"),
       ]),
     );
   }
@@ -2027,23 +2068,25 @@ async function renderPublicacoes() {
   search.addEventListener("keydown", (e) => { if (e.key === "Enter") { pubState.query = search.value.trim() || gmail.DEFAULT_QUERY; loadPublicacoes(); } });
 
   main.append(head, bar);
-  if (gmail.isConnected()) main.append(search);
+  if (gmail.isConnected() || temCache) main.append(search);
 
-  // Corpo: erro, carregando, vazio ou tabela.
-  if (pubState.error) {
-    main.append(el("div", { class: "empty" }, pubState.error));
+  // Corpo: erro, tabela (cache ou recém-buscada) e/ou avisos.
+  if (pubState.error) main.append(el("div", { class: "empty" }, pubState.error));
+
+  if (temCache) {
+    main.append(pubTable(pubState.rows));
   } else if (pubState.loading) {
     main.append(el("div", { class: "empty" }, "Buscando suas publicações no Gmail…"));
-  } else if (pubState.rows == null) {
-    if (gmail.isConnected()) main.append(el("div", { class: "empty" }, "Toque em “Atualizar” para buscar as publicações."));
-  } else if (pubState.rows.length === 0) {
-    main.append(el("div", { class: "empty" }, "Nenhum e-mail encontrado com esse filtro."));
-  } else {
-    main.append(pubTable(pubState.rows));
+  } else if (pubState.rows && pubState.rows.length === 0 && !pubState.error) {
+    main.append(el("div", { class: "empty" }, gmail.isConnected() ? "Nenhum e-mail encontrado com esse filtro." : "Nenhuma publicação guardada ainda. Conecte o Gmail para buscar."));
   }
 
-  // Se acabou de conectar e ainda não buscou, busca sozinho.
-  if (gmail.isConnected() && pubState.rows == null && !pubState.loading) loadPublicacoes();
+  // Uma vez por sessão, se o Gmail estiver conectado, busca novas em segundo
+  // plano e mescla com o cache (o cache já está visível; nada some).
+  if (gmail.isConnected() && !pubState.loading && !pubState.error && !pubState.autoDone) {
+    pubState.autoDone = true;
+    loadPublicacoes();
+  }
 }
 
 async function loadPublicacoes() {
@@ -2051,7 +2094,7 @@ async function loadPublicacoes() {
   pubState.loading = true; pubState.error = ""; pubState.progress = null;
   if (state.route === "publicacoes") renderPublicacoes();
   try {
-    pubState.rows = await gmail.fetchPublicacoes(pubState.query, {
+    const novas = await gmail.fetchPublicacoes(pubState.query, {
       max: 80,
       onProgress: (done, total) => {
         pubState.progress = { done, total };
@@ -2061,9 +2104,17 @@ async function loadPublicacoes() {
         }
       },
     });
+    // Mescla com o que já estava guardado (sem duplicar) e persiste.
+    const antes = (pubState.rows && pubState.rows.length) ? pubState.rows : loadPubCache();
+    const antesN = antes.length;
+    pubState.rows = mesclarPubs(antes, novas);
+    savePubCache(pubState.rows);
+    const adicionadas = pubState.rows.length - antesN;
+    if (adicionadas > 0) toast(`✅ ${adicionadas} nova${adicionadas === 1 ? "" : "s"} publicaç${adicionadas === 1 ? "ão" : "ões"}.`);
+    else toast("Tudo atualizado — nenhuma publicação nova.");
   } catch (e) {
     pubState.error = e.message || "Falha ao buscar no Gmail.";
-    pubState.rows = pubState.rows || [];
+    if (pubState.rows == null) pubState.rows = loadPubCache();
   } finally {
     pubState.loading = false; pubState.progress = null;
     if (state.route === "publicacoes") renderPublicacoes();
