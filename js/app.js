@@ -2085,8 +2085,6 @@ function savePubCache(rows) {
       snippet: r.snippet, teor: (r.teor || "").slice(0, PUB_TEOR_MAX), link: r.link,
       numero: r.numero, orgao: r.orgao, classe: r.classe, assunto: r.assunto,
       evento: r.evento, partes: r.partes, prazo: r.prazo, disponibilizacao: r.disponibilizacao,
-      desvincular: r.desvincular || undefined,
-      overrideProc: r.overrideProc || undefined,
     }));
     localStorage.setItem(PUB_CACHE_KEY, JSON.stringify(enxuto));
   } catch { /* cota estourada: ignora silenciosamente */ }
@@ -2096,16 +2094,7 @@ function savePubCache(rows) {
 function mesclarPubs(existentes, novas) {
   const byId = new Map();
   (existentes || []).forEach((p) => { if (p && p.id) byId.set(p.id, p); });
-  (novas || []).forEach((p) => {
-    if (!p || !p.id) return;
-    const antigo = byId.get(p.id);
-    // Preserva as correções manuais (desvincular / processo escolhido) ao rebuscar.
-    if (antigo && (antigo.desvincular || antigo.overrideProc)) {
-      byId.set(p.id, { ...p, desvincular: antigo.desvincular || undefined, overrideProc: antigo.overrideProc || undefined });
-    } else {
-      byId.set(p.id, p);
-    }
-  });
+  (novas || []).forEach((p) => { if (p && p.id) byId.set(p.id, p); });
   return [...byId.values()].sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
 }
 
@@ -2177,25 +2166,14 @@ async function renderPublicacoes() {
   // aparecerem imediatamente, mesmo sem reconectar o Gmail).
   if (pubState.rows == null) pubState.rows = loadPubCache();
 
-  // Vincula cada publicação ao processo/cliente cadastrados (casando pelo CNJ).
-  // Respeita a correção manual: se você marcou "desvincular", não vincula.
+  // Vincula cada publicação ao processo/cliente cadastrados (automático, por CNJ).
   if (pubState.rows && pubState.rows.length) {
     try {
       const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
-      pubState.rows.forEach((r) => {
-        if (r.desvincular) { r.vinculo = { proc: null, clientes: [], via: null, ambiguo: false }; return; }
-        if (r.overrideProc) {
-          // Correção manual: você escolheu o processo certo para esta publicação.
-          const proc = procs.find((p) => p.id === r.overrideProc);
-          if (proc) {
-            const cl = procClientIds(proc).map((id) => clients.find((c) => c.id === id)).filter(Boolean);
-            r.vinculo = { proc, clientes: cl, via: "manual", ambiguo: false };
-            return;
-          }
-          // processo escolhido foi apagado → volta ao automático
-        }
-        r.vinculo = vincularPublicacao(r, procs, clients);
-      });
+      // Vínculo 100% AUTOMÁTICO: recalculado a cada abertura (por CNJ; o nome só
+      // identifica o cliente). Ignora marcações manuais antigas — assim tudo se
+      // religa sozinho conforme você cadastra/corrige processos e clientes.
+      pubState.rows.forEach((r) => { r.vinculo = vincularPublicacao(r, procs, clients); });
     } catch { /* se falhar, segue sem vínculo */ }
   }
 
@@ -2372,48 +2350,33 @@ function openPublicacao(r) {
   const kv = el("dl", { class: "pub-kv" });
   linhas.forEach(([k, val]) => { kv.append(el("dt", {}, k), el("dd", {}, val)); });
 
-  // Faixa de vínculo. Três casos: processo identificado; só cliente (nome casou,
-  // mas há vários/nenhum processo); ou nada cadastrado.
-  const porNomeAviso = v.via === "nome" ? " (vínculo por nome — confira)" : (v.via === "manual" ? " (corrigido por você)" : "");
-  // Corrigir vínculo: escolher o processo CERTO para esta publicação (fica salvo).
-  const corrigirBtn = el("button", { class: "btn btn-sm btn-ghost", onclick: () => corrigirVinculo(r) }, "✎ Corrigir vínculo");
-  // Remover vínculo: deixa a publicação sem processo (fica salvo).
-  const removerBtn = el("button", { class: "btn btn-sm btn-ghost", onclick: () => {
-    r.desvincular = true; r.overrideProc = null;
-    r.vinculo = { proc: null, clientes: [], via: null, ambiguo: false };
-    try { savePubCache(pubState.rows || []); } catch {}
-    closeModal();
-    if (state.route === "publicacoes") renderPublicacoes();
-    toast("Vínculo removido desta publicação.");
-  } }, "✕ Remover vínculo");
+  // Faixa de vínculo (automático). Três casos: processo identificado por CNJ;
+  // só cliente (nome casou, mas o processo daquela publicação não está
+  // cadastrado); ou nada reconhecido.
+  const porNomeAviso = v.via === "nome" ? " (identificado pelo nome das partes)" : "";
   let vincBox;
   if (v.proc) {
     const numDif = v.proc.num && cnjKey(v.proc.num) !== cnjKey(r.numero);
     vincBox = el("div", { class: "pub-vinc-box ok" }, [
       el("span", {}, "🔗 Vinculado a " + (nomesCli ? nomesCli + " · " : "") + (v.proc.nome || v.proc.num) + (v.proc.num ? " (nº " + v.proc.num + ")" : "") + porNomeAviso),
-      numDif ? el("span", { class: "pub-naovinc" }, "⚠️ O nº do processo cadastrado é diferente do nº desta publicação — use “Corrigir vínculo” para escolher o processo certo.") : null,
+      numDif ? el("span", { class: "pub-naovinc" }, "⚠️ O nº do processo cadastrado é diferente do nº desta publicação — confira o cadastro do processo (nº ou cliente pode estar trocado).") : null,
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
         el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openProcess(v.proc.id, () => navigate("publicacoes")); } }, "⚖️ Abrir processo"),
         v.clientes[0] ? el("button", { class: "btn btn-sm btn-ghost", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente") : null,
         el("button", { class: "btn btn-sm btn-ghost", onclick: () => lancarAndamento(r, v.proc) }, "➕ Lançar como andamento"),
-        corrigirBtn, removerBtn,
       ].filter(Boolean)),
     ].filter(Boolean));
   } else if (v.clientes.length) {
     vincBox = el("div", { class: "pub-vinc-box ok" }, [
-      el("span", {}, "🔗 Cliente identificado por nome: " + nomesCli + ". Escolha o processo certo em “Corrigir vínculo” (não vinculo o processo automaticamente pelo nome para não errar)."),
+      el("span", {}, "🔗 Cliente identificado pelo nome das partes: " + nomesCli + ". O processo será vinculado sozinho assim que houver um cadastrado com este número (" + (r.numero || "sem nº") + ")."),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
         el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente"),
-        corrigirBtn, removerBtn,
       ]),
     ]);
   } else {
-    vincBox = el("div", { class: "pub-vinc-box warn" }, [
-      el("span", {}, r.numero
-        ? "Nenhum processo cadastrado com o nº " + r.numero + ", e não reconheci as partes entre seus clientes."
-        : "Não reconheci as partes desta publicação entre seus clientes cadastrados."),
-      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" }, [corrigirBtn]),
-    ]);
+    vincBox = el("div", { class: "pub-vinc-box warn" }, r.numero
+      ? "Nenhum processo cadastrado com o nº " + r.numero + ", e não reconheci as partes entre seus clientes. Assim que você cadastrar o processo/cliente, esta publicação se vincula sozinha."
+      : "Não reconheci as partes desta publicação entre seus clientes cadastrados.");
   }
 
   const content = el("div", {}, [
@@ -2428,48 +2391,6 @@ function openPublicacao(r) {
     ]),
   ]);
   openModal(content);
-}
-
-// Escolher o processo CERTO para uma publicação (correção manual, fica salva).
-async function corrigirVinculo(r) {
-  const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
-  const nameOf = (cid) => clients.find((c) => c.id === cid)?.nome || "";
-  const search = el("input", { class: "form-control search-box", type: "search", placeholder: "🔎 Buscar processo por nº, nome ou cliente…" });
-  const listWrap = el("div", { class: "list", style: "max-height:44vh; overflow:auto; margin-top:6px" });
-  const escolher = (procId, label) => {
-    r.overrideProc = procId; r.desvincular = false;
-    try { savePubCache(pubState.rows || []); } catch {}
-    closeModal();
-    if (state.route === "publicacoes") renderPublicacoes();
-    toast("✅ Vínculo corrigido para: " + label);
-  };
-  const draw = () => {
-    const q = search.value.trim().toLowerCase();
-    listWrap.innerHTML = "";
-    const rows = procs
-      .filter((p) => !q || [p.num, p.nome, nameOf(p.client_id)].some((x) => (x || "").toLowerCase().includes(q)))
-      .slice(0, 80);
-    if (!rows.length) { listWrap.append(el("div", { class: "empty" }, procs.length ? "Nenhum processo encontrado." : "Nenhum processo cadastrado ainda.")); return; }
-    rows.forEach((p) => {
-      const cli = nameOf(p.client_id);
-      listWrap.append(el("button", { class: "row", style: "width:100%;text-align:left", onclick: () => escolher(p.id, p.nome || p.num || "processo") }, [
-        el("div", { class: "grow" }, [
-          el("div", { class: "t1" }, p.nome || "(sem nome)"),
-          el("div", { class: "t2" }, [p.num ? "Nº " + p.num : "", cli ? "👤 " + cli : ""].filter(Boolean).join(" · ")),
-        ]),
-      ]));
-    });
-  };
-  search.addEventListener("input", draw);
-  const content = el("div", {}, [
-    el("h3", {}, "Corrigir vínculo"),
-    el("p", { class: "page-sub", style: "margin:2px 0 0" }, "Escolha o processo correto para esta publicação" + (r.numero ? " (nº " + r.numero + ")" : "") + "."),
-    search, listWrap,
-    el("div", { class: "modal-actions" }, [el("button", { class: "btn btn-ghost", onclick: () => openPublicacao(r) }, "← Voltar")]),
-  ]);
-  openModal(content);
-  draw();
-  setTimeout(() => search.focus(), 50);
 }
 
 // Lança a publicação como um andamento do processo vinculado (linha do tempo).
