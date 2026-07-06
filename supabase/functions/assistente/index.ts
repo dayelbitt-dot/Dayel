@@ -83,16 +83,30 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return j({ error: "método não permitido" }, 405);
   if (!KEY) return j({ error: "ANTHROPIC_API_KEY não configurada no servidor" }, 500);
 
-  let body: { pergunta?: string; dados?: unknown; hoje?: string };
+  let body: { pergunta?: string; dados?: unknown; hoje?: string; historico?: Array<{ role?: string; content?: string }> };
   try { body = await req.json(); } catch { return j({ error: "JSON inválido" }, 400); }
   const pergunta = (body.pergunta || "").slice(0, 4000).trim();
   if (!pergunta) return j({ resposta: "", acoes: [] });
   const hoje = (body.hoje || new Date().toISOString().slice(0, 10)).slice(0, 10);
   const dados = JSON.stringify(body.dados ?? {}).slice(0, 90000);
 
-  const userMsg =
-    `DADOS DO USUÁRIO (JSON):\n"""\n${dados}\n"""\n\n` +
-    `MENSAGEM DO USUÁRIO (pergunta ou ordem):\n"""\n${pergunta}\n"""`;
+  // Os DADOS ficam no system (constantes na conversa). O histórico dá memória:
+  // turnos anteriores viram mensagens user/assistant antes da mensagem atual.
+  const system = SYSTEM(hoje) + `\n\nDADOS DO USUÁRIO (JSON):\n"""\n${dados}\n"""`;
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const m of (Array.isArray(body.historico) ? body.historico : []).slice(-20)) {
+    const role = m?.role === "assistant" ? "assistant" : "user";
+    const content = String(m?.content || "").slice(0, 6000).trim();
+    if (content) messages.push({ role, content });
+  }
+  // Garante alternância válida terminando em 'user': se o último do histórico já
+  // for 'user', mescla; senão, adiciona a mensagem atual como novo turno 'user'.
+  if (messages.length && messages[messages.length - 1].role === "user") {
+    messages[messages.length - 1].content += "\n\n" + pergunta;
+  } else {
+    messages.push({ role: "user", content: pergunta });
+  }
+  if (messages[0].role !== "user") messages.unshift({ role: "user", content: "(início da conversa)" });
 
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -101,10 +115,10 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 8000,
-        system: SYSTEM(hoje),
+        system,
         tools: [TOOL],
         tool_choice: { type: "tool", name: "assistente" },
-        messages: [{ role: "user", content: userMsg }],
+        messages,
       }),
     });
     const data = await resp.json();

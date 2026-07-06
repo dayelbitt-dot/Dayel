@@ -148,7 +148,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   const prepBtn = el("button", { type: "button", class: "btn btn-primary cap-submit" }, "Preparar →");
   // Botão da IA: pergunta (consulta seus dados) OU ordem (a IA propõe e você confirma).
   const askBtn = assistEnabled()
-    ? el("button", { type: "button", class: "btn btn-ghost cap-submit", title: "Perguntar ou dar uma ordem em linguagem natural (IA)" }, "🤖 Perguntar / Fazer")
+    ? el("button", { type: "button", class: "btn btn-ghost cap-submit", title: "Conversar com a IA: perguntar, alinhar e mandar executar (você aprova antes)" }, "🤖 Perguntar / Fazer")
     : null;
 
   const attWrap = el("div", { class: "att-list" });
@@ -167,7 +167,7 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     cardsWrap,
     fileInput,
   ]);
-  if (askBtn) askBtn.onclick = () => askAI();
+  if (askBtn) askBtn.onclick = () => sendChat();
 
   // ---------- anexos: desenha os chips ----------
   const drawAtts = () => {
@@ -551,68 +551,99 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     }
   }
 
-  let aiBusy = false;
-  async function askAI() {
+  // ---------- IA CONVERSACIONAL (chat multi-turno) ----------
+  // Você conversa, refina e a IA só EXECUTA quando você aprovar (o cartão de
+  // ações continua). A conversa tem memória, então dá para dar vários comandos.
+  let chat = [];        // [{role:'user'|'assistant', text, acoes?, done?, doneMsg?, error?}]
+  let thinking = false;
+
+  const friendlyErr = (e) =>
+    e === "nao_instalada" ? "A IA ainda não foi ativada no servidor (veja o README, função “assistente”)."
+    : e === "offline" ? "Este recurso precisa da nuvem (Supabase) configurada."
+    : "Não consegui falar com a IA agora: " + e;
+
+  async function executarAcoes(m) {
+    const undos = []; let ok = 0, fail = 0;
+    for (const a of (m.acoes || [])) {
+      try { const u = await executarAcao(a); if (u) undos.push(u); ok++; } catch { fail++; }
+    }
+    m.done = true;
+    m.doneMsg = `✅ ${ok} açã${ok === 1 ? "o" : "ões"} feita${ok === 1 ? "" : "s"}${fail ? ` · ⚠️ ${fail} falhou` : ""}.`;
+    renderChat();
+    toast(m.doneMsg, {
+      action: undos.length ? { label: "Desfazer", onClick: async () => { for (const u of undos.reverse()) { try { await u.undo(); } catch {} } m.done = false; m.doneMsg = null; renderChat(); toast("Desfeito."); } } : null,
+      duration: 9000,
+    });
+    // NÃO re-renderiza a tela toda (isso apagaria a conversa). As listas
+    // atualizam quando você trocar de aba. Marcamos que houve criação.
+    createdSomething = true;
+  }
+  let createdSomething = false;
+
+  function renderChat() {
+    aiPanel.innerHTML = "";
+    if (!chat.length && !thinking) { aiPanel.classList.add("hidden"); return; }
+    aiPanel.classList.remove("hidden");
+    const log = el("div", { class: "cap-chat" });
+    chat.forEach((m, idx) => {
+      if (m.role === "user") { log.append(el("div", { class: "cap-msg user" }, m.text)); return; }
+      const bubble = el("div", { class: "cap-msg ai" + (m.error ? " err" : "") });
+      if (m.text) bubble.append(el("div", { class: "cap-msg-txt" }, m.text));
+      const isLast = idx === chat.length - 1;
+      if (m.acoes && m.acoes.length && !m.done) {
+        const box = el("div", { class: "cap-ai-confirm" }, [
+          el("div", { class: "cap-ai-lbl" }, "Aprovar e executar?"),
+          el("ul", { class: "cap-ai-acts" }, m.acoes.map((a) => el("li", {}, a.resumo || a.tipo))),
+        ]);
+        if (isLast) {
+          const confirmar = el("button", { type: "button", class: "btn btn-primary btn-sm" }, `✓ Executar (${m.acoes.length})`);
+          const descartar = el("button", { type: "button", class: "btn btn-ghost btn-sm" }, "Descartar");
+          confirmar.onclick = () => { confirmar.disabled = true; descartar.disabled = true; confirmar.textContent = "Executando…"; executarAcoes(m); };
+          descartar.onclick = () => { m.acoes = []; renderChat(); };
+          box.append(el("div", { class: "cap-ai-btns" }, [descartar, confirmar]));
+        } else {
+          box.append(el("div", { class: "t2" }, "Continue conversando ou role para aprovar."));
+        }
+        bubble.append(box);
+      }
+      if (m.done && m.doneMsg) bubble.append(el("div", { class: "cap-ai-done" }, m.doneMsg));
+      log.append(bubble);
+    });
+    if (thinking) log.append(el("div", { class: "cap-msg ai" }, "🤖 Pensando…"));
+    aiPanel.append(log);
+    aiPanel.append(el("div", { class: "cap-chat-foot" }, [
+      el("span", { class: "t2" }, "Converse à vontade — a IA só executa quando você aprovar."),
+      el("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => { chat = []; renderChat(); } }, "Nova conversa"),
+    ]));
+    requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+  }
+
+  async function sendChat() {
+    if (thinking) return;
     const q = textarea.value.trim();
     // Conteúdo dos arquivos anexados (planilha, PDF, foto…) já lido.
     const docs = attachments.map((a) => (a.text && a.text.trim()) ? `📎 ${a.name}:\n${a.text.trim()}` : "").filter(Boolean).join("\n\n----\n\n");
     if (!q && !docs) { textarea.focus(); return; }
-    if (aiBusy) return;
-    aiBusy = true;
-    aiPanel.classList.remove("hidden");
-    aiPanel.innerHTML = "";
-    aiPanel.append(el("div", { class: "cap-ai-msg" }, "🤖 Pensando…"));
+    chat.push({ role: "user", text: q || "(usar o documento anexado)" });
+    textarea.value = ""; saveDraft();
+    thinking = true; renderChat();
 
     let r;
     try {
       const snapshot = await buildSnapshot();
       if (docs) snapshot.documentoAnexado = docs.slice(0, 70000);
-      // Se houver anexo sem instrução, assume o pedido padrão.
-      r = await perguntar(q || "Use o documento anexado para cumprir o que ele indica.", snapshot);
+      // Histórico = turnos anteriores (dá memória à conversa).
+      const historico = chat.slice(0, -1)
+        .map((m) => ({ role: m.role, content: (m.text || (m.acoes && m.acoes.length ? "(propus ações)" : "")).slice(0, 6000) }))
+        .filter((m) => m.content);
+      r = await perguntar(q || "Use o documento anexado para cumprir o que ele indica.", snapshot, historico);
     } catch (e) { r = { error: e?.message || "falha" }; }
-    aiBusy = false;
-    aiPanel.innerHTML = "";
+    thinking = false;
 
-    if (r.error) {
-      const msg = r.error === "nao_instalada"
-        ? "A IA ainda não foi ativada no servidor. Veja o passo a passo no README (função “assistente”)."
-        : r.error === "offline"
-        ? "Este recurso precisa da nuvem (Supabase) configurada."
-        : "Não consegui falar com a IA agora: " + r.error;
-      aiPanel.append(el("div", { class: "cap-ai-msg err" }, "⚠️ " + msg));
-      return;
-    }
-
-    if (r.resposta) aiPanel.append(el("div", { class: "cap-ai-msg" }, r.resposta));
-
-    if (r.acoes && r.acoes.length) {
-      const itens = el("ul", { class: "cap-ai-acts" }, r.acoes.map((a) => el("li", {}, a.resumo || a.tipo)));
-      const confirmar = el("button", { type: "button", class: "btn btn-primary btn-sm" }, `✓ Confirmar (${r.acoes.length})`);
-      const cancelar = el("button", { type: "button", class: "btn btn-ghost btn-sm" }, "Cancelar");
-      aiPanel.append(el("div", { class: "cap-ai-confirm" }, [
-        el("div", { class: "cap-ai-lbl" }, "Vou fazer o seguinte — confirma?"),
-        itens,
-        el("div", { class: "cap-ai-btns" }, [cancelar, confirmar]),
-      ]));
-      cancelar.onclick = () => { aiPanel.classList.add("hidden"); aiPanel.innerHTML = ""; };
-      confirmar.onclick = async () => {
-        confirmar.disabled = true; cancelar.disabled = true; confirmar.textContent = "Executando…";
-        const undos = []; let ok = 0, fail = 0;
-        for (const a of r.acoes) {
-          try { const u = await executarAcao(a); if (u) undos.push(u); ok++; }
-          catch { fail++; }
-        }
-        aiPanel.classList.add("hidden"); aiPanel.innerHTML = "";
-        textarea.value = ""; clearDraft();
-        onDone();
-        toast(`✅ ${ok} açã${ok === 1 ? "o" : "ões"} feita${ok === 1 ? "" : "s"}${fail ? ` · ⚠️ ${fail} falhou` : ""}.`, {
-          action: undos.length ? { label: "Desfazer", onClick: async () => { for (const u of undos.reverse()) { try { await u.undo(); } catch {} } onDone(); toast("Desfeito."); } } : null,
-          duration: 9000,
-        });
-      };
-    } else if (!r.resposta) {
-      aiPanel.append(el("div", { class: "cap-ai-msg" }, "Não entendi o que fazer. Tente reformular."));
-    }
+    if (r.error) { chat.push({ role: "assistant", text: "⚠️ " + friendlyErr(r.error), error: true }); renderChat(); return; }
+    chat.push({ role: "assistant", text: r.resposta || (r.acoes && r.acoes.length ? "Preparei as ações abaixo." : "Não entendi — pode reformular?"), acoes: r.acoes || [] });
+    renderChat();
+    setTimeout(() => textarea.focus(), 30);
   }
 
   return card;

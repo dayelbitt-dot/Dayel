@@ -8,7 +8,7 @@ import { client } from "./store.js";
 
 export const assistEnabled = () => CLOUD_ENABLED;
 
-export async function perguntar(pergunta, dados) {
+export async function perguntar(pergunta, dados, historico) {
   if (!CLOUD_ENABLED) return { error: "offline" };
 
   let token = SUPABASE_ANON_KEY;
@@ -22,7 +22,11 @@ export async function perguntar(pergunta, dados) {
     const res = await fetch(SUPABASE_URL + "/functions/v1/assistente", {
       method: "POST", signal: ctrl.signal,
       headers: { "content-type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + token },
-      body: JSON.stringify({ pergunta: String(pergunta || "").slice(0, 4000), dados, hoje }),
+      body: JSON.stringify({
+        pergunta: String(pergunta || "").slice(0, 4000),
+        dados, hoje,
+        historico: Array.isArray(historico) ? historico.slice(-20) : [],
+      }),
     });
     if (res.status === 404) return { error: "nao_instalada" };
     const data = await res.json().catch(() => null);
