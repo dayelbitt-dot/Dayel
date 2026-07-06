@@ -1,0 +1,10 @@
+# O app roda no navegador e carrega as bibliotecas por CDN — não usa npm.
+# Estes itens são apenas artefatos locais/temporários e não vão para o repositório.
+node_modules/
+package-lock.json
+npm-debug.log*
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
