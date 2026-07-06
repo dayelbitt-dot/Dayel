@@ -476,3 +476,4 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 .pub-vinc-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; font-size: 13px; margin: 4px 0 10px; border: 1px solid var(--border); }
 .pub-vinc-box.ok { background: rgba(90,125,58,.10); border-color: rgba(90,125,58,.35); color: var(--text); }
 .pub-vinc-box.warn { background: rgba(165,101,43,.10); border-color: rgba(165,101,43,.30); color: var(--text); }
+.pub-vtag { display: inline-block; margin-top: 3px; font-size: 10px; font-weight: 700; color: var(--amber); background: rgba(165,101,43,.12); border-radius: 6px; padding: 1px 6px; width: fit-content; }

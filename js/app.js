@@ -1929,18 +1929,48 @@ let pubState = { query: gmail.DEFAULT_QUERY, rows: null, loading: false, error: 
 // Só os dígitos do CNJ (ignora pontos, traços e espaços). Um CNJ completo tem 20.
 const cnjDigits = (s) => (s || "").replace(/\D/g, "");
 
-// Casa a publicação com um processo cadastrado e devolve { proc, clientes[] }.
+// Normaliza para comparar nomes: sem acento, minúsculo, só letras/números.
+const normNome = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+// Conectivos que não contam como "parte" do nome (de, da, e, …).
+const NOME_CONN = new Set(["de", "da", "do", "das", "dos", "e", "van", "von", "del", "la"]);
+const nomeTokens = (nome) => normNome(nome).split(" ").filter((t) => t.length >= 3 && !NOME_CONN.has(t));
+// O cliente é citado no texto? Exige nome+sobrenome e que TODOS os tokens
+// significativos apareçam (tolera ordem trocada; evita casar só "Ana").
+function clienteCitado(client, hay) {
+  const toks = nomeTokens(client.nome);
+  if (toks.length < 2) return false;
+  return toks.every((t) => hay.includes(t));
+}
+
+const procClientIds = (p) => [...new Set([p.client_id, ...(Array.isArray(p.client_ids) ? p.client_ids : [])].filter(Boolean))];
+
+// Casa a publicação com processo/cliente cadastrados.
+// via: "cnj" (preciso) | "nome" (fallback, confira) | null (sem vínculo).
+// Devolve { proc, clientes[], via, ambiguo }.
 function vincularPublicacao(r, procs, clients) {
+  // 1) Pelo número do processo (CNJ) — preciso.
   const alvo = cnjDigits(r.numero);
-  if (alvo.length < 15) return { proc: null, clientes: [] };
-  const proc = procs.find((p) => {
-    const d = cnjDigits(p.num);
-    return d && d.length >= 15 && (d === alvo || d.endsWith(alvo) || alvo.endsWith(d));
-  });
-  if (!proc) return { proc: null, clientes: [] };
-  const ids = [...new Set([proc.client_id, ...(Array.isArray(proc.client_ids) ? proc.client_ids : [])].filter(Boolean))];
-  const clientes = ids.map((id) => clients.find((c) => c.id === id)).filter(Boolean);
-  return { proc, clientes };
+  if (alvo.length >= 15) {
+    const proc = procs.find((p) => {
+      const d = cnjDigits(p.num);
+      return d && d.length >= 15 && (d === alvo || d.endsWith(alvo) || alvo.endsWith(d));
+    });
+    if (proc) {
+      const clientes = procClientIds(proc).map((id) => clients.find((c) => c.id === id)).filter(Boolean);
+      return { proc, clientes, via: "cnj", ambiguo: false };
+    }
+  }
+
+  // 2) Fallback pelo nome das partes (menos preciso).
+  const hay = normNome([r.partes, r.subject, r.teor].filter(Boolean).join(" "));
+  if (!hay) return { proc: null, clientes: [], via: null, ambiguo: false };
+  const citados = clients.filter((c) => clienteCitado(c, hay));
+  if (!citados.length) return { proc: null, clientes: [], via: null, ambiguo: false };
+
+  // Processos ligados aos clientes citados. Só vincula o processo se for único.
+  const procsDosCitados = procs.filter((p) => procClientIds(p).some((id) => citados.some((c) => c.id === id)));
+  const unico = procsDosCitados.length === 1 ? procsDosCitados[0] : null;
+  return { proc: unico, clientes: citados, via: "nome", ambiguo: procsDosCitados.length > 1 };
 }
 
 async function renderPublicacoes() {
@@ -2037,24 +2067,40 @@ async function loadPublicacoes() {
 }
 
 // Célula com o vínculo (cliente + processo cadastrados). Clicável: abre o
-// processo. Se não houver processo cadastrado com aquele CNJ, mostra um aviso.
+// processo (ou o cliente, quando o processo é ambíguo). Vínculos por nome vêm
+// marcados com "por nome" para você conferir.
 function vinculoCell(r) {
-  const v = r.vinculo || { proc: null, clientes: [] };
-  if (!v.proc) {
-    return el("td", { class: "pub-vinc" }, r.numero
+  const v = r.vinculo || { proc: null, clientes: [], via: null };
+  const nomes = v.clientes.map((c) => c.nome).join(", ");
+  const porNome = v.via === "nome" ? el("span", { class: "pub-vtag" }, "por nome") : null;
+
+  // Sem nenhum vínculo.
+  if (!v.proc && !v.clientes.length) {
+    return el("td", { class: "pub-vinc" }, (r.numero || r.partes)
       ? el("span", { class: "pub-naovinc" }, "Não cadastrado")
       : "—");
   }
-  const nomes = v.clientes.map((c) => c.nome).join(", ");
+  // Processo identificado (por CNJ ou por nome com processo único).
+  if (v.proc) {
+    return el("td", { class: "pub-vinc" }, [
+      el("button", {
+        class: "pub-link", title: "Abrir o processo cadastrado",
+        onclick: () => openProcess(v.proc.id, () => navigate("publicacoes")),
+      }, [
+        nomes ? el("span", { class: "pub-cli" }, "👤 " + nomes) : null,
+        el("span", { class: "pub-proc" }, "⚖️ " + (v.proc.nome || v.proc.num || "Processo")),
+      ].filter(Boolean)),
+      porNome,
+    ]);
+  }
+  // Só cliente (nome casou, mas ele tem vários processos — não dá pra escolher).
   return el("td", { class: "pub-vinc" }, [
     el("button", {
-      class: "pub-link",
-      title: "Abrir o processo cadastrado",
-      onclick: () => openProcess(v.proc.id, () => navigate("publicacoes")),
-    }, [
-      nomes ? el("span", { class: "pub-cli" }, "👤 " + nomes) : null,
-      el("span", { class: "pub-proc" }, "⚖️ " + (v.proc.nome || v.proc.num || "Processo")),
-    ].filter(Boolean)),
+      class: "pub-link", title: "Abrir o cliente",
+      onclick: () => openClient(v.clientes[0].id),
+    }, [el("span", { class: "pub-cli" }, "👤 " + nomes)]),
+    el("span", { class: "pub-proc pub-naovinc" }, v.ambiguo ? "vários processos" : "sem processo"),
+    porNome,
   ]);
 }
 
@@ -2065,7 +2111,7 @@ function pubTable(rows) {
   ];
   const thead = el("tr", {}, COLS.map((label) => el("th", {}, label)));
   const body = el("tbody", {});
-  const vinculadas = rows.filter((r) => r.vinculo?.proc).length;
+  const vinculadas = rows.filter((r) => r.vinculo?.proc || r.vinculo?.clientes?.length).length;
   rows.forEach((r) => {
     const dataTxt = r.dateMs ? new Date(r.dateMs).toLocaleDateString("pt-BR") : "";
     const teorCell = el("td", { class: "pub-teor" }, [
@@ -2106,19 +2152,31 @@ function openPublicacao(r) {
   const kv = el("dl", { class: "pub-kv" });
   linhas.forEach(([k, val]) => { kv.append(el("dt", {}, k), el("dd", {}, val)); });
 
-  // Faixa de vínculo (ou aviso de que não há processo cadastrado com esse CNJ).
-  const vincBox = v.proc
-    ? el("div", { class: "pub-vinc-box ok" }, [
-        el("span", {}, "🔗 Vinculado a " + (nomesCli ? nomesCli + " · " : "") + (v.proc.nome || v.proc.num)),
-        el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
-          el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openProcess(v.proc.id, () => navigate("publicacoes")); } }, "⚖️ Abrir processo"),
-          v.clientes[0] ? el("button", { class: "btn btn-sm btn-ghost", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente") : null,
-          el("button", { class: "btn btn-sm btn-ghost", onclick: () => lancarAndamento(r, v.proc) }, "➕ Lançar como andamento"),
-        ].filter(Boolean)),
-      ])
-    : el("div", { class: "pub-vinc-box warn" }, r.numero
-        ? "Nenhum processo cadastrado com o nº " + r.numero + ". Cadastre o processo (aba Processos) para vincular automaticamente."
-        : "Sem número de processo identificado nesta publicação.");
+  // Faixa de vínculo. Três casos: processo identificado; só cliente (nome casou,
+  // mas há vários/nenhum processo); ou nada cadastrado.
+  const porNomeAviso = v.via === "nome" ? " (vínculo por nome — confira)" : "";
+  let vincBox;
+  if (v.proc) {
+    vincBox = el("div", { class: "pub-vinc-box ok" }, [
+      el("span", {}, "🔗 Vinculado a " + (nomesCli ? nomesCli + " · " : "") + (v.proc.nome || v.proc.num) + porNomeAviso),
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
+        el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openProcess(v.proc.id, () => navigate("publicacoes")); } }, "⚖️ Abrir processo"),
+        v.clientes[0] ? el("button", { class: "btn btn-sm btn-ghost", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente") : null,
+        el("button", { class: "btn btn-sm btn-ghost", onclick: () => lancarAndamento(r, v.proc) }, "➕ Lançar como andamento"),
+      ].filter(Boolean)),
+    ]);
+  } else if (v.clientes.length) {
+    vincBox = el("div", { class: "pub-vinc-box ok" }, [
+      el("span", {}, "🔗 Cliente identificado por nome: " + nomesCli + ". " + (v.ambiguo ? "Este cliente tem mais de um processo — abra o cliente e escolha o processo certo." : "Sem processo cadastrado para vincular.")),
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
+        el("button", { class: "btn btn-sm", onclick: () => { closeModal(); openClient(v.clientes[0].id); } }, "👤 Abrir cliente"),
+      ]),
+    ]);
+  } else {
+    vincBox = el("div", { class: "pub-vinc-box warn" }, r.numero
+      ? "Nenhum processo cadastrado com o nº " + r.numero + ", e não reconheci as partes entre seus clientes. Cadastre o processo/cliente para vincular automaticamente."
+      : "Não reconheci as partes desta publicação entre seus clientes cadastrados.");
+  }
 
   const content = el("div", {}, [
     el("h3", {}, "Teor da publicação"),

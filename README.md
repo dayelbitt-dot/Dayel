@@ -156,11 +156,19 @@ uma **tabela** com o teor de cada publicação: **data, número do processo (CNJ
 é enviado para servidores de IA.
 
 Cada publicação é **vinculada automaticamente** ao **processo** e ao(s)
-**cliente(s)** já cadastrados, casando pelo **número do processo (CNJ)** — mesmo que
-a formatação (pontos/traços) seja diferente. Na tabela, a coluna **“Cliente /
-Processo”** mostra o vínculo e leva direto à pasta do processo; em **“Ver teor”**
-há botões para **abrir o processo**, **abrir o cliente** e **lançar a publicação
-como andamento** na linha do tempo do processo (sem duplicar).
+**cliente(s)** já cadastrados:
+
+1. **Pelo número do processo (CNJ)** — preciso; funciona mesmo com formatação
+   (pontos/traços) diferente entre o e-mail e o cadastro.
+2. **Pelo nome das partes** (quando o CNJ não bate com nenhum processo) — o app
+   procura seus clientes citados nas partes/assunto/teor. Esse vínculo vem marcado
+   com **“por nome”** para você conferir. Se o cliente tiver **mais de um
+   processo**, ele vincula só o cliente (você escolhe o processo na pasta dele).
+
+Na tabela, a coluna **“Cliente / Processo”** mostra o vínculo e leva direto à pasta
+do processo (ou do cliente); em **“Ver teor”** há botões para **abrir o processo**,
+**abrir o cliente** e **lançar a publicação como andamento** na linha do tempo do
+processo (sem duplicar).
 
 1. Abra a aba **Publicações oficiais** e toque em **🔗 Conectar Gmail** (usa o mesmo
    login do Google do Agenda).
