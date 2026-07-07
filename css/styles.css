@@ -484,7 +484,12 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 .pub-vtag { display: inline-block; margin-top: 3px; font-size: 10px; font-weight: 700; color: var(--amber); background: rgba(165,101,43,.12); border-radius: 6px; padding: 1px 6px; width: fit-content; }
 
 /* Assistente por IA dentro da captura rápida */
-.cap-ai { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+.cap-ai { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
+/* Durante a conversa com a IA: some com os destinos/dica e o botão Preparar,
+   deixando a conversa em cima e o campo de escrever + enviar embaixo. */
+.capture.chatting .cap-types,
+.capture.chatting .cap-typehint,
+.capture.chatting .cap-submit.btn-primary { display: none; }
 .cap-ai-msg { font-size: 14px; line-height: 1.5; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cap-ai-msg.err { color: var(--red); }
 .cap-ai-confirm { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
@@ -503,3 +508,5 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 .cap-ai-done { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--green); }
 .cap-chat-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .cap-chat-foot .t2 { margin: 0; }
+
+.cap-chat-foot .btn { white-space: nowrap; flex: 0 0 auto; }

@@ -299,7 +299,7 @@ function taskRow(t, compact = false, back) {
   if (t.client_id || t.process_id) meta.push((t.area === "pessoal") ? "🔒 vínculo particular" : "🔗 cliente");
   const grow = el("div", { class: "grow", onclick: () => openTask(t, back) }, [
     el("div", { class: "t1" }, t.title),
-    t.description ? el("div", { class: "t2" }, t.description) : null,
+    descVisivel(t.description) ? el("div", { class: "t2" }, descVisivel(t.description)) : null,
     meta.length ? el("div", { class: "t2", style: late ? "color:var(--red)" : "" }, meta.join(" · ")) : null,
   ]);
   const children = [check, grow];
@@ -314,7 +314,7 @@ async function openTaskEditModal(t, onDone) {
   const [clients, processes] = await Promise.all([list("clients", { orderBy: "nome", asc: true }), list("processes")]).catch(() => [[], []]);
   let area = t.area === "profissional" ? "profissional" : "pessoal";
   const title = el("input", { class: "form-control", value: t.title || "" });
-  const desc = el("textarea", { class: "form-control", rows: "2", placeholder: "Descrição (opcional)" }, t.description || "");
+  const desc = el("textarea", { class: "form-control", rows: "2", placeholder: "Descrição (opcional)" }, descVisivel(t.description));
   const date = el("input", { class: "form-control", type: "date", value: t.due_date || "" });
   const time = el("input", { class: "form-control", type: "time", value: t.due_time || "" });
   const prio = el("select", { class: "form-control" });
@@ -400,8 +400,11 @@ async function openTaskEditModal(t, onDone) {
     e.preventDefault();
     if (!title.value.trim()) { title.focus(); return; }
     try {
+      // Preserva o marcador interno de prazo (anti-duplicata) ao salvar a edição.
+      const sigOrig = sigDe(t.description);
+      const descFinal = (descVisivel(desc.value) + (sigOrig ? "\n" + sigOrig : "")).trim();
       await update("tasks", t.id, {
-        title: title.value.trim(), description: desc.value.trim(), area, priority: prio.value,
+        title: title.value.trim(), description: descFinal, area, priority: prio.value,
         due_date: date.value || null, due_time: time.value || null,
         client_id: cliSel.value || null, process_id: procSel.value || null,
         attachments: atts,
@@ -551,7 +554,7 @@ async function openTask(tOrId, backFn) {
         el("div", { class: "card-title", style: "margin:0" }, "Detalhes"),
         el("button", { class: "btn btn-primary btn-sm", onclick: () => openTaskEditModal(t, () => openTask(id, back)) }, "✏️ Editar"),
       ]),
-      t.description ? el("div", { class: "detail-desc", style: "white-space:pre-wrap; margin-bottom:12px" }, t.description) : el("div", { class: "t2", style: "margin-bottom:12px" }, "Sem descrição. Toque em Editar para adicionar."),
+      descVisivel(t.description) ? el("div", { class: "detail-desc", style: "white-space:pre-wrap; margin-bottom:12px" }, descVisivel(t.description)) : el("div", { class: "t2", style: "margin-bottom:12px" }, "Sem descrição. Toque em Editar para adicionar."),
       linhas.length ? el("dl", { class: "kv" }, linhas.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
     ]),
     cliCard,
@@ -1273,6 +1276,17 @@ function excelDataParaISO(v) {
   return null;
 }
 
+// Marcador interno anti-duplicata dos prazos — NÃO deve aparecer para o usuário.
+const PRAZO_SIG_RE = /\s*\[eproc-prazo:[^\]]*\]/g;
+const descVisivel = (s) => String(s || "").replace(PRAZO_SIG_RE, "").trim();
+const sigDe = (s) => { const m = String(s || "").match(/\[eproc-prazo:[^\]]*\]/); return m ? m[0] : ""; };
+// "CUMPRIMENTO DE SENTENÇA" -> "Cumprimento de Sentença" (conectivos em minúscula).
+function tituloCase(s) {
+  s = String(s || "").trim(); if (!s) return "";
+  const small = new Set(["de", "da", "do", "das", "dos", "e", "a", "o", "em", "no", "na", "à", "às", "para"]);
+  return s.toLowerCase().split(/\s+/).map((w, i) => (i > 0 && small.has(w)) ? w : (w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
+}
+
 async function importarPrazosFromAOA(aoa) {
   // Acha a linha de cabeçalho e mapeia as colunas por nome.
   let hi = -1; const H = {};
@@ -1332,7 +1346,14 @@ async function importarPrazosFromAOA(aoa) {
     if (!proc) semProc++;
     if (!clientId) semCli++;
 
-    const titulo = `Prazo${dias ? ` (${dias} dias)` : ""} — ${assunto || classe || "processo"}`;
+    // Título: ⏰ {dias} dias · vence {data final} · {cliente} · {tipo do processo}
+    const clienteNome = clientId ? (clients.find((c) => c.id === clientId)?.nome || "") : "";
+    const titulo = [
+      "⏰ " + (dias ? dias + " dias" : "Prazo"),
+      dueISO ? "vence " + prettyDate(dueISO) : null,
+      clienteNome || null,
+      tituloCase(classe || assunto) || null,
+    ].filter(Boolean).join(" · ");
     const desc = [
       `Processo: ${num}`,
       classe ? `Classe: ${classe}` : null,

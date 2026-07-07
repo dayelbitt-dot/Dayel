@@ -155,15 +155,18 @@ export function mountCapture(defaultArea, onDone = () => {}) {
   const cardsWrap = el("div", { class: "cap-cards hidden" });
   const aiPanel = el("div", { class: "cap-ai hidden" });
 
+  // Ordem: a CONVERSA da IA (aiPanel) fica ACIMA do campo de escrever — assim
+  // você lê em cima e escreve embaixo (como um chat). Fora do chat, o aiPanel
+  // fica escondido e o layout é o normal de cadastro.
   const card = el("div", { class: "card capture" }, [
     el("div", { class: "capture-head" }, [svgIcon("i-spark"), el("span", {}, "Captura rápida")]),
+    aiPanel,
     textarea,
     typesRow,
     typeHint,
     attWrap,
     status,
     el("div", { class: "capture-actions" }, [micBtn, fileBtn, askBtn, prepBtn].filter(Boolean)),
-    aiPanel,
     cardsWrap,
     fileInput,
   ]);
@@ -610,7 +613,9 @@ export function mountCapture(defaultArea, onDone = () => {}) {
 
   function renderChat() {
     aiPanel.innerHTML = "";
-    if (!chat.length && !thinking) { aiPanel.classList.add("hidden"); return; }
+    const ativo = chat.length > 0 || thinking;
+    card.classList.toggle("chatting", ativo);   // esconde os destinos/dica durante o chat
+    if (!ativo) { aiPanel.classList.add("hidden"); return; }
     aiPanel.classList.remove("hidden");
     const log = el("div", { class: "cap-chat" });
     chat.forEach((m, idx) => {
