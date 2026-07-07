@@ -85,11 +85,20 @@ export async function renderHome(ctx) {
 
   const pendentes = tasks.filter((t) => !t.done);
   const atrasadas = pendentes.filter((t) => t.due_date && t.due_date < hoje);
-  const prazos = pendentes.filter((t) => t.area === "profissional" && t.due_date && t.due_date <= em7 &&
-    (t.priority === "alta" || t.process_id || /prazo|⏰/i.test(t.title || "")));
-  const prazosHoje = prazos.filter((t) => t.due_date <= hoje);
+  // Prazo = tarefa de trabalho com cara de prazo processual. Separamos os prazos
+  // das tarefas comuns para o painel "Hoje" não contar um como o outro.
+  const ehPrazo = (t) => t.area === "profissional" && t.due_date &&
+    (t.priority === "alta" || t.process_id || /prazo|⏰|contrarraz|contesta|responder|vencimento/i.test((t.title || "") + " " + (t.description || "")));
+  const todosPrazos = pendentes.filter(ehPrazo);
+  const tarefas = pendentes.filter((t) => !ehPrazo(t));        // tarefas de verdade (sem prazos)
+  const prazos = todosPrazos.filter((t) => t.due_date <= em7); // prazos dos próximos 7 dias (inclui atrasados)
+  const prazosHoje = todosPrazos.filter((t) => t.due_date <= hoje);
+  const prazosVencemHoje = todosPrazos.filter((t) => t.due_date === hoje);
   const lembretesHoje = reminders.filter((r) => r.remind_on === hoje);
   const compromissosHoje = pendentes.filter((t) => t.due_date === hoje && t.due_time).length + lembretesHoje.length;
+  // "Hoje" mostra SÓ o que vence hoje: prazos, tarefas e lembretes/eventos do dia.
+  const tarefasHoje = tarefas.filter((t) => t.due_date === hoje);
+  const vencemHoje = pendentes.filter((t) => t.due_date === hoje).length + lembretesHoje.length;
   const audiencias = pendentes.filter((t) => t.due_date && t.due_date >= hoje && t.due_date <= em30 &&
     /audi[êe]nc/i.test((t.title || "") + " " + (t.description || "")))
     .sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
@@ -108,7 +117,7 @@ export async function renderHome(ctx) {
   const resumoBits = [];
   if (prazosHoje.length) resumoBits.push(plural(prazosHoje.length, "prazo vencendo hoje", "prazos vencendo hoje"));
   if (compromissosHoje) resumoBits.push(plural(compromissosHoje, "compromisso hoje", "compromissos hoje"));
-  if (pendentes.length) resumoBits.push(plural(pendentes.length, "tarefa pendente", "tarefas pendentes"));
+  if (tarefas.length) resumoBits.push(plural(tarefas.length, "tarefa pendente", "tarefas pendentes"));
   const resumoLinha = resumoBits.length ? "Você tem " + resumoBits.join(", ") + "." : "Tudo em dia por aqui. ✨";
 
   // ---- cabeçalho ----
@@ -153,7 +162,7 @@ export async function renderHome(ctx) {
 
   // ---- sugestões inteligentes ----
   const sugLinhas = [];
-  if (pendentes.length) sugLinhas.push(plural(pendentes.length, "tarefa pendente", "tarefas pendentes"));
+  if (tarefas.length) sugLinhas.push(plural(tarefas.length, "tarefa pendente", "tarefas pendentes"));
   if (atrasadas.length) sugLinhas.push(plural(atrasadas.length, "tarefa atrasada", "tarefas atrasadas"));
   if (prazosHoje.length) sugLinhas.push(plural(prazosHoje.length, "prazo vencendo hoje", "prazos vencendo hoje"));
   else if (prazos.length) sugLinhas.push(plural(prazos.length, "prazo nesta semana", "prazos nesta semana"));
@@ -180,9 +189,14 @@ export async function renderHome(ctx) {
     el("span", { class: "hoje-lbl" }, label),
     sub ? el("span", { class: "hoje-sub" }, sub) : null,
   ]);
+  const vencemHojeSub = [
+    prazosVencemHoje.length ? plural(prazosVencemHoje.length, "prazo") : null,
+    tarefasHoje.length ? plural(tarefasHoje.length, "tarefa") : null,
+    lembretesHoje.length ? plural(lembretesHoje.length, "lembrete") : null,
+  ].filter(Boolean).join(" · ") || "para hoje";
   const hojeCards = [
-    pendentes.length ? hcard(pendentes.length, "Tarefas pendentes", atrasadas.length ? plural(atrasadas.length, "atrasada") : "", () => ctx.navigate(areaMaisPendente)) : null,
-    prazos.length ? hcard(prazos.length, "Prazos processuais", prazosHoje.length ? plural(prazosHoje.length, "vence hoje", "vencem hoje") : "próximos 7 dias", () => ctx.navigate("professional")) : null,
+    vencemHoje ? hcard(vencemHoje, "Vencem hoje", vencemHojeSub, () => ctx.navigate("agenda")) : null,
+    prazos.length ? hcard(prazos.length, "Prazos processuais", prazosVencemHoje.length ? plural(prazosVencemHoje.length, "vence hoje", "vencem hoje") : "próximos 7 dias", () => ctx.navigate("professional")) : null,
     compromissosHoje ? hcard(compromissosHoje, "Compromissos", "para hoje", () => ctx.navigate("agenda")) : null,
     audiencias.length ? hcard(audiencias.length, "Audiências", "próxima: " + prettyDate(audiencias[0].due_date), () => ctx.navigate("agenda")) : null,
     pubsNovas ? hcard(pubsNovas, "Publicações", "movimentações recentes", () => ctx.navigate("publicacoes")) : null,

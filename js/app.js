@@ -274,7 +274,7 @@ function taskRow(t, compact = false, back) {
   else if (t.due_time) meta.push("🕐 " + t.due_time);
   if (t.client_id || t.process_id) meta.push((t.area === "pessoal") ? "🔒 vínculo particular" : "🔗 cliente");
   const grow = el("div", { class: "grow", onclick: () => openTask(t, back) }, [
-    el("div", { class: "t1" }, t.title),
+    el("div", { class: "t1" }, tituloTarefa(t)),
     descVisivel(t.description) ? el("div", { class: "t2" }, descVisivel(t.description)) : null,
     meta.length ? el("div", { class: "t2", style: late ? "color:var(--red)" : "" }, meta.join(" · ")) : null,
   ]);
@@ -520,7 +520,7 @@ async function openTask(tOrId, backFn) {
     el("button", { class: "back-btn", onclick: back }, "← Voltar"),
     el("div", { class: "section-head", style: "align-items:flex-start" }, [
       el("div", {}, [
-        el("h1", { class: "page-title", style: "font-size:19px" }, t.title),
+        el("h1", { class: "page-title", style: "font-size:19px" }, tituloTarefa(t)),
         el("p", { class: "page-sub" }, pessoal ? "🧑 Tarefa pessoal" : "💼 Tarefa de trabalho"),
       ]),
       el("span", { class: "badge " + statusCls }, statusTxt),
@@ -598,7 +598,7 @@ async function renderAgenda() {
   const ev = {};
   const allEvents = [];
   const push = (iso, e) => { if (!iso) return; const rec = { ...e, date: iso }; (ev[iso] = ev[iso] || []).push(rec); allEvents.push(rec); };
-  tasks.filter((t) => !t.done).forEach((t) => push(t.due_date, { kind: t.area === "profissional" ? "work" : "personal", title: t.title, time: t.due_time, start: minutesOf(t.due_time), allDay: !t.due_time, raw: t }));
+  tasks.filter((t) => !t.done).forEach((t) => push(t.due_date, { kind: t.area === "profissional" ? "work" : "personal", title: tituloTarefa(t), time: t.due_time, start: minutesOf(t.due_time), allDay: !t.due_time, raw: t }));
   reminders.forEach((r) => push(r.remind_on, { kind: "reminder", title: r.title, time: null, start: null, allDay: true, raw: r }));
 
   const { year, month } = agendaState;
@@ -1263,6 +1263,47 @@ function tituloCase(s) {
   return s.toLowerCase().split(/\s+/).map((w, i) => (i > 0 && small.has(w)) ? w : (w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
 }
 
+// Um prazo é uma tarefa de TRABALHO com cara de prazo processual (marcador de
+// importação, "Vencimento:", "N dias" com data etc.).
+function ehPrazoTask(t) {
+  if (!t || (t.area || "pessoal") !== "profissional") return false;
+  const ti = t.title || "", d = t.description || "";
+  return /^⏰/.test(ti) || /\[eproc-prazo:/.test(d) || /vencimento:/i.test(d)
+    || (!!t.due_date && /\b\d+\s*dias?\b/i.test(d));
+}
+
+// Título de exibição padronizado dos prazos — recalculado NA HORA (não altera o
+// que está salvo). Formato: "{N} dias · vence {dd/mm/aaaa} · {cliente} · {tipo}".
+// Assim os prazos já cadastrados também passam a aparecer no formato novo.
+// Tarefas comuns passam intactas.
+function tituloTarefa(t) {
+  if (!ehPrazoTask(t)) return (t && t.title) || "";
+  const ti = t.title || "", d = t.description || "";
+  // Título já no formato padronizado ("N dias · vence …", com ou sem ⏰ antigo) —
+  // caso da importação da planilha: mantém como está (só tira ⏰ e marcador).
+  if (/^(?:⏰\s*)?(?:\d+\s*dias?|Prazo)\s*·\s*vence\b/i.test(ti)) return descVisivel(ti).replace(/^⏰\s*/, "").trim();
+
+  const dias = ((d.match(/(\d+)\s*dias?/i) || ti.match(/(\d+)\s*dias?/i) || [])[1]) || "";
+  const venc = t.due_date ? prettyDate(t.due_date)
+    : ((d.match(/vencimento:\s*(\d{2}\/\d{2}\/\d{4})/i) || [])[1] || "");
+
+  // Cliente = parte representada (o primeiro papel ativo citado na descrição).
+  let cliente = "";
+  const mc = d.match(/(?:exequentes?|requerentes?|reclamantes?|autor(?:es|as|a)?|outorgantes?)\s*:?\s*([^\n(]+?)(?:\s*\(|\s+x\s+|[.\n]|$)/i);
+  if (mc && mc[1]) cliente = tituloCase(mc[1].trim());
+
+  // Tipo/classe da ação: da descrição ("Classe:") ou do próprio título.
+  let tipo = "";
+  const mCl = d.match(/classe:\s*([^\n]+)/i);
+  if (mCl) tipo = mCl[1].trim();
+  else { const mt = ti.match(/[—–-]\s*([^:(\n]+)/); if (mt) tipo = mt[1].trim(); }
+  tipo = tipo.replace(/\s*\(proc.*$/i, "").trim();
+  if (tipo && !/[a-zà-ÿ]/.test(tipo)) tipo = tituloCase(tipo); // só normaliza CAIXA ALTA
+
+  const out = [dias ? dias + " dias" : null, venc ? "vence " + venc : null, cliente || null, tipo || null].filter(Boolean).join(" · ");
+  return out || ti;
+}
+
 async function importarPrazosFromAOA(aoa) {
   // Acha a linha de cabeçalho e mapeia as colunas por nome.
   let hi = -1; const H = {};
@@ -1322,10 +1363,10 @@ async function importarPrazosFromAOA(aoa) {
     if (!proc) semProc++;
     if (!clientId) semCli++;
 
-    // Título: ⏰ {dias} dias · vence {data final} · {cliente} · {tipo do processo}
+    // Título: {dias} dias · vence {data final} · {cliente} · {tipo do processo}
     const clienteNome = clientId ? (clients.find((c) => c.id === clientId)?.nome || "") : "";
     const titulo = [
-      "⏰ " + (dias ? dias + " dias" : "Prazo"),
+      dias ? dias + " dias" : "Prazo",
       dueISO ? "vence " + prettyDate(dueISO) : null,
       clienteNome || null,
       tituloCase(classe || assunto) || null,
