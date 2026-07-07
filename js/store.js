@@ -22,7 +22,9 @@ import {
   localRows, saveRow, deleteRow, replaceTable,
   enqueue, queueItems, dequeue, updateQueueItem,
   logChange, getMeta, setMeta, wipeLocal, nowISO,
+  dumpRows, loadRows,
 } from "./local.js";
+import { securityEnabled, unlocked, provisionConfig, unlock, clearConfig } from "./security.js";
 
 let sb = null;
 let currentUser = null; // { id, email } — usado para carimbar user_id offline
@@ -168,7 +170,11 @@ async function enqueueOp(op, table, id) {
 // ================================================================
 //  LEITURA
 // ================================================================
+// Proteção local ligada mas travada: nenhum dado deve ser lido/escrito/cifrado.
+const locked = () => securityEnabled() && !unlocked();
+
 export async function list(table, { orderBy = "created_at", asc = false } = {}) {
+  if (locked()) return []; // app fica atrás da tela de bloqueio; salvaguarda
   // Sempre que possível, baixa o fresco da nuvem e concilia com o local.
   if (sb && status.online) {
     try {
@@ -263,7 +269,7 @@ let flushing = false;
 function flushSoon() { if (sb && status.online) syncNow().catch(() => {}); }
 
 export async function syncNow() {
-  if (flushing || !sb || !status.online) return;
+  if (flushing || !sb || !status.online || locked()) return; // travado: não cifra/decifra em 2º plano
   const items = await queueItems();
   if (!items.length) { status.error = false; emitStatus(); return; }
 
@@ -332,5 +338,37 @@ export async function pendingCount() { return (await queueItems()).length; }
 
 // Limpa o banco local (logout / "apagar dados deste aparelho").
 export async function clearLocal() { await wipeLocal(); currentUser = null; await updatePending(); }
+
+// ================================================================
+//  SEGURANÇA LOCAL — liga/desliga/troca o PIN, recifrando o espelho.
+//  (A leitura/escrita cifrada é transparente em local.js; aqui só
+//  orquestramos a MIGRAÇÃO dos dados que já existem no aparelho.)
+// ================================================================
+
+// Ativa a proteção: cria a config para o PIN e RECIFRA tudo o que já existe.
+export async function enableSecurity(pin, opts = {}) {
+  if (securityEnabled()) throw new Error("A proteção já está ativa.");
+  const snapshot = await dumpRows();      // dados atuais (em claro)
+  await provisionConfig(pin, opts);       // agora ligado + destravado (chave na memória)
+  await loadRows(snapshot);               // regrava tudo cifrado
+}
+
+// Desativa: confere o PIN, decifra tudo e regrava em texto normal.
+export async function disableSecurity(pin) {
+  if (!securityEnabled()) return;
+  await unlock(pin);                      // valida o PIN e destrava
+  const snapshot = await dumpRows();      // decifra tudo
+  clearConfig();                          // desliga a proteção (chave sai da memória)
+  await loadRows(snapshot);               // regrava em claro
+}
+
+// Troca o PIN: decifra com o antigo, recifra com o novo.
+export async function changePin(oldPin, newPin, opts = {}) {
+  if (!securityEnabled()) throw new Error("A proteção não está ativa.");
+  await unlock(oldPin);                   // valida o PIN atual
+  const snapshot = await dumpRows();      // decifra com a chave antiga
+  await provisionConfig(newPin, opts);    // nova chave/salt/verificador na memória
+  await loadRows(snapshot);               // regrava cifrado com a nova chave
+}
 
 export { TABLES };

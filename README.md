@@ -275,6 +275,19 @@ Além do selo do topo, cada **item** criado/alterado offline mostra um **pontinh
 
 > 🔒 Os dados locais deste aparelho são **apagados ao sair** (logout) — desde que nada esteja pendente de sincronização; se houver pendências, elas ficam guardadas até você entrar de novo e a conexão voltar.
 
+### 🔐 Segurança local (bloqueio + criptografia)
+
+Como o app guarda dados sensíveis no aparelho (CPF, processos…), há uma proteção própria — **opcional** (menu ☰ → **Segurança**):
+
+- **Criptografia de verdade**: com a proteção ligada, cada registro do banco local é cifrado com **AES-GCM**. A chave **não fica salva** — é derivada do seu **PIN** (PBKDF2, 210 mil iterações) e vive só na memória enquanto o app está aberto/destravado. No disco, sem o PIN, os dados ficam ilegíveis.
+- **Bloqueio por PIN**: pede o PIN ao abrir o app.
+- **Expiração de sessão**: trava sozinho após um tempo sem uso (ajustável: 1–30 min).
+- **Registro de acessos**: guarda os desbloqueios e as tentativas falhas.
+- **Apagar dados deste aparelho**: remove o que está guardado localmente (o que já subiu para a nuvem continua lá).
+- **Reversível**: ativar recifra os dados existentes; desativar volta tudo a texto normal. **Esqueceu o PIN?** dá para remover a proteção e entrar de novo — os dados voltam da nuvem (o que estava só local e não sincronizado se perde, pois é criptografado).
+
+> Observação: a criptografia protege os **dados dos cadastros** (o banco local). A proteção é por aparelho — em cada aparelho você define (ou não) o seu PIN.
+
 ---
 
 ## 📲 Como usar no celular
@@ -306,6 +319,7 @@ js/store.js             # dados OFFLINE-FIRST (espelho local + fila de sincroniz
 js/local.js             # banco local do aparelho (IndexedDB): espelho, fila de sincronização e log
 js/actions.js           # fila de AÇÕES offline (WhatsApp/e-mail programados p/ quando a net voltar)
 js/search.js            # busca semântica local (sinônimos + tolerância a typo, offline)
+js/security.js          # segurança local: bloqueio por PIN + criptografia (AES-GCM/PBKDF2)
 js/auth.js              # login (entra offline pela última sessão salva)
 js/ui.js                # utilitários e gráfico
 js/capture.js           # captura rápida multi-tipo (Tarefa/Agenda/Nota/Cliente/Processo)

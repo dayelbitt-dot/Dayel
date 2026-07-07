@@ -162,6 +162,13 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
   color: var(--accent); box-shadow: var(--shadow-sm); line-height: 1; white-space: nowrap;
 }
 .actions-chip .ac-icon { font-size: 12px; }
+
+/* Tela de bloqueio (segurança local) — cobre o app inteiro */
+#lock-view {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-content: center;
+  background: radial-gradient(1200px 600px at 80% -10%, #efe6d6 0%, var(--bg) 55%);
+  padding: 20px;
+}
 .menu-btn {
   display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border);
   border-radius: 12px; padding: 9px 14px; font-weight: 700; font-size: 14px; color: var(--text);

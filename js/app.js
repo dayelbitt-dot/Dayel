@@ -1,6 +1,8 @@
 import { initSupabase, isCloud, list, insert, update, remove, initLocalData, setOnline, onStatus, getStatus, syncNow, pendingCount, clearLocal } from "./store.js";
 import { scheduleAction, listActions, removeAction, runAction, onActions, actionsCount, actionSummary, ACTION_META } from "./actions.js";
 import { filterRecords } from "./search.js";
+import { securityEnabled, unlocked, unlock, lock, startAutoLock, autolockMinutes, setAutolockMinutes, accessLogs, clearLogs, resetSecurity } from "./security.js";
+import { enableSecurity, disableSecurity, changePin } from "./store.js";
 
 // Texto pesquisável de cada registro (para a busca semântica local).
 const clientDoc = (c) => ({ title: c.nome, text: [c.cpf, c.rg, c.tel, c.email, c.endereco, c.area, c.origem, c.profissao, c.estado_civil, c.nacionalidade, c.obs].filter(Boolean).join(" ") });
@@ -39,15 +41,20 @@ async function boot() {
     cloudReady = false; // offline no boot — o app continua com os dados locais
   }
 
+  // Proteção local ativa? Exige o PIN ANTES de tocar nos dados do aparelho.
+  if (securityEnabled()) { $("#splash").classList.add("hidden"); await showLockOverlay(); }
+
   // Prepara o banco local (espelho, fila de sincronização, snapshot da sessão).
   try { await initLocalData(); } catch {}
   wireConnectivity();
+  wireAutoLock();
 
   const session = await getSession();
   $("#splash").classList.add("hidden");
 
   if (session) {
     showApp(session);
+    if (securityEnabled()) startAutoLock();
     // Assim que estiver online, sobe o que ficou pendente e baixa novidades.
     if (cloudReady && navigator.onLine) syncNow().catch(() => {});
   } else if (isCloud() && !cloudReady && !navigator.onLine) {
@@ -195,6 +202,196 @@ function renderSyncPill(s) {
   pill.append(el("span", { class: "sync-dot" }, dot), el("span", { class: "sync-label" }, label));
 }
 
+// ==================== SEGURANÇA LOCAL: TELA DE BLOQUEIO ====================
+// Overlay que pede o PIN. Resolve a Promise quando destrava. Usado no boot e no
+// bloqueio automático (expiração de sessão).
+function showLockOverlay() {
+  return new Promise((resolve) => {
+    if ($("#lock-view")) return; // já aberto
+    let fails = 0;
+    const pin = el("input", { id: "lock-pin", type: "password", inputmode: "numeric", autocomplete: "off", placeholder: "PIN", maxlength: "12" });
+    const msg = el("p", { class: "auth-msg" });
+    const entrar = el("button", { class: "btn btn-primary", type: "submit" }, "Entrar");
+    const form = el("form", { class: "auth-card", style: "max-width:340px" }, [
+      el("div", { class: "brand", style: "justify-content:center" }, [el("span", { class: "brand-mark" }, "✦"), " Meu Assistente"]),
+      el("p", { class: "auth-sub", style: "text-align:center" }, "🔒 App protegido. Digite seu PIN para continuar."),
+      el("label", {}, ["PIN", pin]),
+      entrar, msg,
+    ]);
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      msg.className = "auth-msg"; msg.textContent = "Verificando…"; entrar.disabled = true;
+      try {
+        await unlock(pin.value);
+        overlay.remove();
+        resolve();
+      } catch {
+        fails++;
+        pin.value = "";
+        const wait = fails >= 3 ? Math.min(30, 2 ** (fails - 2)) : 0; // trava progressiva
+        msg.className = "auth-msg error";
+        msg.textContent = wait ? `PIN incorreto. Aguarde ${wait}s e tente de novo.` : "PIN incorreto. Tente de novo.";
+        if (wait) { setTimeout(() => { entrar.disabled = false; msg.textContent = ""; msg.className = "auth-msg"; pin.focus(); }, wait * 1000); }
+        else { entrar.disabled = false; pin.focus(); }
+      }
+    };
+    // Esqueci o PIN: sem ele os dados cifrados são irrecuperáveis LOCALMENTE
+    // (o que está na nuvem continua salvo). Apaga o local, remove a proteção e
+    // sai — ao entrar de novo, os dados são rebaixados da Supabase.
+    const sair = el("button", { class: "btn btn-ghost btn-sm", style: "margin-top:14px", onclick: async () => {
+      if (!confirm("Esqueceu o PIN? Podemos remover a proteção deste aparelho e sair. Os dados guardados só aqui (ainda não sincronizados) serão perdidos; o que está na nuvem continua salvo e volta ao entrar de novo.")) return;
+      try { await clearLocal(); } catch {}
+      resetSecurity();
+      try { await signOut(); } catch {}
+      location.reload();
+    } }, "Esqueci o PIN / Sair" );
+    const overlay = el("section", { id: "lock-view", class: "auth-view" }, [el("div", {}, [form, el("div", { style: "text-align:center" }, sair)])]);
+    document.body.append(overlay);
+    setTimeout(() => pin.focus(), 60);
+  });
+}
+
+// Bloqueio automático: quando a sessão expira (inatividade), mostra a tela de
+// bloqueio por cima do app; ao destravar, recarrega a tela atual (os dados
+// voltam a ficar acessíveis) e rearma o cronômetro.
+function wireAutoLock() {
+  if (window.__lockWired) return;
+  window.__lockWired = true;
+  window.addEventListener("assist:lock", () => {
+    if ($("#lock-view")) return;
+    showLockOverlay().then(() => { startAutoLock(); navigate(state.route); });
+  });
+}
+
+// ==================== SEGURANÇA LOCAL: TELA DE CONFIGURAÇÃO ====================
+async function renderSecurity() {
+  removeFab();
+  const main = $("#main");
+  main.innerHTML = "";
+  const ativo = securityEnabled();
+  const head = el("div", {}, [el("h1", { class: "page-title" }, "Segurança do aparelho"), el("p", { class: "page-sub" }, "Bloqueio por PIN e criptografia dos dados guardados neste aparelho.")]);
+
+  const statusCard = el("div", { class: "card" }, [
+    el("div", { class: "card-title" }, ativo ? "🔒 Proteção ativa" : "🔓 Proteção desativada"),
+    el("p", { class: "t2", style: "margin:4px 0 12px" }, ativo
+      ? `Os dados deste aparelho estão criptografados. O app bloqueia sozinho após ${autolockMinutes()} min sem uso.`
+      : "Ative para exigir um PIN ao abrir o app e criptografar clientes, processos, tarefas e notas guardados aqui."),
+    ativo ? acoesAtivo() : el("button", { class: "btn btn-primary", onclick: modalAtivar }, "Ativar proteção"),
+  ]);
+
+  main.append(head, statusCard);
+  if (ativo) main.append(cardAutolock(), cardLogs(), cardWipe());
+  else main.append(cardWipe());
+
+  function acoesAtivo() {
+    return el("div", { style: "display:flex; flex-wrap:wrap; gap:8px" }, [
+      el("button", { class: "btn btn-sm", onclick: () => lock("manual") }, "Bloquear agora"),
+      el("button", { class: "btn btn-sm", onclick: modalTrocarPin }, "Trocar PIN"),
+      el("button", { class: "btn btn-danger btn-sm", onclick: modalDesativar }, "Desativar proteção"),
+    ]);
+  }
+
+  function cardAutolock() {
+    const sel = el("select", { class: "form-control" });
+    [1, 2, 5, 10, 15, 30].forEach((m) => sel.append(el("option", { value: m, ...(m === autolockMinutes() ? { selected: "" } : {}) }, m + " min")));
+    sel.onchange = () => { setAutolockMinutes(sel.value); toast("Bloqueio automático: " + sel.value + " min."); };
+    return el("div", { class: "card" }, [el("div", { class: "card-title" }, "Bloqueio automático"), el("p", { class: "t2", style: "margin:4px 0 10px" }, "Trava sozinho após este tempo sem uso."), sel]);
+  }
+
+  function cardLogs() {
+    const logs = accessLogs().slice(0, 30);
+    const nome = (e) => ({ unlock: "Desbloqueio", autolock: "Bloqueio automático", lock: "Bloqueio", enable: "Proteção ativada", disable: "Proteção desativada" }[e] || e);
+    return el("div", { class: "card" }, [
+      el("div", { class: "section-head", style: "margin-bottom:8px" }, [
+        el("div", { class: "card-title", style: "margin:0" }, "Registro de acessos"),
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => { clearLogs(); renderSecurity(); } }, "Limpar"),
+      ]),
+      logs.length
+        ? el("div", { class: "list" }, logs.map((l) => el("div", { class: "row" }, [
+            el("div", { class: "grow" }, [
+              el("div", { class: "t1" }, (l.ok ? "✓ " : "✕ ") + nome(l.event)),
+              el("div", { class: "t2" }, new Date(l.ts).toLocaleString("pt-BR")),
+            ]),
+          ])))
+        : el("div", { class: "empty" }, "Nenhum acesso registrado ainda."),
+    ]);
+  }
+
+  function cardWipe() {
+    return el("div", { class: "card" }, [
+      el("div", { class: "card-title" }, "Apagar dados deste aparelho"),
+      el("p", { class: "t2", style: "margin:4px 0 10px" }, "Remove os dados guardados localmente (o que estiver sincronizado permanece na nuvem). Útil em caso de perda do aparelho."),
+      el("button", { class: "btn btn-danger btn-sm", onclick: async () => {
+        if (!confirm("Apagar TODOS os dados locais deste aparelho? O que já subiu para a nuvem continua salvo lá.")) return;
+        await clearLocal(); toast("Dados locais apagados."); location.reload();
+      } }, "Apagar dados locais"),
+    ]);
+  }
+}
+
+// PIN novo (com confirmação) — usado para ativar e para trocar.
+function pinForm({ title, subtitle, withCurrent, onSubmit }) {
+  const atual = el("input", { type: "password", inputmode: "numeric", placeholder: "PIN atual", maxlength: "12" });
+  const novo = el("input", { type: "password", inputmode: "numeric", placeholder: "Novo PIN (mín. 4 dígitos)", maxlength: "12" });
+  const conf = el("input", { type: "password", inputmode: "numeric", placeholder: "Repita o novo PIN", maxlength: "12" });
+  const msg = el("p", { class: "auth-msg" });
+  const campos = [];
+  if (withCurrent) campos.push(el("label", {}, ["PIN atual", atual]));
+  campos.push(el("label", {}, ["Novo PIN", novo]), el("label", {}, ["Confirmar", conf]));
+  const form = el("form", {}, [
+    ...campos, msg,
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const n = novo.value.trim();
+    if (n.length < 4) { msg.className = "auth-msg error"; msg.textContent = "O PIN precisa de pelo menos 4 dígitos."; return; }
+    if (n !== conf.value.trim()) { msg.className = "auth-msg error"; msg.textContent = "Os PINs não conferem."; return; }
+    msg.className = "auth-msg"; msg.textContent = "Aguarde…";
+    try { await onSubmit({ current: atual.value, next: n }); closeModal(); }
+    catch (err) { msg.className = "auth-msg error"; msg.textContent = err?.message || "Não deu certo."; }
+  };
+  openModal(el("div", {}, [el("h3", {}, title), subtitle ? el("p", { class: "t2", style: "margin-top:-4px" }, subtitle) : null, form]));
+  setTimeout(() => (withCurrent ? atual : novo).focus(), 50);
+}
+
+function modalAtivar() {
+  pinForm({
+    title: "Ativar proteção", subtitle: "Escolha um PIN. Guarde-o bem: sem ele, os dados criptografados deste aparelho não podem ser lidos.",
+    withCurrent: false,
+    onSubmit: async ({ next }) => { await enableSecurity(next); toast("🔒 Proteção ativada. Seus dados agora ficam criptografados."); startAutoLock(); renderSecurity(); },
+  });
+}
+function modalTrocarPin() {
+  pinForm({
+    title: "Trocar PIN", withCurrent: true,
+    onSubmit: async ({ current, next }) => { await changePin(current, next); toast("PIN alterado."); renderSecurity(); },
+  });
+}
+function modalDesativar() {
+  const atual = el("input", { type: "password", inputmode: "numeric", placeholder: "PIN atual", maxlength: "12" });
+  const msg = el("p", { class: "auth-msg" });
+  const form = el("form", {}, [
+    el("p", { class: "t2" }, "Ao desativar, os dados voltam a ficar sem criptografia neste aparelho."),
+    el("label", {}, ["Confirme seu PIN", atual]), msg,
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-danger" }, "Desativar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    msg.className = "auth-msg"; msg.textContent = "Aguarde…";
+    try { await disableSecurity(atual.value); closeModal(); toast("Proteção desativada."); renderSecurity(); }
+    catch (err) { msg.className = "auth-msg error"; msg.textContent = err?.message || "PIN incorreto."; }
+  };
+  openModal(el("div", {}, [el("h3", {}, "Desativar proteção"), form]));
+  setTimeout(() => atual.focus(), 50);
+}
+
 // ==================== FILA DE AÇÕES OFFLINE ====================
 // Ações que dependem de internet (WhatsApp, e-mail…): online, executam
 // normalmente; offline, o app oferece DEIXAR PROGRAMADO para quando a conexão
@@ -311,7 +508,7 @@ function navigate(route) {
   const activeTab = (route === "contacts" || route === "birthdays") ? "personal" : route;
   $$(".drawer-item").forEach((b) => b.classList.toggle("active", b.dataset.route === activeTab));
   removeFab();
-  const routes = { home: renderHomePage, captura: renderCapturaPage, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, publicacoes: renderPublicacoes, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays };
+  const routes = { home: renderHomePage, captura: renderCapturaPage, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, publicacoes: renderPublicacoes, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays, seguranca: renderSecurity };
   (routes[route] || renderHomePage)();
 }
 

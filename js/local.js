@@ -12,6 +12,8 @@
 //  automaticamente — a mesma interface assíncrona continua valendo.
 // ================================================================
 
+import { securityEnabled, unlocked, encryptRecord, decryptRecord } from "./security.js";
+
 const DB_NAME = "assist-offline";
 const DB_VERSION = 1;
 // rows      → espelho das tabelas (uma linha por registro)
@@ -147,21 +149,46 @@ const rowKey = (table, id) => `${table}::${id}`;
 function stripMeta(rec) {
   // Devolve o registro "limpo" para o app, preservando os marcadores de
   // sincronização (_pending / _sync) que a interface usa para o selo visual.
-  const { _key, _table, ...rest } = rec;
+  const { _key, _table, _iv, _ct, ...rest } = rec;
   return rest;
+}
+
+const encActive = () => securityEnabled() && unlocked();
+
+// Monta o registro a ser gravado: cifrado (se a proteção estiver ligada e
+// destravada) ou em texto normal. Mantém _key/_table em claro (só indexam).
+async function toStored(table, record) {
+  if (encActive()) {
+    const { _iv, _ct } = await encryptRecord({ ...record });
+    return { _key: rowKey(table, record.id), _table: table, _iv, _ct };
+  }
+  return { ...record, _key: rowKey(table, record.id), _table: table };
+}
+// Volta um registro guardado para objeto usável (decifra se preciso).
+async function fromStored(r) {
+  if (r._ct) {
+    if (!unlocked()) return null;      // travado: não expõe nada
+    try { return await decryptRecord(r); } catch { return null; }
+  }
+  return stripMeta(r);
 }
 
 // Lê todas as linhas de UMA tabela do espelho local.
 export async function localRows(table) {
   const all = await getAll("rows");
-  return all.filter((r) => r._table === table).map(stripMeta);
+  const out = [];
+  for (const r of all) {
+    if (r._table !== table) continue;
+    const rec = await fromStored(r);
+    if (rec) out.push(rec);
+  }
+  return out;
 }
 
 // Substitui/insere UM registro no espelho.
 export async function saveRow(table, record) {
-  const value = { ...record, _key: rowKey(table, record.id), _table: table };
-  await put("rows", value);
-  return stripMeta(value);
+  await put("rows", await toStored(table, record));
+  return record;
 }
 
 // Remove UM registro do espelho.
@@ -171,6 +198,10 @@ export async function deleteRow(table, id) {
 
 // Substitui TODAS as linhas de uma tabela (usado ao baixar da nuvem).
 export async function replaceTable(table, records) {
+  // Pré-cifra fora da transação (cripto é assíncrona; não pode aguardar dentro
+  // de uma transação IndexedDB, que se fecha sozinha ao ceder o event loop).
+  const prepared = [];
+  for (const rec of records) prepared.push(await toStored(table, rec));
   try {
     const db = await openDB();
     await new Promise((res, rej) => {
@@ -179,16 +210,36 @@ export async function replaceTable(table, records) {
       const all = os.getAll();
       all.onsuccess = () => {
         for (const r of all.result || []) if (r._table === table) os.delete(r._key);
-        for (const rec of records) os.put({ ...rec, _key: rowKey(table, rec.id), _table: table });
+        for (const value of prepared) os.put(value);
       };
       tx.oncomplete = () => res();
       tx.onerror = () => rej(tx.error);
     });
   } catch {
     const others = LS.read("rows").filter((r) => r._table !== table);
-    for (const rec of records) others.push({ ...rec, _key: rowKey(table, rec.id), _table: table });
+    for (const value of prepared) others.push(value);
     LS.write("rows", others);
   }
+}
+
+// ---- Migração de cripto (ligar/desligar/trocar PIN): despeja tudo em claro e
+// regrava conforme o estado atual (cifrado ou não). Exige estar destravado
+// quando os dados atuais estão cifrados. ----
+export async function dumpRows() {
+  const all = await getAll("rows");
+  const out = [];
+  for (const r of all) {
+    const rec = await fromStored(r);
+    if (rec) out.push({ table: r._table, record: rec });
+  }
+  return out;
+}
+export async function clearRows() {
+  try { await idbClear("rows"); } catch { LS.write("rows", []); }
+}
+export async function loadRows(items) {
+  await clearRows();
+  for (const it of items) await saveRow(it.table, it.record);
 }
 
 // ---------------------------------------------------------------

@@ -1,7 +1,7 @@
 // Service worker: estratégia "rede primeiro" para os arquivos do app.
 // Assim, com internet, o usuário SEMPRE recebe a versão mais nova;
 // sem internet, cai para o cache (funciona offline).
-const CACHE = "assistente-v45";
+const CACHE = "assistente-v46";
 // Bibliotecas externas que valem a pena guardar para o app abrir OFFLINE
 // (a lib da Supabase é importada de CDN; sem cache, o boot falharia sem net).
 const RUNTIME_CDN = /(^https:\/\/esm\.sh\/)|(cdn\.jsdelivr\.net)|(cdn\.skypack\.dev)/;
@@ -17,6 +17,7 @@ const ASSETS = [
   "./js/local.js",
   "./js/actions.js",
   "./js/search.js",
+  "./js/security.js",
   "./js/auth.js",
   "./js/config.js",
   "./js/nlp.js",
