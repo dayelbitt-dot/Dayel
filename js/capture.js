@@ -542,11 +542,24 @@ export function mountCapture(defaultArea, onDone = () => {}) {
       case "editar_processo": {
         // Corrige o cadastro de um processo (ex.: cliente trocado, partes erradas).
         if (!a.alvo_id) throw new Error("sem processo");
-        const procs = await list("processes");
+        const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
         const p = procs.find((x) => x.id === a.alvo_id);
         if (!p) throw new Error("processo não encontrado");
         const patch = {};
-        if ("cliente_id" in a) patch.client_id = (a.cliente_id && a.cliente_id !== "nenhum") ? a.cliente_id : null;
+        if ("cliente_id" in a) {
+          // NUNCA grava um id inválido (o banco rejeitaria e a ação toda falharia).
+          // Resolve o cliente: id existente → usa; nome → casa; senão → remove (null).
+          const cid = a.cliente_id;
+          const norm = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+          if (!cid || cid === "nenhum") patch.client_id = null;
+          else if (clients.some((c) => c.id === cid)) patch.client_id = cid;
+          else {
+            const alvo = norm(cid);
+            const achado = clients.find((c) => norm(c.nome) === alvo) ||
+              (alvo.length >= 4 ? clients.find((c) => norm(c.nome).includes(alvo)) : null);
+            patch.client_id = achado ? achado.id : null; // cliente não cadastrado → só remove o errado
+          }
+        }
         if (a.titulo) patch.nome = a.titulo;
         if (a.texto) patch.partes = a.texto;
         if (!Object.keys(patch).length) throw new Error("nada para alterar");
