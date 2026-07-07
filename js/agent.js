@@ -11,7 +11,9 @@ const cnjKey = (s) => { const d = (s || "").replace(/\D/g, ""); return d.length 
 
 export const friendlyErr = (e) =>
   e === "nao_instalada" ? "A IA ainda não foi ativada no servidor (veja o README, função “assistente”)."
-  : e === "offline" ? "Este recurso precisa da nuvem (Supabase) configurada."
+  : e === "offline" ? (navigator.onLine
+      ? "Este recurso precisa da nuvem (Supabase) configurada."
+      : "Você está offline. Posso criar tarefas, compromissos e notas, e abrir clientes/processos por comando — tudo com os dados deste aparelho. Para perguntas mais elaboradas, reconecte-se à internet.")
   : "Não consegui falar com a IA agora: " + e;
 
 // Retrato enxuto dos dados (com IDs) para a IA consultar e/ou agir.

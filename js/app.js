@@ -1,4 +1,4 @@
-import { initSupabase, isCloud, list, insert, update, remove } from "./store.js";
+import { initSupabase, isCloud, list, insert, update, remove, initLocalData, setOnline, onStatus, getStatus, syncNow, pendingCount, clearLocal } from "./store.js";
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
 import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast, asText } from "./ui.js";
 import { mountCapture } from "./capture.js";
@@ -24,23 +24,46 @@ let sessionEmail = "";
 
 // ==================== BOOTSTRAP ====================
 async function boot() {
+  // Tenta subir a biblioteca da nuvem. Se falhar (offline), NÃO trava o app:
+  // seguimos em MODO OFFLINE usando o banco local e a última sessão salva.
+  let cloudReady = false;
   try {
-    if (isCloud()) await initSupabase();
+    if (isCloud()) { await initSupabase(); cloudReady = true; }
   } catch (err) {
-    $("#splash").classList.add("hidden");
-    showAuth();
-    const msg = $("#auth-msg");
-    if (msg) { msg.className = "auth-msg error"; msg.textContent = "Não foi possível conectar à nuvem. Verifique sua internet e recarregue a página."; }
-    return;
+    cloudReady = false; // offline no boot — o app continua com os dados locais
   }
+
+  // Prepara o banco local (espelho, fila de sincronização, snapshot da sessão).
+  try { await initLocalData(); } catch {}
+  wireConnectivity();
 
   const session = await getSession();
   $("#splash").classList.add("hidden");
 
-  if (session) showApp(session);
-  else showAuth();
+  if (session) {
+    showApp(session);
+    // Assim que estiver online, sobe o que ficou pendente e baixa novidades.
+    if (cloudReady && navigator.onLine) syncNow().catch(() => {});
+  } else if (isCloud() && !cloudReady && !navigator.onLine) {
+    // Cloud configurada, sem internet e sem sessão salva: não dá para entrar.
+    showAuth();
+    const msg = $("#auth-msg");
+    if (msg) { msg.className = "auth-msg error"; msg.textContent = "Você está offline e ainda não entrou neste aparelho. Conecte-se à internet uma primeira vez para acessar sua conta."; }
+  } else {
+    showAuth();
+  }
 
   onAuthChange((s) => { if (s) showApp(s); else showAuth(); });
+}
+
+// Detecção online/offline: mantém o estado do store e dispara a sincronização
+// automática quando a internet volta.
+function wireConnectivity() {
+  if (window.__connWired) return;
+  window.__connWired = true;
+  window.addEventListener("online", () => { setOnline(true); toast("Conexão restabelecida. Sincronizando…"); });
+  window.addEventListener("offline", () => { setOnline(false); toast("Você está offline. As funções locais continuam disponíveis; as alterações serão sincronizadas quando a conexão voltar.", { duration: 7000 }); });
+  setOnline(navigator.onLine);
 }
 
 function showAuth() {
@@ -60,6 +83,7 @@ async function showApp(session) {
   sessionEmail = email;
   $("#user-chip").textContent = email;
   wireShell();
+  mountSyncPill();
   navigate(state.route);
   // Mantém o Google Agenda conectado sozinho (renova o token em segundo plano).
   try {
@@ -130,13 +154,54 @@ function traduzErro(err) {
   return err?.message || "Algo deu errado. Tente de novo.";
 }
 
+// ==================== SELO DE CONEXÃO / SINCRONIZAÇÃO ====================
+// Mostra, na barra do topo, o estado atual: Online · Offline · Sincronizando ·
+// N pendentes · Erro de sincronização. Um toque força a sincronização.
+let syncPillWired = false;
+function mountSyncPill() {
+  let pill = $("#sync-pill");
+  if (!pill) {
+    pill = el("button", { id: "sync-pill", class: "sync-pill", title: "Estado da conexão — toque para sincronizar" });
+    const spacer = $(".topbar-spacer");
+    if (spacer) spacer.replaceWith(pill); else $(".topbar")?.append(pill);
+  }
+  pill.onclick = () => { toast("Sincronizando…"); syncNow().catch(() => {}); };
+  if (!syncPillWired) { syncPillWired = true; onStatus(renderSyncPill); }
+  renderSyncPill(getStatus());
+}
+
+function renderSyncPill(s) {
+  const pill = $("#sync-pill");
+  if (!pill) return;
+  let cls = "sync-pill", label, dot = "●";
+  if (!s.online) { cls += " off"; label = "Offline"; }
+  else if (s.syncing) { cls += " syncing"; label = "Sincronizando…"; }
+  else if (s.error) { cls += " err"; label = "Erro de sincronização"; }
+  else if (s.pending > 0) { cls += " pending"; label = s.pending + " pendente" + (s.pending > 1 ? "s" : ""); }
+  else { cls += " ok"; label = "Online"; }
+  pill.className = cls;
+  pill.innerHTML = "";
+  pill.append(el("span", { class: "sync-dot" }, dot), el("span", { class: "sync-label" }, label));
+}
+
 // ==================== SHELL / ROUTER ====================
 function wireShell() {
   $("#menu-btn").onclick = openDrawer;
   const backdrop = $("#drawer-backdrop");
   backdrop.onclick = (e) => { if (e.target === backdrop) closeDrawer(); };
   $$(".drawer-item").forEach((b) => { b.onclick = () => { closeDrawer(); navigate(b.dataset.route); }; });
-  $("#logout-btn").onclick = async () => { closeDrawer(); await signOut(); if (!isCloud()) showAuth(); };
+  $("#logout-btn").onclick = async () => {
+    closeDrawer();
+    // Antes de sair, tenta subir o que estiver pendente para não perder nada.
+    try { if (navigator.onLine) await syncNow(); } catch {}
+    const pend = await pendingCount().catch(() => 0);
+    await signOut();
+    // Limpa os dados locais deste aparelho (privacidade), desde que nada tenha
+    // ficado por sincronizar — senão mantém para o dono recuperar no próximo login.
+    if (pend === 0) { try { await clearLocal(); } catch {} }
+    else toast("Há " + pend + " alteração(ões) ainda não sincronizada(s). Elas continuam salvas neste aparelho até você entrar de novo e a conexão voltar.", { duration: 8000 });
+    if (!isCloud()) showAuth();
+  };
 }
 
 // Menu lateral (☰): guarda toda a estrutura tradicional do sistema.

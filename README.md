@@ -242,6 +242,35 @@ funcionando normalmente.
 
 ---
 
+## 📴 Modo offline (funciona sem internet)
+
+O app tem uma **camada local** que deixa você continuar trabalhando mesmo **sem conexão**. A Supabase segue sendo o backend principal; o módulo offline é um complemento que **espelha** os dados no aparelho e **sincroniza sozinho** quando a internet volta.
+
+**O que funciona offline** (com os dados já sincronizados neste aparelho):
+
+- **Consultar e pesquisar** clientes, processos, tarefas, agenda, notas e contatos;
+- **Cadastrar, editar e apagar** — tudo grava na hora no aparelho;
+- **Assistente local** — a conversa da Home resolve, sem internet, comandos como *“crie uma tarefa para ligar para o João amanhã às 9h”*, *“abra o processo do Carlos”*, *“gere uma procuração para a Maria”* e *“quais tarefas eu tenho hoje?”*, operando **só sobre os dados locais**;
+- **Gerar documentos** (procuração/declaração) a partir dos modelos que já vêm no app.
+
+**Como aparece na tela** — na barra do topo há um **selo de estado**:
+
+| Selo | Significado |
+|------|-------------|
+| 🟢 **Online** | Conectado; tudo sincronizado |
+| ⚪ **Offline** | Sem internet — as funções locais seguem disponíveis |
+| 🔵 **Sincronizando…** | Subindo/baixando alterações |
+| 🟡 **N pendentes** | N alterações feitas offline aguardando subir (toque para forçar) |
+| 🔴 **Erro de sincronização** | Algo não subiu; toque para tentar de novo |
+
+**Como sincroniza** — cada alteração feita offline entra numa **fila de sincronização** (“pendente de sincronização”). Quando a conexão volta, o app **sobe as suas alterações** e depois **baixa** o que foi mudado em outros aparelhos (sincronização bidirecional). Em caso de conflito, vale a **alteração mais recente**, mantendo um **log local** de mudanças.
+
+**O que ainda precisa de internet** (fica avisado na hora): consulta a tribunais, atualização de movimentações, envio de e-mail/WhatsApp, emissão de boletos e a própria sincronização com a nuvem.
+
+> 🔒 Os dados locais deste aparelho são **apagados ao sair** (logout) — desde que nada esteja pendente de sincronização; se houver pendências, elas ficam guardadas até você entrar de novo e a conexão voltar.
+
+---
+
 ## 📲 Como usar no celular
 
 Depois de publicado (ex: GitHub Pages), abra o link no navegador do celular:
@@ -267,8 +296,9 @@ python3 -m http.server 8000
 index.html              # estrutura das telas
 css/styles.css          # visual
 js/config.js            # onde você cola as chaves do Supabase
-js/store.js             # dados (nuvem ou local)
-js/auth.js              # login
+js/store.js             # dados OFFLINE-FIRST (espelho local + fila de sincronização com a nuvem)
+js/local.js             # banco local do aparelho (IndexedDB): espelho, fila de sincronização e log
+js/auth.js              # login (entra offline pela última sessão salva)
 js/ui.js                # utilitários e gráfico
 js/capture.js           # captura rápida multi-tipo (Tarefa/Agenda/Nota/Cliente/Processo)
 js/nlp.js               # interpretador de linguagem natural (prazo, prioridade, área)
@@ -281,5 +311,5 @@ js/app.js               # telas e navegação
 supabase/schema.sql     # banco de dados
 supabase/functions/extrair/  # função de IA (chave da API fica no servidor)
 manifest.webmanifest    # configuração do PWA
-sw.js                   # funcionar offline
+sw.js                   # cache dos arquivos (abre offline; guarda também a lib da nuvem)
 ```

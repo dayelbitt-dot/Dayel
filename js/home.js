@@ -451,7 +451,9 @@ async function send(ctx) {
   // 2) IA na nuvem (com todo o contexto do escritório).
   thinking = true; paintChat(ctx);
   let r;
-  if (!assistEnabled()) r = { error: "offline" };
+  // Offline (ou nuvem desligada): não perde tempo tentando a IA da nuvem —
+  // cai direto na interpretação local (que roda sobre os dados do aparelho).
+  if (!assistEnabled() || !navigator.onLine) r = { error: "offline" };
   else {
     try {
       const snapshot = await buildSnapshot();
