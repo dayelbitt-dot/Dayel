@@ -6,8 +6,8 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 
 ## O que já tem
 
-- ✨ **Captura rápida multi-tipo** — escreva/fale/suba documentos, escolha **um ou vários destinos** (Tarefa, Agenda, Nota, Cliente, Processo) e o sistema cadastra tudo de uma vez
-- 🏠 **Início** — painel com resumo das tarefas do dia, pendências, lembretes e notas
+- 🏠 **Início com IA no centro** — a tela inicial é uma **conversa com o assistente** (estilo Claude/ChatGPT): saudação pelo horário, caixa para escrever/falar/anexar em linguagem natural (*“crie uma tarefa para amanhã às 14h”*, *“abra o processo 5001234”*, *“cadastre este cliente”*), **sugestões inteligentes** do dia e o painel **Hoje** com cartões clicáveis (tarefas, prazos, compromissos, audiências, publicações, aniversários). Todo o resto do sistema fica no **menu lateral (☰ Menu)** — nada foi removido
+- ✨ **Captura rápida multi-tipo** — escreva/fale/suba documentos, escolha **um ou vários destinos** (Tarefa, Agenda, Nota, Cliente, Processo) e o sistema cadastra tudo de uma vez (no menu ☰ → *Captura rápida*)
 - 🧑 **Pessoal** — tarefas, prioridades e prazos
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
 - 🔔 **Lembretes gerais** — tudo que você precisa lembrar, organizado por data (ordem cronológica), agrupado em Atrasados · Hoje · Próximos 7 dias · Mais adiante · Sem data
@@ -20,7 +20,7 @@ Visual em **tema claro**, otimizado para celular e computador.
 
 ### ✨ Captura rápida (texto, voz, arquivos e vários destinos)
 
-No topo do **Início** há uma caixa onde você pode:
+Na página **Captura rápida** (menu ☰) há uma caixa onde você pode:
 
 - **Escrever** em linguagem natural — ex: *"ligar para o cliente amanhã de manhã, urgente"*
 - **Falar** (🎤) — grava o áudio e transcreve para texto (reconhecimento de voz do navegador, em português)
@@ -147,20 +147,28 @@ repositório público.
 
 ---
 
-## 💬 Assistente por IA — perguntar e mandar fazer (na Captura rápida)
+## 💬 Assistente por IA — a conversa da tela inicial
 
-Na **Captura rápida** (tela Início), com a IA ligada, aparece o botão
-**🤖 Perguntar / Fazer**. Escreva em linguagem natural e a IA decide:
+A caixa de conversa do **Início** é o jeito principal de usar o app (e o botão
+**🤖 Perguntar / Fazer** da Captura rápida usa o mesmo assistente). Escreva em
+linguagem natural e a IA decide:
 
 - **Pergunta** (consulta seus dados) — ex.: *“qual o prazo do Luciano?”*,
   *“quantos processos de alimentos eu tenho?”*, *“tem tarefa atrasada da Cassiane?”*.
   A IA lê seus **clientes, processos, tarefas, notas e lembretes** e responde.
 - **Ordem** (executa, com confirmação) — ex.: *“crie a tarefa contestar até sexta,
   processo 5007764”*, *“marque o prazo do Paulo como feito”*, *“agende audiência dia
-  20 às 14h”*, *“anote que o cliente ligou”*. A IA mostra **o que vai fazer** e você
-  toca em **Confirmar** (com **Desfazer** depois). Ações suportadas: criar tarefa,
-  compromisso de agenda, lembrete e nota; concluir/reabrir tarefa; lançar andamento
-  no processo; excluir um registro.
+  20 às 14h”*, *“cadastre a cliente Maria, CPF…”*, *“anote que o cliente ligou”*.
+  A IA mostra **o que vai fazer** e você toca em **Confirmar** (com **Desfazer**
+  depois). Ações suportadas: criar tarefa, compromisso de agenda, lembrete, nota,
+  **cliente** e **processo**; concluir/reabrir tarefa; lançar andamento no processo;
+  corrigir cadastro de processo; excluir um registro.
+- **Navegação** (executa na hora, sem confirmação) — ex.: *“abra o processo
+  5001234”*, *“me mostre a agenda”*, *“abrir a pasta da Liz”*, *“ligue para o
+  Carlos”*, *“mande um WhatsApp para a Ana avisando do prazo”*. Abrir telas e
+  registros não altera nada, então acontece imediatamente — comandos simples de
+  abrir (*“abrir agenda”*, *“abra o processo 5001234”*) funcionam **até sem IA/nuvem**,
+  interpretados no próprio aparelho.
 
 Os dados **não saem do seu navegador para nenhuma IA de terceiros sem passar pelo
 seu servidor**: o app envia um retrato dos seus dados para a **sua** função do

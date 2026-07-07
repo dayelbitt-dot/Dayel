@@ -7,10 +7,13 @@ import { extractTextFromFile } from "./files.js";
 import { extractClient } from "./extract.js";
 import { aiEnabled, aiExtract } from "./ai.js";
 import { DOCS, gerarDocumentos } from "./docs.js";
+import { renderHome } from "./home.js";
+import { rotaDePagina } from "./agent.js";
 import * as gcal from "./gcal.js";
 import * as gmail from "./gmail.js";
 
-let state = { route: "dashboard" };
+let state = { route: "home" };
+let sessionEmail = "";
 
 // ==================== BOOTSTRAP ====================
 async function boot() {
@@ -47,6 +50,7 @@ async function showApp(session) {
   $("#auth-view").classList.add("hidden");
   $("#app").classList.remove("hidden");
   const email = session?.user?.email || "modo local";
+  sessionEmail = email;
   $("#user-chip").textContent = email;
   wireShell();
   navigate(state.route);
@@ -121,20 +125,45 @@ function traduzErro(err) {
 
 // ==================== SHELL / ROUTER ====================
 function wireShell() {
-  $$(".tabbar-btn").forEach((b) =>
-    b.addEventListener("click", () => navigate(b.dataset.route))
-  );
-  $("#logout-btn").onclick = async () => { await signOut(); if (!isCloud()) showAuth(); };
+  $("#menu-btn").onclick = openDrawer;
+  const backdrop = $("#drawer-backdrop");
+  backdrop.onclick = (e) => { if (e.target === backdrop) closeDrawer(); };
+  $$(".drawer-item").forEach((b) => { b.onclick = () => { closeDrawer(); navigate(b.dataset.route); }; });
+  $("#logout-btn").onclick = async () => { closeDrawer(); await signOut(); if (!isCloud()) showAuth(); };
+}
+
+// Menu lateral (☰): guarda toda a estrutura tradicional do sistema.
+let drawerTimer = null;
+function openDrawer() {
+  clearTimeout(drawerTimer);
+  const b = $("#drawer-backdrop");
+  b.classList.remove("hidden");
+  void b.offsetWidth; // força o navegador a "ver" o estado fechado → a animação de abrir toca
+  b.classList.add("open");
+  document.body.style.overflow = "hidden"; // a página não rola atrás do menu
+  if (!window.__drawerEscWired) {
+    window.__drawerEscWired = true;
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+  }
+}
+function closeDrawer() {
+  const b = $("#drawer-backdrop");
+  if (b.classList.contains("hidden")) return;
+  b.classList.remove("open");
+  document.body.style.overflow = "";
+  clearTimeout(drawerTimer);
+  drawerTimer = setTimeout(() => b.classList.add("hidden"), 220);
 }
 
 function navigate(route) {
+  if (route === "dashboard") route = "home"; // nome antigo da rota do Início
   state.route = route;
   // Contatos e Aniversários vivem "dentro" da aba Pessoal — mantêm ela destacada.
   const activeTab = (route === "contacts" || route === "birthdays") ? "personal" : route;
-  $$(".tabbar-btn").forEach((b) => b.classList.toggle("active", b.dataset.route === activeTab));
+  $$(".drawer-item").forEach((b) => b.classList.toggle("active", b.dataset.route === activeTab));
   removeFab();
-  const routes = { dashboard: renderDashboard, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, publicacoes: renderPublicacoes, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays };
-  (routes[route] || renderDashboard)();
+  const routes = { home: renderHomePage, captura: renderCapturaPage, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, publicacoes: renderPublicacoes, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays };
+  (routes[route] || renderHomePage)();
 }
 
 function removeFab() { const f = $(".fab"); if (f) f.remove(); }
@@ -144,97 +173,42 @@ function addFab(onClick) {
 }
 function loading() { $("#main").innerHTML = '<div class="empty">Carregando…</div>'; }
 
-// ==================== DASHBOARD ====================
-async function renderDashboard() {
-  loading();
-  const [tasks, notes, reminders] = await Promise.all([
-    list("tasks", { orderBy: "created_at", asc: true }),
-    list("notes"),
-    list("reminders"),
-  ]);
+// ==================== INÍCIO (Home com IA no centro) ====================
+// A Home nova vive no home.js: saudação, conversa com o assistente (que responde
+// E executa), sugestões inteligentes e o painel "Hoje". Aqui só passamos o
+// contexto de navegação para os cartões e as ações da IA.
+function renderHomePage() {
+  renderHome({
+    email: sessionEmail,
+    navigate,
+    rotaAtual: () => state.route,
+    openProcess: (id) => openProcess(id, () => navigate("home")),
+    openClient: (id) => openClient(id),
+  });
+}
 
-  const today = todayISO();
-  const pending = tasks.filter((t) => !t.done);
-  const dueToday = pending.filter((t) => t.due_date === today);
-  const overdue = pending.filter((t) => t.due_date && t.due_date < today);
-  const personalOpen = pending.filter((t) => (t.area || "pessoal") === "pessoal");
-  const workOpen = pending.filter((t) => t.area === "profissional");
-  const upcomingReminders = sortReminders(reminders).filter((r) => !r.remind_on || r.remind_on >= today).slice(0, 3);
+// Contexto que permite à IA dos chats navegar/abrir registros (ações "abrir_*").
+function acaoCtx() {
+  return {
+    abrirPagina: (p) => navigate(rotaDePagina(p)),
+    abrirProcesso: (id) => openProcess(id, () => navigate(state.route)),
+    abrirCliente: (id) => openClient(id),
+  };
+}
 
+// A Captura rápida multi-tipo (texto/voz/arquivos → tarefa, agenda, nota,
+// cliente e processo de uma vez) continua inteira — agora como página própria.
+function renderCapturaPage() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(
-    el("div", { class: "section-head" }, [
-      el("div", {}, [
-        el("h1", { class: "page-title" }, saudacao()),
-        el("p", { class: "page-sub" }, resumoLinha(pending.length, overdue.length)),
-      ]),
+    el("div", {}, [
+      el("h1", { class: "page-title" }, "Captura rápida"),
+      el("p", { class: "page-sub" }, "Escreva, fale ou anexe documentos — cadastre tarefa, agenda, nota, cliente e processo de uma vez"),
     ]),
-    captureCard(),
-    el("div", { class: "stat-grid" }, [
-      stat("Abertas", String(pending.length)),
-      stat("Atrasadas", String(overdue.length), overdue.length ? "neg" : ""),
-      stat("Concluídas", String(tasks.filter((t) => t.done).length), "pos"),
-    ]),
-    dashCard("Para hoje", "Ver tarefas", "personal",
-      dueToday.length || overdue.length
-        ? el("div", { class: "list" }, [
-            ...overdue.slice(0, 4).map((t) => taskRow(t, true)),
-            ...dueToday.slice(0, 4).map((t) => taskRow(t, true)),
-          ])
-        : el("div", { class: "empty" }, "Nada para hoje. Tudo em dia!")),
-    dashCard("Pessoal", "Ver tudo", "personal",
-      personalOpen.length
-        ? el("div", { class: "list" }, sortTasks(personalOpen).slice(0, 3).map((t) => taskRow(t, true)))
-        : el("div", { class: "empty" }, "Sem tarefas pessoais abertas.")),
-    dashCard("Trabalho", "Ver tudo", "professional",
-      workOpen.length
-        ? el("div", { class: "list" }, sortTasks(workOpen).slice(0, 3).map((t) => taskRow(t, true)))
-        : el("div", { class: "empty" }, "Sem tarefas de trabalho abertas.")),
-    dashCard("Lembretes", "Ver tudo", "reminders",
-      upcomingReminders.length
-        ? el("div", { class: "list" }, upcomingReminders.map((r) => reminderRow(r, true)))
-        : el("div", { class: "empty" }, "Nenhum lembrete próximo.")),
-    dashCard("Notas", "Ver tudo", "notes",
-      notes.length
-        ? el("div", { class: "list" }, notes.slice(0, 3).map((n) =>
-            el("div", { class: "row" }, [
-              el("div", { class: "grow" }, [
-                el("div", { class: "t1" }, n.title || "Sem título"),
-                n.body ? el("div", { class: "t2" }, n.body) : null,
-              ]),
-            ])))
-        : el("div", { class: "empty" }, "Nenhuma nota ainda.")),
+    mountCapture("pessoal", () => renderCapturaPage(), acaoCtx()),
   );
-}
-
-function resumoLinha(abertas, atrasadas) {
-  if (abertas === 0) return "Tudo em dia! Nenhuma tarefa aberta.";
-  const base = `${abertas} tarefa${abertas > 1 ? "s" : ""} aberta${abertas > 1 ? "s" : ""}`;
-  return atrasadas ? `${base} · ${atrasadas} atrasada${atrasadas > 1 ? "s" : ""}` : base;
-}
-
-function captureCard() {
-  // A captura multi-tipo cria tarefas, eventos de agenda, notas, clientes e
-  // processos (com vínculo automático). Só precisamos redesenhar o Início.
-  return mountCapture(state.route === "professional" ? "profissional" : "pessoal", () => renderDashboard());
-}
-
-function dashCard(title, linkLabel, route, body) {
-  return el("div", { class: "card" }, [
-    el("div", { class: "section-head", style: "margin-bottom:12px" }, [
-      el("div", { class: "card-title", style: "margin:0" }, title),
-      el("button", { class: "btn btn-ghost btn-sm", onclick: () => navigate(route) }, linkLabel),
-    ]),
-    body,
-  ]);
-}
-
-function saudacao() {
-  const h = new Date().getHours();
-  if (h < 12) return "Bom dia";
-  if (h < 18) return "Boa tarde";
-  return "Boa noite";
+  removeFab();
 }
 
 // ==================== TAREFAS (Pessoal / Profissional) ====================

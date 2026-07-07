@@ -10,8 +10,9 @@ import { parseNaturalTask, shortTitle, isLongText } from "./nlp.js";
 import { extractTextFromFile } from "./files.js";
 import { extractClient, extractClients, extractProcess, parseMoney } from "./extract.js";
 import { aiEnabled, aiExtract } from "./ai.js";
-import { list, insert, update, remove } from "./store.js";
+import { list, insert, remove } from "./store.js";
 import { assistEnabled, perguntar } from "./assist.js";
+import { buildSnapshot, executarAcao, friendlyErr } from "./agent.js";
 import * as gcal from "./gcal.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -86,7 +87,9 @@ function detectLinks(raw, clients, processes) {
 }
 
 // ============================================================
-export function mountCapture(defaultArea, onDone = () => {}) {
+// acaoCtx (opcional): { abrirPagina, abrirProcesso, abrirCliente } — permite à
+// IA do chat navegar/abrir registros (as ações "abrir_*" do agent.js).
+export function mountCapture(defaultArea, onDone = () => {}, acaoCtx = {}) {
   const selected = new Set(["tarefa"]);
   let typesTouched = false; // usuário mexeu manualmente nos destinos?
   let attachments = []; // {name,type,size,data,text}  (text = conteúdo lido, p/ preencher; não é salvo no registro)
@@ -478,128 +481,27 @@ export function mountCapture(defaultArea, onDone = () => {}) {
     }
   });
 
-  // ================= ASSISTENTE POR IA (pergunta ou ordem) =================
-  // Monta um retrato enxuto dos dados (com IDs) para a IA consultar e/ou agir.
-  async function buildSnapshot() {
-    const [clients, processes, tasks, notes, reminders] = await Promise.all([
-      list("clients"), list("processes"), list("tasks"), list("notes"), list("reminders"),
-    ]);
-    const short = (s, n = 200) => (s == null ? "" : String(s)).slice(0, n);
-    return {
-      hoje: todayISO(),
-      clientes: clients.map((c) => ({ id: c.id, nome: c.nome, cpf: c.cpf, tel: c.tel, email: c.email, area: c.area })),
-      processos: processes.map((p) => ({
-        id: p.id, num: p.num, nome: p.nome, tipo: p.tipo, vara: p.vara, tribunal: p.tribunal,
-        partes: p.partes, fase: p.fase, status: p.status, grau: p.grau, client_id: p.client_id,
-        andamentos: Array.isArray(p.andamentos) ? p.andamentos.slice(-3).map((a) => ({ data: a.data, texto: short(a.texto, 160) })) : [],
-      })),
-      tarefas: tasks.map((t) => ({
-        id: t.id, title: t.title, area: t.area, priority: t.priority, due_date: t.due_date,
-        due_time: t.due_time, done: t.done, client_id: t.client_id, process_id: t.process_id, description: short(t.description, 160),
-      })),
-      notas: notes.map((n) => ({ id: n.id, title: n.title, body: short(n.body, 300) })),
-      lembretes: reminders.map((r) => ({ id: r.id, title: r.title, remind_on: r.remind_on })),
-    };
-  }
-
-  // Executa UMA ação proposta pela IA e devolve como desfazê-la.
-  async function executarAcao(a) {
-    switch (a.tipo) {
-      case "criar_tarefa":
-      case "criar_agenda": {
-        const rec = await insert("tasks", {
-          title: a.titulo || a.texto || "(sem título)", area: a.area || "profissional",
-          priority: a.prioridade || "media", due_date: a.data || null, due_time: a.hora || null,
-          done: false, description: a.texto || null, client_id: a.cliente_id || null, process_id: a.processo_id || null,
-        });
-        return { undo: () => remove("tasks", rec.id) };
-      }
-      case "criar_lembrete": {
-        const rec = await insert("reminders", { title: a.titulo || a.texto || "Lembrete", body: a.texto || "", remind_on: a.data || null });
-        return { undo: () => remove("reminders", rec.id) };
-      }
-      case "criar_nota": {
-        const rec = await insert("notes", { title: a.titulo || "", body: a.texto || a.titulo || "" });
-        return { undo: () => remove("notes", rec.id) };
-      }
-      case "concluir_tarefa": {
-        if (!a.alvo_id) throw new Error("sem alvo");
-        await update("tasks", a.alvo_id, { done: true, done_at: new Date().toISOString() });
-        return { undo: () => update("tasks", a.alvo_id, { done: false, done_at: null }) };
-      }
-      case "reabrir_tarefa": {
-        if (!a.alvo_id) throw new Error("sem alvo");
-        await update("tasks", a.alvo_id, { done: false, done_at: null });
-        return { undo: () => update("tasks", a.alvo_id, { done: true }) };
-      }
-      case "adicionar_andamento": {
-        if (!a.processo_id) throw new Error("sem processo");
-        const procs = await list("processes");
-        const p = procs.find((x) => x.id === a.processo_id);
-        if (!p) throw new Error("processo não encontrado");
-        const ands = Array.isArray(p.andamentos) ? p.andamentos : [];
-        const novo = { data: a.data || todayISO(), hora: a.hora || "", texto: a.texto || a.resumo || "" };
-        await update("processes", a.processo_id, { andamentos: [...ands, novo] });
-        return { undo: () => update("processes", a.processo_id, { andamentos: ands }) };
-      }
-      case "editar_processo": {
-        // Corrige o cadastro de um processo (ex.: cliente trocado, partes erradas).
-        if (!a.alvo_id) throw new Error("sem processo");
-        const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
-        const p = procs.find((x) => x.id === a.alvo_id);
-        if (!p) throw new Error("processo não encontrado");
-        const patch = {};
-        if ("cliente_id" in a) {
-          // NUNCA grava um id inválido (o banco rejeitaria e a ação toda falharia).
-          // Resolve o cliente: id existente → usa; nome → casa; senão → remove (null).
-          const cid = a.cliente_id;
-          const norm = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
-          if (!cid || cid === "nenhum") patch.client_id = null;
-          else if (clients.some((c) => c.id === cid)) patch.client_id = cid;
-          else {
-            const alvo = norm(cid);
-            const achado = clients.find((c) => norm(c.nome) === alvo) ||
-              (alvo.length >= 4 ? clients.find((c) => norm(c.nome).includes(alvo)) : null);
-            patch.client_id = achado ? achado.id : null; // cliente não cadastrado → só remove o errado
-          }
-        }
-        if (a.titulo) patch.nome = a.titulo;
-        if (a.texto) patch.partes = a.texto;
-        if (!Object.keys(patch).length) throw new Error("nada para alterar");
-        const antes = {}; Object.keys(patch).forEach((k) => { antes[k] = p[k] ?? null; });
-        await update("processes", a.alvo_id, patch);
-        return { undo: () => update("processes", a.alvo_id, antes) };
-      }
-      case "excluir": {
-        if (!a.alvo_tabela || !a.alvo_id) throw new Error("sem alvo");
-        const rows = await list(a.alvo_tabela);
-        const old = rows.find((x) => x.id === a.alvo_id);
-        await remove(a.alvo_tabela, a.alvo_id);
-        return { undo: async () => { if (old) { const { id, user_id, created_at, ...rest } = old; await insert(a.alvo_tabela, rest); } } };
-      }
-      default:
-        throw new Error("ação não suportada: " + a.tipo);
-    }
-  }
-
   // ---------- IA CONVERSACIONAL (chat multi-turno) ----------
   // Você conversa, refina e a IA só EXECUTA quando você aprovar (o cartão de
   // ações continua). A conversa tem memória, então dá para dar vários comandos.
+  // buildSnapshot/executarAcao/friendlyErr vivem no agent.js (compartilhados com a Home).
   let chat = [];        // [{role:'user'|'assistant', text, acoes?, done?, doneMsg?, error?}]
   let thinking = false;
 
-  const friendlyErr = (e) =>
-    e === "nao_instalada" ? "A IA ainda não foi ativada no servidor (veja o README, função “assistente”)."
-    : e === "offline" ? "Este recurso precisa da nuvem (Supabase) configurada."
-    : "Não consegui falar com a IA agora: " + e;
-
   async function executarAcoes(m) {
-    const undos = []; let ok = 0, fail = 0;
+    const undos = []; const erros = []; let ok = 0, novoClienteId = null;
     for (const a of (m.acoes || [])) {
-      try { const u = await executarAcao(a); if (u) undos.push(u); ok++; } catch { fail++; }
+      // Cliente + processo criados na mesma leva → vincula ao cliente recém-criado.
+      if (a.tipo === "criar_processo" && novoClienteId && (!a.cliente_id || a.cliente_id === "nenhum")) a.cliente_id = novoClienteId;
+      try {
+        const u = await executarAcao(a, acaoCtx);
+        if (u) { undos.push(u); if (u.clientId) novoClienteId = u.clientId; }
+        ok++;
+      } catch (e) { erros.push(e?.message || "falhou"); }
     }
+    const fail = erros.length;
     m.done = true;
-    m.doneMsg = `✅ ${ok} açã${ok === 1 ? "o" : "ões"} feita${ok === 1 ? "" : "s"}${fail ? ` · ⚠️ ${fail} falhou` : ""}.`;
+    m.doneMsg = `✅ ${ok} açã${ok === 1 ? "o" : "ões"} feita${ok === 1 ? "" : "s"}${fail ? ` · ⚠️ ${fail} falhou (${erros[0]})` : ""}.`;
     renderChat();
     toast(m.doneMsg, {
       action: undos.length ? { label: "Desfazer", onClick: async () => { for (const u of undos.reverse()) { try { await u.undo(); } catch {} } m.done = false; m.doneMsg = null; renderChat(); toast("Desfeito."); } } : null,

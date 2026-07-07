@@ -30,6 +30,8 @@
       <symbol id="i-spark" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2c.55 4.3 1.7 5.45 6 6-4.3.55-5.45 1.7-6 6-.55-4.3-1.7-5.45-6-6 4.3-.55 5.45-1.7 6-6Z"/></symbol>
       <symbol id="i-cake" viewBox="0 0 24 24"><path d="M4 21h16M6 21v-6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6"/><path d="M5 15c1 .8 2 .8 3.5 0s2.5-.8 4 0 2.5.8 3.5 0"/><path d="M12 10V7"/><circle cx="12" cy="5.4" r="1"/></symbol>
       <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M4 7l8 6 8-6"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3.5L10.6 13.9M21 3.5l-6.5 17.9-3.9-7.8L2.8 9.7 21 3.5Z"/></symbol>
     </defs>
   </svg>
 
@@ -75,27 +77,38 @@
   <!-- App principal -->
   <div id="app" class="app hidden">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">✦</span> Meu Assistente</div>
-      <div class="topbar-actions">
-        <span id="user-chip" class="user-chip"></span>
-        <button id="logout-btn" class="icon-btn" title="Sair">⎋</button>
-      </div>
+      <button id="menu-btn" class="menu-btn" title="Abrir o menu" aria-label="Abrir o menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-menu"/></svg><span>Menu</span>
+      </button>
+      <div class="brand topbar-brand"><span class="brand-mark">✦</span> Meu Assistente</div>
+      <span class="topbar-spacer" aria-hidden="true"></span>
     </header>
 
     <main id="main" class="main"></main>
+  </div>
 
-    <nav class="tabbar">
-      <button class="tabbar-btn active" data-route="dashboard"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home"/></svg>Início</button>
-      <button class="tabbar-btn" data-route="agenda"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cal"/></svg>Agenda</button>
-      <button class="tabbar-btn" data-route="clients"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-users"/></svg>Clientes</button>
-      <button class="tabbar-btn" data-route="processes"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-scale"/></svg>Processos</button>
-      <button class="tabbar-btn" data-route="publicacoes"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mail"/></svg>Publicações oficiais</button>
-      <button class="tabbar-btn" data-route="docs"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-doc"/></svg>Documentos</button>
-      <button class="tabbar-btn" data-route="reminders"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bell"/></svg>Lembretes</button>
-      <button class="tabbar-btn" data-route="personal"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-user"/></svg>Pessoal</button>
-      <button class="tabbar-btn" data-route="professional"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-briefcase"/></svg>Trabalho</button>
-      <button class="tabbar-btn" data-route="notes"><svg class="tab-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-note"/></svg>Notas</button>
-    </nav>
+  <!-- Menu lateral: toda a estrutura tradicional do sistema -->
+  <div id="drawer-backdrop" class="drawer-backdrop hidden">
+    <aside id="drawer" class="drawer" aria-label="Menu do sistema">
+      <div class="drawer-head"><span class="brand"><span class="brand-mark">✦</span> Meu Assistente</span></div>
+      <nav class="drawer-nav">
+        <button class="drawer-item active" data-route="home"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home"/></svg>Início</button>
+        <button class="drawer-item" data-route="captura"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg>Captura rápida</button>
+        <button class="drawer-item" data-route="agenda"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cal"/></svg>Agenda</button>
+        <button class="drawer-item" data-route="clients"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-users"/></svg>Clientes</button>
+        <button class="drawer-item" data-route="processes"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-scale"/></svg>Processos</button>
+        <button class="drawer-item" data-route="publicacoes"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mail"/></svg>Publicações oficiais</button>
+        <button class="drawer-item" data-route="docs"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-doc"/></svg>Documentos</button>
+        <button class="drawer-item" data-route="reminders"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bell"/></svg>Lembretes</button>
+        <button class="drawer-item" data-route="personal"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-user"/></svg>Pessoal</button>
+        <button class="drawer-item" data-route="professional"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-briefcase"/></svg>Trabalho</button>
+        <button class="drawer-item" data-route="notes"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-note"/></svg>Notas</button>
+      </nav>
+      <div class="drawer-foot">
+        <span id="user-chip" class="user-chip"></span>
+        <button id="logout-btn" class="icon-btn" title="Sair">⎋</button>
+      </div>
+    </aside>
   </div>
 
   <!-- Modal genérico -->
