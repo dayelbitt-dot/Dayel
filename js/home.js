@@ -8,6 +8,7 @@ import { assistEnabled, perguntar } from "./assist.js";
 import { buildSnapshot, executarAcao, friendlyErr, rotaDePagina, acaoImediata } from "./agent.js";
 import { extractTextFromFile } from "./files.js";
 import { parseNaturalTask } from "./nlp.js";
+import * as gcal from "./gcal.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -22,6 +23,14 @@ let thinking = false;
 let attachments = [];       // {name, size, text} — conteúdo lido dos arquivos
 let ui = null;              // referências dos nós desta montagem
 let lastCtx = null;
+
+// ---- eventos do Google Agenda para a Home (cache que sobrevive à navegação) ----
+// Carregamos os compromissos de hoje em segundo plano (sem travar a tela) e
+// redesenhamos a Home quando chegam. Guardamos por dia para não rebuscar à toa.
+let googleEventos = [];     // eventos de hoje já mapeados (via gcal.listEvents)
+let googleLoadedDay = null; // ISO do dia já carregado
+let googleLoading = false;
+let googleSilentAt = 0;     // cooldown da reconexão silenciosa
 
 function loadChat() {
   try { const v = JSON.parse(localStorage.getItem(CHAT_KEY)); return Array.isArray(v) ? v : []; }
@@ -95,7 +104,10 @@ export async function renderHome(ctx) {
   const prazosHoje = todosPrazos.filter((t) => t.due_date <= hoje);
   const prazosVencemHoje = todosPrazos.filter((t) => t.due_date === hoje);
   const lembretesHoje = reminders.filter((r) => r.remind_on === hoje);
-  const compromissosHoje = pendentes.filter((t) => t.due_date === hoje && t.due_time).length + lembretesHoje.length;
+  // Compromissos da Agenda Google de hoje (do cache; carregados em 2º plano abaixo).
+  const eventosHoje = googleEventos.filter((e) => e.date === hoje)
+    .sort((a, b) => ((a.time || "99:99") < (b.time || "99:99") ? -1 : 1));
+  const compromissosHoje = pendentes.filter((t) => t.due_date === hoje && t.due_time).length + lembretesHoje.length + eventosHoje.length;
   // "Hoje" mostra SÓ o que vence hoje: prazos, tarefas e lembretes/eventos do dia.
   const tarefasHoje = tarefas.filter((t) => t.due_date === hoje);
   const vencemHoje = pendentes.filter((t) => t.due_date === hoje).length + lembretesHoje.length;
@@ -194,10 +206,14 @@ export async function renderHome(ctx) {
     tarefasHoje.length ? plural(tarefasHoje.length, "tarefa") : null,
     lembretesHoje.length ? plural(lembretesHoje.length, "lembrete") : null,
   ].filter(Boolean).join(" · ") || "para hoje";
+  // Sub do card "Compromissos": destaca o próximo evento da Agenda Google, se houver.
+  const compromissosSub = eventosHoje.length
+    ? ((eventosHoje[0].time ? eventosHoje[0].time + " · " : "") + eventosHoje[0].title).slice(0, 40)
+    : "para hoje";
   const hojeCards = [
     vencemHoje ? hcard(vencemHoje, "Vencem hoje", vencemHojeSub, () => ctx.navigate("agenda")) : null,
     prazos.length ? hcard(prazos.length, "Prazos processuais", prazosVencemHoje.length ? plural(prazosVencemHoje.length, "vence hoje", "vencem hoje") : "próximos 7 dias", () => ctx.navigate("professional")) : null,
-    compromissosHoje ? hcard(compromissosHoje, "Compromissos", "para hoje", () => ctx.navigate("agenda")) : null,
+    compromissosHoje ? hcard(compromissosHoje, "Compromissos", compromissosSub, () => ctx.navigate("agenda")) : null,
     audiencias.length ? hcard(audiencias.length, "Audiências", "próxima: " + prettyDate(audiencias[0].due_date), () => ctx.navigate("agenda")) : null,
     pubsNovas ? hcard(pubsNovas, "Publicações", "movimentações recentes", () => ctx.navigate("publicacoes")) : null,
     aniversarios.length ? hcard(aniversarios.length, "Aniversários hoje", aniversarios.map((c) => (c.nome || "").split(/\s+/)[0]).slice(0, 2).join(", "), () => ctx.navigate("birthdays")) : null,
@@ -270,6 +286,43 @@ export async function renderHome(ctx) {
 
   paintChat(ctx);
   autosize();
+
+  // Busca os compromissos do Google Agenda em segundo plano (nunca trava a tela).
+  // Quando chegam, a Home é redesenhada com eles somados aos compromissos de hoje.
+  ensureGoogleHoje(hoje, ctx);
+}
+
+// Reconecta em silêncio (sem pop-up) e busca os eventos de HOJE do Google Agenda.
+// Espelha o ensureGoogleEvents da Agenda: assíncrono, com cache por dia, e só
+// redesenha se você ainda estiver na Home quando os dados chegarem.
+async function ensureGoogleHoje(hoje, ctx) {
+  if (!gcal.googleEnabled() || googleLoading) return;
+  if (googleLoadedDay === hoje) return; // já carregado hoje → nada a fazer
+
+  const naHome = () => ctx && ctx.rotaAtual && ctx.rotaAtual() === "home";
+
+  // Não conectado (nunca ou token de 1h expirou): tenta renovar em silêncio.
+  if (!gcal.isConnected()) {
+    if (!gcal.wasLinked()) return;                       // nunca vinculou → não insiste
+    if (Date.now() - googleSilentAt < 20000) return;     // cooldown p/ não repetir à toa
+    googleSilentAt = Date.now();
+    googleLoading = true;
+    try { await gcal.connect(false); } catch {}
+    googleLoading = false;
+    if (!gcal.isConnected()) return;                     // continuou sem sessão → desiste
+  }
+
+  googleLoading = true;
+  try {
+    const ini = new Date(hoje + "T00:00:00");
+    const fim = new Date(hoje + "T23:59:59");
+    googleEventos = await gcal.listEvents(ini.toISOString(), fim.toISOString());
+    googleLoadedDay = hoje;
+  } catch { /* silencioso: mantém o cache anterior */ }
+  finally {
+    googleLoading = false;
+    if (naHome()) renderHome(ctx);
+  }
 }
 
 // ============================================================
