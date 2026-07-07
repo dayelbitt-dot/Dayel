@@ -1,4 +1,5 @@
 import { initSupabase, isCloud, list, insert, update, remove, initLocalData, setOnline, onStatus, getStatus, syncNow, pendingCount, clearLocal } from "./store.js";
+import { scheduleAction, listActions, removeAction, runAction, onActions, actionsCount, actionSummary, ACTION_META } from "./actions.js";
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
 import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast, asText, syncDot } from "./ui.js";
 import { mountCapture } from "./capture.js";
@@ -61,7 +62,11 @@ async function boot() {
 function wireConnectivity() {
   if (window.__connWired) return;
   window.__connWired = true;
-  window.addEventListener("online", () => { setOnline(true); toast("Conexão restabelecida. Sincronizando…"); });
+  window.addEventListener("online", async () => {
+    setOnline(true); toast("Conexão restabelecida. Sincronizando…");
+    const n = await actionsCount().catch(() => 0);
+    if (n) setTimeout(() => toast(`Você tem ${n} ação(ões) programada(s) para executar.`, { duration: 9000, action: { label: "Ver", onClick: openScheduledActionsModal } }), 1400);
+  });
   window.addEventListener("offline", () => { setOnline(false); toast("Você está offline. As funções locais continuam disponíveis; as alterações serão sincronizadas quando a conexão voltar.", { duration: 7000 }); });
   setOnline(navigator.onLine);
 }
@@ -84,6 +89,7 @@ async function showApp(session) {
   $("#user-chip").textContent = email;
   wireShell();
   mountSyncPill();
+  mountActionsChip();
   navigate(state.route);
   // Mantém o Google Agenda conectado sozinho (renova o token em segundo plano).
   try {
@@ -182,6 +188,72 @@ function renderSyncPill(s) {
   pill.className = cls;
   pill.innerHTML = "";
   pill.append(el("span", { class: "sync-dot" }, dot), el("span", { class: "sync-label" }, label));
+}
+
+// ==================== FILA DE AÇÕES OFFLINE ====================
+// Ações que dependem de internet (WhatsApp, e-mail…): online, executam
+// normalmente; offline, o app oferece DEIXAR PROGRAMADO para quando a conexão
+// voltar — em vez de simplesmente falhar.
+function offerSchedule(action) {
+  toast(`${action.label || "Esta ação"} exige conexão. Deixar programado para quando a internet voltar?`, {
+    duration: 9000,
+    action: { label: "Programar", onClick: async () => { await scheduleAction(action); toast("✓ Programado. Eu aviso quando a internet voltar."); } },
+  });
+}
+// Handler para um link externo (<a>): se estiver offline, não abre — oferece programar.
+function guardExternal(action) {
+  return (e) => { if (!navigator.onLine) { e.preventDefault(); offerSchedule(action); } };
+}
+
+// Selo no topo com o nº de ações programadas (só aparece quando há alguma).
+let actionsChipWired = false;
+function mountActionsChip() {
+  let chip = $("#actions-chip");
+  if (!chip) {
+    chip = el("button", { id: "actions-chip", class: "actions-chip hidden", title: "Ações programadas para quando a internet voltar" });
+    const pill = $("#sync-pill");
+    if (pill) pill.after(chip); else $(".topbar")?.append(chip);
+  }
+  chip.onclick = openScheduledActionsModal;
+  if (!actionsChipWired) { actionsChipWired = true; onActions(renderActionsChip); }
+  actionsCount().then(renderActionsChip);
+}
+function renderActionsChip(n) {
+  const chip = $("#actions-chip");
+  if (!chip) return;
+  chip.classList.toggle("hidden", !n);
+  chip.innerHTML = "";
+  chip.append(el("span", { class: "ac-icon" }, "⏳"), el("span", { class: "ac-count" }, String(n || 0)));
+}
+
+// Lista as ações programadas, com "Executar" (abre agora) e "Remover".
+async function openScheduledActionsModal() {
+  const acts = await listActions();
+  const online = navigator.onLine;
+  const body = el("div", { class: "list" });
+  if (!acts.length) body.append(el("div", { class: "empty" }, "Nenhuma ação programada."));
+  else acts.forEach((a) => body.append(scheduledActionRow(a, online)));
+  const foot = el("p", { class: "page-sub", style: "margin-top:2px" },
+    online ? "Toque em Executar para abrir cada ação agora." : "Você está offline — conecte-se para executar. As ações continuam guardadas.");
+  openModal(el("div", {}, [el("h3", {}, "Ações programadas"), foot, body]));
+}
+function scheduledActionRow(a, online) {
+  const meta = ACTION_META[a.kind] || { icon: "•", label: a.kind };
+  const run = el("button", {
+    class: "btn btn-primary btn-sm", ...(online ? {} : { disabled: "" }),
+    onclick: async () => { runAction(a); await removeAction(a.id); openScheduledActionsModal(); },
+  }, "Executar");
+  const del = el("button", {
+    class: "btn btn-ghost btn-sm",
+    onclick: async () => { await removeAction(a.id); openScheduledActionsModal(); },
+  }, "Remover");
+  return el("div", { class: "row" }, [
+    el("div", { class: "grow" }, [
+      el("div", { class: "t1" }, `${meta.icon} ${meta.label}`),
+      el("div", { class: "t2" }, actionSummary(a)),
+    ]),
+    el("div", { style: "display:flex; gap:6px; flex-shrink:0" }, [run, del]),
+  ]);
 }
 
 // ==================== SHELL / ROUTER ====================
@@ -2303,9 +2375,9 @@ async function openContact(id) {
   const idadeTxt = (b && b.turning != null) ? `${b.isToday ? "faz" : "fará"} ${b.turning} anos${b.isToday ? " hoje 🎉" : ""}` : "";
 
   const acoes = [
-    digits ? el("a", { class: "btn btn-sm", href: `https://wa.me/55${digits}`, target: "_blank", rel: "noopener" }, "WhatsApp") : null,
+    digits ? el("a", { class: "btn btn-sm", href: `https://wa.me/55${digits}`, target: "_blank", rel: "noopener", onclick: guardExternal({ kind: "whatsapp", phone: `55${digits}`, label: "O envio do WhatsApp" }) }, "WhatsApp") : null,
     c.tel ? el("a", { class: "btn btn-sm", href: `tel:${(c.tel || "").replace(/\s/g, "")}` }, "Ligar") : null,
-    c.email ? el("a", { class: "btn btn-sm", href: `mailto:${c.email}` }, "E-mail") : null,
+    c.email ? el("a", { class: "btn btn-sm", href: `mailto:${c.email}`, onclick: guardExternal({ kind: "email", email: c.email, label: "O envio do e-mail" }) }, "E-mail") : null,
   ].filter(Boolean);
 
   const body = el("div", {}, [

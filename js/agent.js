@@ -3,7 +3,8 @@
 // (conversa principal) e pela Captura rápida — uma única implementação.
 
 import { list, insert, update, remove } from "./store.js";
-import { todayISO } from "./ui.js";
+import { todayISO, toast } from "./ui.js";
+import { scheduleAction } from "./actions.js";
 
 const norm = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 // CNJ só com os 20 dígitos finais (descarta pontuação). Vazio se não completo.
@@ -223,6 +224,12 @@ export async function executarAcao(a, ctx = {}) {
     }
     case "whatsapp": {
       const digits = await telefoneDe(a);
+      // Offline: o WhatsApp exige internet — deixa programado em vez de falhar.
+      if (!navigator.onLine) {
+        await scheduleAction({ kind: "whatsapp", phone: digits, text: a.texto || "", label: "O envio do WhatsApp" });
+        toast("Você está offline. O WhatsApp ficou programado para quando a internet voltar.");
+        return null;
+      }
       const msg = a.texto ? "?text=" + encodeURIComponent(a.texto) : "";
       window.open(`https://wa.me/${digits}${msg}`, "_blank", "noopener");
       return null;
