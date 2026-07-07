@@ -32,6 +32,17 @@ export function asText(v) {
 export const BRL = (n) =>
   (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+// Indicador discreto de sincronização por item (módulo offline): um pontinho
+// no canto do cartão quando o registro foi criado/alterado offline e ainda não
+// subiu (amarelo) ou falhou ao subir (vermelho). Registros sincronizados não
+// mostram nada. Retorna o elemento ou null (para injetar direto no cartão).
+export function syncDot(record) {
+  const s = record && record._sync;
+  if (s !== "pending" && s !== "error") return null;
+  const title = s === "error" ? "Erro ao sincronizar — toque no selo do topo para tentar de novo" : "Aguardando sincronização";
+  return el("span", { class: "sync-dot-mini " + s, title, "aria-label": title, role: "img" });
+}
+
 export function todayISO() {
   const d = new Date();
   const off = d.getTimezoneOffset();

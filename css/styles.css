@@ -143,6 +143,16 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
   .sync-pill { padding: 8px; }
   .sync-pill.pending .sync-label, .sync-pill.err .sync-label { display: inline; }
 }
+
+/* Indicador discreto por item: pontinho no canto quando o registro ainda não
+   subiu (amarelo) ou falhou (vermelho). Some quando está tudo sincronizado. */
+.sync-dot-mini {
+  position: absolute; bottom: 7px; right: 9px; width: 7px; height: 7px;
+  border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 2px var(--card);
+}
+.sync-dot-mini.pending { background: var(--amber); }
+.sync-dot-mini.error   { background: var(--red); }
+.row:has(> .sync-dot-mini), .card:has(> .sync-dot-mini) { position: relative; }
 .menu-btn {
   display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border);
   border-radius: 12px; padding: 9px 14px; font-weight: 700; font-size: 14px; color: var(--text);

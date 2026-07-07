@@ -1,6 +1,6 @@
 import { initSupabase, isCloud, list, insert, update, remove, initLocalData, setOnline, onStatus, getStatus, syncNow, pendingCount, clearLocal } from "./store.js";
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
-import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast, asText } from "./ui.js";
+import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast, asText, syncDot } from "./ui.js";
 import { mountCapture } from "./capture.js";
 import { detectColumns, matchClient, buildProcessFromRow, parseCSV, inferGrau, extractProcessesFromText } from "./planilha.js";
 import { extractTextFromFile } from "./files.js";
@@ -355,6 +355,7 @@ function taskRow(t, compact = false, back) {
     if (t.priority && t.priority !== "media") children.push(el("span", { class: "pill " + t.priority }, t.priority));
     children.push(el("button", { class: "del", title: "Excluir", onclick: async () => { await remove("tasks", t.id); refresh(); } }, "×"));
   }
+  children.push(syncDot(t));
   return el("div", { class: "row" + (t.done ? " task-done" : "") }, children);
 }
 
@@ -952,6 +953,7 @@ function reminderRow(r, compact = false) {
   if (!compact) {
     children.push(el("button", { class: "del", title: "Excluir", onclick: async (e) => { e.stopPropagation(); if (confirm("Excluir este lembrete?")) { await remove("reminders", r.id); renderReminders(); } } }, "×"));
   }
+  children.push(syncDot(r));
   return el("div", { class: "row reminder-row" }, children);
 }
 
@@ -1009,6 +1011,7 @@ function noteRow(n) {
     ]),
     n.body ? el("div", { class: "t2", style: "margin-top:6px; white-space:pre-wrap; line-height:1.5" }, n.body) : null,
     el("div", { class: "t2", style: "margin-top:8px; opacity:.7" }, "Toque para editar · " + prettyDate(n.created_at)),
+    syncDot(n),
   ]);
 }
 
@@ -1552,6 +1555,7 @@ function clientCard(c) {
       el("div", { class: "t2" }, [c.cpf || "CPF não informado", c.tel || ""].filter(Boolean).join(" · ")),
     ]),
     el("span", { class: "pill" }, "abrir ›"),
+    syncDot(c),
   ]);
 }
 
@@ -2283,6 +2287,7 @@ function contactCard(c) {
     avatar(c.nome),
     el("div", { class: "grow" }, [el("div", { class: "t1" }, c.nome), sub ? el("div", { class: "t2" }, sub) : null]),
     right,
+    syncDot(c),
   ]);
 }
 
@@ -2473,6 +2478,7 @@ function processCard(p, compact, clienteNome, onOpen) {
       el("div", { class: "proc-meta" }, meta),
     ]),
     statusBadge(p.status),
+    syncDot(p),
   ]);
 }
 

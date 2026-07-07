@@ -263,6 +263,8 @@ O app tem uma **camada local** que deixa você continuar trabalhando mesmo **sem
 | 🟡 **N pendentes** | N alterações feitas offline aguardando subir (toque para forçar) |
 | 🔴 **Erro de sincronização** | Algo não subiu; toque para tentar de novo |
 
+Além do selo do topo, cada **item** criado/alterado offline mostra um **pontinho discreto no canto** do cartão (🟡 aguardando subir · 🔴 falhou), que **some** assim que sincroniza.
+
 **Como sincroniza** — cada alteração feita offline entra numa **fila de sincronização** (“pendente de sincronização”). Quando a conexão volta, o app **sobe as suas alterações** e depois **baixa** o que foi mudado em outros aparelhos (sincronização bidirecional). Em caso de conflito, vale a **alteração mais recente**, mantendo um **log local** de mudanças.
 
 **O que ainda precisa de internet** (fica avisado na hora): consulta a tribunais, atualização de movimentações, envio de e-mail/WhatsApp, emissão de boletos e a própria sincronização com a nuvem.
