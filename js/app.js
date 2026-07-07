@@ -1,5 +1,10 @@
 import { initSupabase, isCloud, list, insert, update, remove, initLocalData, setOnline, onStatus, getStatus, syncNow, pendingCount, clearLocal } from "./store.js";
 import { scheduleAction, listActions, removeAction, runAction, onActions, actionsCount, actionSummary, ACTION_META } from "./actions.js";
+import { filterRecords } from "./search.js";
+
+// Texto pesquisável de cada registro (para a busca semântica local).
+const clientDoc = (c) => ({ title: c.nome, text: [c.cpf, c.rg, c.tel, c.email, c.endereco, c.area, c.origem, c.profissao, c.estado_civil, c.nacionalidade, c.obs].filter(Boolean).join(" ") });
+const processDoc = (p, nomeCliente) => ({ title: p.nome, text: [p.num, p.tipo, p.vara, p.tribunal, p.partes, p.fase, p.status, p.obs, nomeCliente, ...(Array.isArray(p.andamentos) ? p.andamentos.map((a) => a && a.texto) : [])].filter(Boolean).join(" ") });
 import { getSession, signIn, signUp, signOut, enterLocal, onAuthChange } from "./auth.js";
 import { $, $$, el, todayISO, prettyDate, openModal, closeModal, toast, asText, syncDot } from "./ui.js";
 import { mountCapture } from "./capture.js";
@@ -1135,11 +1140,12 @@ async function renderClients() {
   const clients = (await list("clients", { orderBy: "nome", asc: true }));
   const main = $("#main");
   main.innerHTML = "";
-  const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nome ou CPF…" });
+  const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nome, CPF, telefone, cidade, observações…" });
   const listWrap = el("div", { class: "list" });
   const draw = (q = "") => {
-    const f = q.trim().toLowerCase();
-    const rows = clients.filter((c) => !f || (c.nome || "").toLowerCase().includes(f) || (c.cpf || "").includes(f));
+    // Busca semântica local: nome, CPF, telefone, cidade, observações… com
+    // sinônimos e tolerância a erro de digitação (funciona offline).
+    const rows = filterRecords(q, clients, clientDoc);
     listWrap.innerHTML = "";
     if (!rows.length) { listWrap.append(el("div", { class: "empty" }, clients.length ? "Nenhum cliente encontrado." : "Nenhum cliente ainda. Toque em + para cadastrar.")); return; }
     rows.forEach((c) => listWrap.append(clientCard(c)));
@@ -2495,19 +2501,17 @@ async function renderProcesses() {
   const nameOf = (cid) => clients.find((c) => c.id === cid)?.nome || "";
   const main = $("#main");
   main.innerHTML = "";
-  const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nº, nome ou cliente…" });
+  const search = el("input", { class: "search-box", type: "search", placeholder: "🔎 Buscar por nº, cliente, parte, vara, assunto…" });
   const chips = el("div", { class: "filters" }, ["Todos", ...STATUS].map((s) =>
     el("button", { class: "chip" + (s === "Todos" ? " active" : ""), "data-s": s, onclick: (e) => { $$(".chip", chips).forEach((x) => x.classList.remove("active")); e.target.classList.add("active"); draw(); } }, s)
   ));
   const listWrap = el("div", { class: "list" });
   const draw = () => {
-    const q = search.value.trim().toLowerCase();
     const sf = $(".chip.active", chips)?.dataset.s || "Todos";
-    const rows = procs.filter((p) => {
-      if (sf !== "Todos" && (p.status || "Ativo") !== sf) return false;
-      if (!q) return true;
-      return [p.num, p.nome, nameOf(p.client_id)].some((x) => (x || "").toLowerCase().includes(q));
-    });
+    const base = procs.filter((p) => sf === "Todos" || (p.status || "Ativo") === sf);
+    // Busca semântica local: número, cliente, parte contrária, vara, comarca,
+    // assunto, observações e andamentos — com sinônimos e tolerância a typo.
+    const rows = filterRecords(search.value, base, (p) => processDoc(p, nameOf(p.client_id)));
     listWrap.innerHTML = "";
     if (!rows.length) { listWrap.append(el("div", { class: "empty" }, procs.length ? "Nenhum processo encontrado." : "Nenhum processo ainda. Toque em + para cadastrar.")); return; }
     rows.forEach((p) => listWrap.append(processCard(p, false, nameOf(p.client_id))));

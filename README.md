@@ -269,6 +269,8 @@ Além do selo do topo, cada **item** criado/alterado offline mostra um **pontinh
 
 **O que ainda precisa de internet** (fica avisado na hora): consulta a tribunais, atualização de movimentações, envio de e-mail/WhatsApp, emissão de boletos e a própria sincronização com a nuvem.
 
+**Busca semântica local** — a busca de **Clientes** e **Processos**, e a conversa da IA quando offline, entendem por **sentido**, não só texto exato: reconhecem **sinônimos** do dia a dia jurídico (inventário↔espólio↔herança, barco↔embarcação↔lancha, alimentos↔pensão, divórcio↔separação…) e toleram **erros de digitação**, cruzando todos os campos (nome, CPF, telefone, cidade, partes, vara, comarca, assunto, observações, andamentos). Assim, digitar *“aquele inventário do cliente que tinha um barco”* encontra o processo certo mesmo sem a frase exata estar cadastrada. Tudo roda no aparelho — **funciona sem internet**.
+
 **Fila de ações offline** — quando você tenta uma ação que depende de internet estando offline (por ex. **WhatsApp** ou **e-mail** de um contato, ou pela conversa da IA), o app **não falha**: pergunta *“Esta ação exige conexão. Deixar programado para quando a internet voltar?”*. Se você programar, ela fica guardada. Um selo **⏳ no topo** mostra quantas ações estão programadas; ao voltar a internet o app avisa e você **executa cada uma com um toque** (as janelas de WhatsApp/e-mail só abrem a partir do seu toque — por isso o app lista em vez de disparar sozinho).
 
 > 🔒 Os dados locais deste aparelho são **apagados ao sair** (logout) — desde que nada esteja pendente de sincronização; se houver pendências, elas ficam guardadas até você entrar de novo e a conexão voltar.
@@ -303,6 +305,7 @@ js/config.js            # onde você cola as chaves do Supabase
 js/store.js             # dados OFFLINE-FIRST (espelho local + fila de sincronização com a nuvem)
 js/local.js             # banco local do aparelho (IndexedDB): espelho, fila de sincronização e log
 js/actions.js           # fila de AÇÕES offline (WhatsApp/e-mail programados p/ quando a net voltar)
+js/search.js            # busca semântica local (sinônimos + tolerância a typo, offline)
 js/auth.js              # login (entra offline pela última sessão salva)
 js/ui.js                # utilitários e gráfico
 js/capture.js           # captura rápida multi-tipo (Tarefa/Agenda/Nota/Cliente/Processo)

@@ -8,6 +8,7 @@ import { assistEnabled, perguntar } from "./assist.js";
 import { buildSnapshot, executarAcao, friendlyErr, rotaDePagina, acaoImediata } from "./agent.js";
 import { extractTextFromFile } from "./files.js";
 import { parseNaturalTask } from "./nlp.js";
+import { rank } from "./search.js";
 import * as gcal from "./gcal.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -446,6 +447,19 @@ async function send(ctx) {
       setTimeout(nav.run, 250); // deixa a resposta aparecer antes de trocar de tela
       return;
     }
+    // Offline (ou sem IA na nuvem): BUSCA SEMÂNTICA local — acha o cliente/
+    // processo por sentido, mesmo sem a frase exata ("aquele inventário do
+    // cliente que tinha um barco"). Online, deixa a IA da nuvem responder.
+    if (!navigator.onLine || !assistEnabled()) {
+      const found = await localBusca(q, ctx);
+      if (gen !== chatGen) return;
+      if (found) {
+        chat.push({ role: "assistant", text: found.text });
+        saveChat(); paintChat(ctx);
+        if (found.run) setTimeout(found.run, 250);
+        return;
+      }
+    }
   }
 
   // 2) IA na nuvem (com todo o contexto do escritório).
@@ -566,6 +580,35 @@ async function localNav(q, ctx) {
     for (const p of PAGINAS) if (p.re.test(resto)) return { text: "Abrindo " + p.label + "…", run: () => ctx.navigate(p.route) };
   }
   return null;
+}
+
+// Busca semântica local: "aquele inventário do cliente que tinha um barco",
+// "processo de alimentos da Maria", "cadê o cliente do apartamento…" → acha o
+// cliente/processo por SENTIDO (sinônimos + tolerância a typo) e abre o melhor.
+// Devolve { text, run } ou null (aí segue o fluxo normal). Roda offline.
+async function localBusca(q, ctx) {
+  const t = norm(q);
+  // Não sequestra comandos de CRIAÇÃO (esses viram tarefa/nota/etc.).
+  if (/^(criar?|crie|cria|nova?|novo|adicion\w*|anot\w*|lembr\w*|agend\w*|marc\w*)\b/.test(t)) return null;
+  // Só entra em pedidos de BUSCA/REFERÊNCIA a um cadastro.
+  if (!/(encontr\w*|\bache\b|\bacha\b|procur\w*|\bbusc\w*|\bqual\b|\bquais\b|\bonde\b|cad[eê]\b|mostr\w*|abrir|abra|abre|\bver\b|\bveja\b|processo|cliente|pasta|inventari\w*|espolio|\bcaso\b|divorci\w*|alimentos|usucapi\w*|despejo|contrato)/.test(t)) return null;
+
+  let clients = [], processes = [];
+  try { [clients, processes] = await Promise.all([list("clients"), list("processes")]); } catch { return null; }
+  const nomeCli = (id) => { const c = clients.find((x) => x.id === id); return c ? c.nome : ""; };
+  const docs = [
+    ...clients.map((c) => ({ ref: { tipo: "cliente", r: c }, title: c.nome, text: [c.cpf, c.tel, c.email, c.endereco, c.area, c.origem, c.profissao, c.obs].filter(Boolean).join(" ") })),
+    ...processes.map((p) => ({ ref: { tipo: "processo", r: p }, title: p.nome, text: [p.num, p.tipo, p.vara, p.tribunal, p.partes, p.fase, p.obs, nomeCli(p.client_id), ...(Array.isArray(p.andamentos) ? p.andamentos.map((a) => a && a.texto) : [])].filter(Boolean).join(" ") })),
+  ];
+  const res = rank(q, docs, { limit: 5, threshold: 0.34 });
+  if (!res.length) return null;
+
+  const best = res[0].ref;
+  const outros = res.length - 1;
+  const extra = outros > 0 ? ` (e mais ${outros} parecido${outros > 1 ? "s" : ""} — veja a lista)` : "";
+  if (best.tipo === "cliente")
+    return { text: `Achei: abrindo a pasta de ${best.r.nome}${extra}…`, run: () => ctx.openClient(best.r.id) };
+  return { text: `Achei: abrindo o processo ${best.r.nome || best.r.num}${extra}…`, run: () => ctx.openProcess(best.r.id) };
 }
 
 // "faça uma procuração para a Liz" / "gerar procuração judicial do João" /
