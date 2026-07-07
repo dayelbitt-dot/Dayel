@@ -6,6 +6,8 @@ import { list, insert, update, remove } from "./store.js";
 import { todayISO } from "./ui.js";
 
 const norm = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+// CNJ só com os 20 dígitos finais (descarta pontuação). Vazio se não completo.
+const cnjKey = (s) => { const d = (s || "").replace(/\D/g, ""); return d.length >= 20 ? d.slice(-20) : ""; };
 
 export const friendlyErr = (e) =>
   e === "nao_instalada" ? "A IA ainda não foi ativada no servidor (veja o README, função “assistente”)."
@@ -145,9 +147,12 @@ export async function executarAcao(a, ctx = {}) {
     }
     case "editar_processo": {
       // Corrige o cadastro de um processo (ex.: cliente trocado, partes erradas).
-      if (!a.alvo_id) throw new Error("sem processo");
+      // Localiza o processo pelo id OU pelo nº CNJ (facilita corrigir em lote a
+      // partir de um plano que lista os números dos processos).
       const [procs, clients] = await Promise.all([list("processes"), list("clients")]);
-      const p = procs.find((x) => x.id === a.alvo_id);
+      const alvoCnj = cnjKey(a.numero || a.alvo_id);
+      const p = procs.find((x) => x.id === a.alvo_id) ||
+        (alvoCnj ? procs.find((x) => cnjKey(x.num) === alvoCnj) : null);
       if (!p) throw new Error("processo não encontrado");
       const patch = {};
       if ("cliente_id" in a) patch.client_id = resolveClientId(a.cliente_id, clients);
@@ -155,8 +160,8 @@ export async function executarAcao(a, ctx = {}) {
       if (a.texto) patch.partes = a.texto;
       if (!Object.keys(patch).length) throw new Error("nada para alterar");
       const antes = {}; Object.keys(patch).forEach((k) => { antes[k] = p[k] ?? null; });
-      await update("processes", a.alvo_id, patch);
-      return { undo: () => update("processes", a.alvo_id, antes) };
+      await update("processes", p.id, patch);
+      return { undo: () => update("processes", p.id, antes) };
     }
     case "excluir": {
       if (!a.alvo_tabela || !a.alvo_id) throw new Error("sem alvo");
@@ -182,6 +187,31 @@ export async function executarAcao(a, ctx = {}) {
       if (!ctx.abrirCliente) throw new Error("não dá para abrir a partir daqui");
       if (!id) throw new Error("sem o cliente");
       ctx.abrirCliente(id);
+      return null;
+    }
+    case "abrir_documentos": {
+      // Procuração/declaração são GERADOS pelo app (docx no seu modelo), não pela
+      // IA em texto. A IA só abre o gerador já com o cliente e o tipo escolhidos —
+      // os outorgados (seu escritório) e os poderes já vêm prontos do modelo.
+      if (!ctx.abrirDocumentos) throw new Error("não dá para abrir a partir daqui");
+      let clienteId = a.cliente_id || a.alvo_id || null;
+      if (clienteId && !/^[0-9a-f-]{16,}$/i.test(clienteId)) {
+        // veio um nome no lugar do id → resolve pelo cadastro
+        const clients = await list("clients");
+        clienteId = resolveClientId(clienteId, clients);
+      }
+      const docs = (Array.isArray(a.documentos) ? a.documentos : [a.documento])
+        .filter(Boolean)
+        .map((d) => {
+          const n = norm(d);
+          if (/judicial/.test(n) && !/extra/.test(n)) return "procuracao_judicial";
+          if (/extrajudicial|extra/.test(n)) return "procuracao_extrajudicial";
+          if (/declarac|hipossufici/.test(n)) return "declaracao";
+          if (/procurac/.test(n)) return "procuracao_judicial";
+          return null;
+        })
+        .filter(Boolean);
+      ctx.abrirDocumentos({ clienteId, docs, objeto: a.objeto || a.texto || "", situacao: a.situacao || "" });
       return null;
     }
     case "ligar": {

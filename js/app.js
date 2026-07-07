@@ -184,6 +184,7 @@ function renderHomePage() {
     rotaAtual: () => state.route,
     openProcess: (id) => openProcess(id, () => navigate("home")),
     openClient: (id) => openClient(id),
+    openDocumentos: (preset) => { state.route = "docs"; $$(".drawer-item").forEach((b) => b.classList.toggle("active", b.dataset.route === "docs")); renderGerarDocs(preset); },
   });
 }
 
@@ -193,6 +194,7 @@ function acaoCtx() {
     abrirPagina: (p) => navigate(rotaDePagina(p)),
     abrirProcesso: (id) => openProcess(id, () => navigate(state.route)),
     abrirCliente: (id) => openClient(id),
+    abrirDocumentos: (preset) => { state.route = "docs"; $$(".drawer-item").forEach((b) => b.classList.toggle("active", b.dataset.route === "docs")); renderGerarDocs(preset); },
   };
 }
 
@@ -2447,7 +2449,9 @@ async function lancarAndamento(r, proc) {
 // partir dos modelos .docx, preenchendo com os dados da parte. Os dados podem
 // vir de um cliente já cadastrado, de documentos anexados (CNH/RG/comprovante) ou
 // digitados. O arquivo gerado sai igual ao modelo e é baixado.
-async function renderGerarDocs() {
+// preset (opcional, vindo da IA): { clientId, docs: [], objeto, situacao } — abre
+// o gerador já com o cliente e o(s) tipo(s) de documento escolhidos.
+async function renderGerarDocs(preset) {
   loading();
   const clients = await list("clients", { orderBy: "nome", asc: true });
   const main = $("#main");
@@ -2557,6 +2561,28 @@ async function renderGerarDocs() {
     el("p", { class: "t2", style: "margin-top:10px" }, "Os outorgados (seu escritório) e o texto dos poderes vêm prontos do modelo. Confira o documento gerado antes de assinar."),
   );
   atualizarCondicionais();
+
+  // Pré-preenchimento vindo da IA ("faça uma procuração para a Liz"): seleciona o
+  // cliente, marca o(s) documento(s) e já rola até o botão de gerar.
+  const presetCli = preset && (preset.clienteId || preset.clientId);
+  if (preset && (presetCli || (preset.docs && preset.docs.length) || preset.objeto)) {
+    const c = presetCli ? clients.find((x) => x.id === presetCli) : null;
+    if (c) { cliSel.value = c.id; aplicarCliente(c); }
+    (preset.docs || []).forEach((k) => {
+      if (!DOCS.some((d) => d.key === k) || escolhidos.has(k)) return;
+      escolhidos.add(k);
+      const btn = tipoBtns.querySelector(`[data-k="${k}"]`);
+      if (btn) btn.classList.add("active");
+    });
+    if (preset.objeto) { dados.objeto = preset.objeto; objeto.value = preset.objeto; }
+    if (preset.situacao) { dados.situacao = preset.situacao; situacao.value = preset.situacao; }
+    atualizarCondicionais();
+    const quem = c ? ` de ${c.nome}` : "";
+    const oQue = (preset.docs && preset.docs.length) ? preset.docs.map((k) => (DOCS.find((d) => d.key === k) || {}).label || k).join(" e ") : "documento";
+    toast(`📄 ${oQue}${quem} pronta para gerar. Confira os dados e toque em “Gerar e baixar”.`, { duration: 8000 });
+    if (escolhidos.has("procuracao_judicial") && !dados.objeto.trim()) setTimeout(() => objeto.focus(), 60);
+    else setTimeout(() => gerarBtn.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }
   removeFab();
 }
 

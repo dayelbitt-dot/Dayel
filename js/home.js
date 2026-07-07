@@ -311,6 +311,7 @@ function ctxAcoes(ctx) {
     abrirPagina: (p) => ctx.navigate(rotaDePagina(p)),
     abrirProcesso: (id) => ctx.openProcess(id),
     abrirCliente: (id) => ctx.openClient(id),
+    abrirDocumentos: (preset) => ctx.openDocumentos(preset),
   };
 }
 
@@ -359,8 +360,17 @@ async function send(ctx) {
   ui.input.value = ""; ui.input.style.height = "auto";
   const gen = chatGen; // se "Nova conversa" for tocado no meio, a resposta é descartada
 
-  // 1) Navegação simples é resolvida NA HORA, sem ir à IA (funciona até offline).
+  // 1) Navegação e geração de documento são resolvidas NA HORA, sem ir à IA
+  // (funcionam até offline).
   if (!docs) {
+    const doc = await localDocs(q, ctx);
+    if (gen !== chatGen) return;
+    if (doc) {
+      chat.push({ role: "assistant", text: doc.text });
+      saveChat(); paintChat(ctx);
+      setTimeout(doc.run, 250);
+      return;
+    }
     const nav = await localNav(q, ctx);
     if (gen !== chatGen) return;
     if (nav) {
@@ -487,6 +497,36 @@ async function localNav(q, ctx) {
     for (const p of PAGINAS) if (p.re.test(resto)) return { text: "Abrindo " + p.label + "…", run: () => ctx.navigate(p.route) };
   }
   return null;
+}
+
+// "faça uma procuração para a Liz" / "gerar procuração judicial do João" /
+// "declaração de hipossuficiência da Maria" → abre o gerador de documentos JÁ
+// preenchido (o .docx no modelo do escritório). Devolve { text, run } ou null.
+async function localDocs(q, ctx) {
+  const t = norm(q);
+  if (!/\b(procurac\w*|declarac\w*|hipossufic\w*)\b/.test(t)) return null;
+  if (!ctx.openDocumentos) return null;
+  // tipo de documento
+  const docs = [];
+  if (/declarac\w*|hipossufic\w*/.test(t)) docs.push("declaracao");
+  if (/procurac\w*/.test(t)) docs.push(/extrajud/.test(t) ? "procuracao_extrajudicial" : "procuracao_judicial");
+  // cliente citado ("para/da/do/de <nome>")
+  let clienteId = null, cliNome = "";
+  const mc = q.match(/\b(?:para|d[oa]|de|cliente)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'.\-]*(?:\s+[A-Za-zÀ-ÿ'.\-]+){0,4})/i);
+  if (mc) {
+    try {
+      const clients = await list("clients");
+      const toks = norm(mc[1]).split(/\s+/).filter((w) => w.length >= 3 && !["procuracao", "declaracao", "judicial", "extrajudicial", "hipossuficiencia"].includes(w));
+      const achados = toks.length ? clients.filter((c) => { const n = norm(c.nome); return toks.every((w) => n.includes(w)); }) : [];
+      if (achados.length === 1) { clienteId = achados[0].id; cliNome = achados[0].nome; }
+    } catch {}
+  }
+  const rotulo = docs.length ? (docs.includes("declaracao") && docs.length === 1 ? "a declaração" : "a procuração") : "o gerador de documentos";
+  const paraQuem = cliNome ? " de " + cliNome : "";
+  return {
+    text: `Abrindo ${rotulo}${paraQuem} no gerador — já no seu modelo, é só conferir e tocar em “Gerar e baixar”.`,
+    run: () => ctx.openDocumentos({ clienteId, docs, objeto: "", situacao: "" }),
+  };
 }
 
 // Sem IA disponível: interpreta localmente "criar tarefa/lembrete/nota/evento…"
