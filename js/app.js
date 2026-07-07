@@ -7,6 +7,13 @@ import { extractTextFromFile } from "./files.js";
 import { extractClient } from "./extract.js";
 import { aiEnabled, aiExtract } from "./ai.js";
 import { DOCS, gerarDocumentos } from "./docs.js";
+import {
+  normalizeCadastro, flatFromCadastro, normRepresentante, normDocumento,
+  CONDICOES, RELACOES_REP, TIPOS_DOCUMENTO, relacaoLabel, docTipoLabel, condicaoLabel,
+  formatEndereco, qualificacoes, precisaAvisoRepresentante, exigeRepresentante,
+  maskCpfCnpj, maskCEP, maskTelefone, maskMatricula, onlyDigits,
+  isValidCpfCnpj, isValidCEP, isValidTelefone,
+} from "./cliente.js";
 import { renderHome } from "./home.js";
 import { rotaDePagina } from "./agent.js";
 import * as gcal from "./gcal.js";
@@ -1500,37 +1507,119 @@ async function openClient(id) {
   const [clients, procs, tasks] = await Promise.all([list("clients"), list("processes"), list("tasks")]);
   const c = clients.find((x) => x.id === id);
   if (!c) { renderClients(); return; }
+  const cad = normalizeCadastro(c);
   // Processos onde este cliente é o principal OU um dos vinculados (client_ids).
   const meus = procs.filter((p) => p.client_id === id || (Array.isArray(p.client_ids) && p.client_ids.includes(id)));
   // Só tarefas profissionais aparecem na pasta do cliente.
   // As pessoais vinculadas a um cliente são referência privada (ficam só no cadastro pessoal).
   const minhasTarefas = tasks.filter((t) => t.client_id === id && t.area === "profissional" && !t.done);
 
-  const dados = [
-    ["CPF", c.cpf], ["RG", c.rg], ["Telefone", c.tel], ["E-mail", c.email],
-    ["Nascimento", c.nasc ? prettyDate(c.nasc) : ""], ["Endereço", c.endereco],
-    ["Nacionalidade", c.nacionalidade], ["Estado civil", c.estado_civil], ["Profissão", c.profissao],
-    ["Área", c.area], ["Origem", c.origem],
-  ].filter(([, v]) => v);
-
+  const reload = () => openClient(id);
+  const pj = cad.tipoPessoa === "PJ";
   const main = $("#main");
   main.innerHTML = "";
-  main.append(
-    el("button", { class: "back-btn", onclick: renderClients }, "← Clientes"),
-    el("div", { class: "detail-head" }, [
-      avatar(c.nome),
-      el("div", {}, [el("h1", { class: "page-title", style: "font-size:20px" }, c.nome), el("p", { class: "page-sub" }, "Pasta do cliente")]),
-    ]),
-    el("div", { class: "card" }, [
-      el("div", { class: "section-head", style: "margin-bottom:10px" }, [
-        el("div", { class: "card-title", style: "margin:0" }, "Dados cadastrais"),
-        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClientModal(c) }, "Editar"),
+  main.append(el("button", { class: "back-btn", onclick: renderClients }, "← Clientes"));
+
+  // ---------- Cabeçalho fixo do cliente ----------
+  const chips = [];
+  chips.push(el("span", { class: "reg-badge tipo" }, pj ? "PJ" : "PF"));
+  chips.push(el("span", { class: "reg-badge " + (cad.status === "inativo" ? "inativo" : "ativo") }, cad.status === "inativo" ? "Inativo" : "Ativo"));
+  cad.condicoesEspeciais.forEach((k) => chips.push(el("span", { class: "reg-badge alerta" }, condicaoLabel(k))));
+
+  main.append(el("div", { class: "reg-header card" }, [
+    el("div", { class: "reg-header-top" }, [
+      avatar(cad.nomeCompleto || c.nome),
+      el("div", { class: "reg-header-id" }, [
+        el("h1", { class: "reg-nome" }, cad.nomeCompleto || c.nome || "(sem nome)"),
+        cad.nomeSocial ? el("div", { class: "reg-social" }, "Nome social: " + cad.nomeSocial) : null,
+        el("div", { class: "reg-badges" }, chips),
       ]),
-      dados.length
-        ? el("dl", { class: "kv" }, dados.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]))
-        : el("div", { class: "empty" }, "Sem dados extras. Toque em Editar."),
-      c.obs ? el("div", { class: "t2", style: "margin-top:10px; white-space:pre-wrap" }, "📝 " + c.obs) : null,
     ]),
+    el("div", { class: "reg-actions" }, [
+      el("button", { class: "btn btn-primary btn-sm", onclick: () => openQualificacaoModal(cad) }, "⧉ Copiar qualificação"),
+      el("button", { class: "btn btn-ghost btn-sm", onclick: () => openClientSection(c, "pessoais", reload) }, "Editar"),
+      el("button", { class: "btn btn-ghost btn-sm", onclick: () => openGerarDocs("client:" + id) }, "Gerar documentos"),
+    ]),
+  ]));
+
+  // ---------- Aviso: incapaz sem representante ----------
+  if (precisaAvisoRepresentante(cad)) {
+    main.append(el("div", { class: "reg-warn" }, [
+      el("span", { class: "reg-warn-ico" }, "⚠️"),
+      el("span", {}, "Cliente incapaz sem representante legal cadastrado."),
+    ]));
+  }
+
+  // ---------- Seções ----------
+  const dash = (v) => (String(v || "").trim() ? String(v).trim() : null);
+  const cidadeUf = [cad.localNascimento.cidade, cad.localNascimento.uf].filter(Boolean).join("/");
+
+  main.append(regSection("Dados Pessoais", () => openClientSection(c, "pessoais", reload), [
+    regField(pj ? "Razão social" : "Nome completo", dash(cad.nomeCompleto)),
+    cad.nomeSocial ? regField("Nome social", dash(cad.nomeSocial)) : null,
+    regField(pj ? "CNPJ" : "CPF", dash(cad.cpf), { copy: true }),
+    regField(pj ? "Inscrição estadual / doc." : "Documento de identidade",
+      dash([cad.documentoIdentidade.numero, [cad.documentoIdentidade.orgaoEmissor, cad.documentoIdentidade.uf].filter(Boolean).join("/")].filter(Boolean).join(" — ")), { copy: !!cad.documentoIdentidade.numero }),
+    regField(pj ? "Data de fundação" : "Data de nascimento", cad.dataNascimento ? prettyDate(cad.dataNascimento) : null),
+    regField(pj ? "Local de fundação" : "Naturalidade", dash(cidadeUf)),
+    regField("Nacionalidade", dash(cad.nacionalidade)),
+    pj ? null : regField("Estado civil", dash(cad.estadoCivil)),
+    pj || !cad.regimeBens ? null : regField("Regime de bens", dash(cad.regimeBens)),
+    regField("Profissão", dash(cad.profissao)),
+    pj ? null : regField("Filiação — Pai", dash(cad.filiacao.pai)),
+    pj ? null : regField("Filiação — Mãe", dash(cad.filiacao.mae)),
+  ]));
+
+  main.append(regSection("Contato", () => openClientSection(c, "contato", reload), [
+    regField("Telefone", dash(cad.contato.telefone), { copy: !!cad.contato.telefone }),
+    regField("Celular / WhatsApp", dash(cad.contato.celular), { copy: !!cad.contato.celular }),
+    regField("E-mail", dash(cad.contato.email), { copy: !!cad.contato.email }),
+  ]));
+
+  const end = cad.endereco;
+  main.append(regSection("Endereço", () => openClientSection(c, "endereco", reload), [
+    regField("Logradouro", dash(end.logradouro)),
+    regField("Número", dash(end.numero)),
+    regField("Complemento", dash(end.complemento)),
+    regField("Bairro", dash(end.bairro)),
+    regField("Cidade / UF", dash([end.cidade, end.uf].filter(Boolean).join("/"))),
+    regField("CEP", dash(end.cep)),
+  ]));
+
+  // ---------- Documentos (0..N) ----------
+  main.append(el("div", { class: "card reg-card" }, [
+    regSectionHead("Documentos", el("button", { class: "btn btn-ghost btn-sm", onclick: () => openDocumentoModal(c, null, reload) }, "+ Adicionar")),
+    cad.documentos.length
+      ? el("div", { class: "reg-items" }, cad.documentos.map((d, i) => documentoCard(c, d, i, reload)))
+      : el("div", { class: "empty" }, "Nenhum documento cadastrado."),
+  ]));
+
+  // ---------- Representantes (0..N) — só aparece quando há, ou quando é exigido ----------
+  if (cad.representantes.length || exigeRepresentante(cad)) {
+    main.append(el("div", { class: "card reg-card" }, [
+      regSectionHead("Representante(s) Legal(is)", el("button", { class: "btn btn-ghost btn-sm", onclick: () => openRepresentanteModal(c, null, reload) }, "+ Adicionar representante")),
+      cad.representantes.length
+        ? el("div", { class: "reg-items" }, cad.representantes.map((r, i) => representanteCard(c, r, i, reload)))
+        : el("div", { class: "empty" }, "Nenhum representante cadastrado."),
+    ]));
+  }
+
+  // ---------- Observações ----------
+  main.append(regSection("Observações", () => openClientSection(c, "observacoes", reload),
+    (dash(c.obs) || dash(cad.area) || dash(cad.origem))
+      ? el("div", {}, [
+          dash(c.obs) ? el("div", { class: "reg-obs" }, c.obs) : null,
+          (dash(cad.area) || dash(cad.origem))
+            ? el("div", { class: "reg-grid", style: "margin-top:10px" }, [
+                regField("Área", dash(cad.area)),
+                regField("Origem", dash(cad.origem)),
+              ])
+            : null,
+        ])
+      : el("div", { class: "empty" }, "Sem observações."),
+  ));
+
+  main.append(
     grauSection("Processos — 1º grau", meus.filter((p) => (p.grau || "1") !== "2"), "1", id),
     grauSection("Processos — 2º grau", meus.filter((p) => p.grau === "2"), "2", id),
     attachmentsCard("clients", c),
@@ -1542,36 +1631,267 @@ async function openClient(id) {
     ]),
     el("div", { style: "text-align:center;margin-top:6px" }, [
       el("button", { class: "btn btn-danger btn-sm", onclick: async () => {
-        if (confirm(`Excluir o cliente "${c.nome}"? Os processos ficam sem vínculo.`)) { await remove("clients", id); renderClients(); }
+        if (confirm(`Excluir o cliente "${cad.nomeCompleto || c.nome}"? Os processos ficam sem vínculo.`)) { await remove("clients", id); renderClients(); }
       } }, "Excluir cliente"),
     ]),
   );
   removeFab();
 }
 
-function openClientModal(existing) {
-  const f = existing || {};
+// ---- Blocos visuais da pasta do cliente ----
+
+// Cabeçalho de seção: título em caixa alta + ação à direita (Editar / + Adicionar).
+function regSectionHead(titulo, actionNode) {
+  return el("div", { class: "reg-sec-head" }, [
+    el("div", { class: "reg-sec-title" }, titulo),
+    actionNode || null,
+  ]);
+}
+
+// Card de seção simples com grid de campos e botão Editar.
+function regSection(titulo, onEdit, fields) {
+  const body = Array.isArray(fields)
+    ? el("div", { class: "reg-grid" }, fields.filter(Boolean))
+    : fields; // já é um nó pronto (ex.: observações / empty)
+  return el("div", { class: "card reg-card" }, [
+    regSectionHead(titulo, el("button", { class: "btn btn-ghost btn-sm", onclick: onEdit }, "Editar")),
+    body,
+  ]);
+}
+
+// Par rótulo/valor. Campo vazio mostra "—". Valores sensíveis ganham botão copiar.
+function regField(label, value, { copy = false } = {}) {
+  const has = value != null && String(value).trim() !== "";
+  const valNode = el("div", { class: "reg-value" + (has ? "" : " empty") }, has ? String(value) : "—");
+  const kids = [el("div", { class: "reg-label" }, label), valNode];
+  if (copy && has) {
+    kids.push(el("button", { class: "reg-copy", title: "Copiar", onclick: () => copyText(String(value), "Copiado.") }, "⧉"));
+  }
+  return el("div", { class: "reg-field" }, kids);
+}
+
+function documentoCard(c, d, index, reload) {
+  const linhas = [
+    ["Matrícula", d.matricula],
+    ["Livro / Folha / Termo", [d.livro && ("Livro " + d.livro), d.folha && ("Folha " + d.folha), d.termo && ("Termo " + d.termo)].filter(Boolean).join(" · ")],
+    ["Serventia", d.serventia],
+    ["Comarca", d.comarca],
+    ["Data do registro", d.dataRegistro ? prettyDate(d.dataRegistro) : ""],
+  ].filter(([, v]) => String(v || "").trim());
+  return el("div", { class: "reg-item" }, [
+    el("div", { class: "reg-item-head" }, [
+      el("span", { class: "reg-badge relacao" }, docTipoLabel(d.tipo)),
+      el("div", { class: "reg-item-acts" }, [
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openDocumentoModal(c, index, reload) }, "Editar"),
+        el("button", { class: "reg-del", title: "Remover", onclick: () => removeSubitem(c, "documentos", index, reload) }, "×"),
+      ]),
+    ]),
+    linhas.length
+      ? el("div", { class: "reg-grid" }, linhas.map(([k, v]) => regField(k, v, { copy: k === "Matrícula" })))
+      : el("div", { class: "empty" }, "Sem detalhes."),
+  ]);
+}
+
+function representanteCard(c, r, index, reload) {
+  const rep = normRepresentante(r);
+  const linhas = [
+    ["CPF", rep.cpf],
+    ["Documento", [rep.documentoIdentidade.numero, [rep.documentoIdentidade.orgaoEmissor, rep.documentoIdentidade.uf].filter(Boolean).join("/")].filter(Boolean).join(" — ")],
+    ["Nascimento", rep.dataNascimento ? prettyDate(rep.dataNascimento) : ""],
+    ["Nacionalidade", rep.nacionalidade],
+    ["Estado civil", rep.estadoCivil],
+    ["Profissão", rep.profissao],
+    ["Filiação — Pai", rep.filiacao.pai],
+    ["Filiação — Mãe", rep.filiacao.mae],
+    ["Telefone", rep.contato.celular || rep.contato.telefone],
+    ["E-mail", rep.contato.email],
+    ["Endereço", rep.mesmoEndereco ? "Mesmo endereço do cliente" : formatEndereco(rep.endereco)],
+  ].filter(([, v]) => String(v || "").trim());
+  return el("div", { class: "reg-item" }, [
+    el("div", { class: "reg-item-head" }, [
+      el("span", { class: "reg-badge relacao" }, relacaoLabel(rep.relacao)),
+      el("div", { class: "reg-item-acts" }, [
+        el("button", { class: "btn btn-ghost btn-sm", onclick: () => openRepresentanteModal(c, index, reload) }, "Editar"),
+        el("button", { class: "reg-del", title: "Remover", onclick: () => removeSubitem(c, "representantes", index, reload) }, "×"),
+      ]),
+    ]),
+    el("div", { class: "reg-item-nome" }, rep.nomeCompleto || "(sem nome)"),
+    linhas.length ? el("div", { class: "reg-grid" }, linhas.map(([k, v]) => regField(k, v, { copy: k === "CPF" }))) : null,
+  ]);
+}
+
+// Grava o objeto estruturado (cadastro) e mantém as colunas planas sincronizadas.
+// Cria o cliente se ainda não existir. Devolve o id salvo.
+async function saveCadastro(existingId, cad, extraFlat = {}) {
+  const flat = flatFromCadastro(cad);
+  const payload = { ...flat, ...extraFlat, cadastro: cad };
+  if (!payload.nome) payload.nome = "(sem nome)";
+  if (existingId) { await update("clients", existingId, payload); return existingId; }
+  const saved = await insert("clients", payload);
+  return saved ? saved.id : null;
+}
+
+// Remove um item de documentos[] / representantes[] e regrava.
+async function removeSubitem(c, campo, index, reload) {
+  const label = campo === "documentos" ? "este documento" : "este representante";
+  if (!confirm(`Remover ${label}?`)) return;
+  const cad = normalizeCadastro(c);
+  cad[campo].splice(index, 1);
+  await saveCadastro(c.id, cad);
+  reload();
+}
+
+// Atalho para a tela de Gerar Documentos já com o cliente selecionado.
+// Guarda o id do cliente para a tela de docs pré-selecionar ao montar.
+let _docsPresetClientId = null;
+function openGerarDocs(preset) {
+  _docsPresetClientId = (preset || "").startsWith("client:") ? preset.slice(7) : null;
+  navigate("docs");
+}
+
+// ---------- Modal: Copiar qualificação (cliente sozinho / com representante) ----------
+function openQualificacaoModal(cad) {
+  const q = qualificacoes(cad);
+  const bloco = (titulo, texto) => {
+    if (!texto) return null;
+    const ta = el("textarea", { class: "form-control reg-qualif", rows: "5", readonly: "" }, texto);
+    return el("div", { class: "reg-qualif-bloco" }, [
+      el("div", { class: "reg-sec-head" }, [
+        el("div", { class: "reg-sec-title" }, titulo),
+        el("button", { class: "btn btn-primary btn-sm", onclick: () => copyText(texto, "Qualificação copiada.") }, "⧉ Copiar"),
+      ]),
+      ta,
+    ]);
+  };
+  openModal(el("div", {}, [
+    el("h3", {}, "Copiar qualificação"),
+    el("p", { class: "page-sub", style: "margin:-8px 0 14px" }, "Texto pronto para colar na petição, gerado a partir dos campos cadastrados."),
+    bloco("Cliente", q.cliente),
+    bloco("Cliente + representante", q.comRepresentante),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost btn-block", onclick: closeModal }, "Fechar"),
+    ]),
+  ]));
+}
+
+// ---------- Entrada de campo com máscara/validação ----------
+// Cria um <input> que aplica a máscara a cada digitação e valida sob demanda.
+function maskedInput(ph, val, maskFn, { validate, attrs = {} } = {}) {
+  const inp = el("input", { class: "form-control", placeholder: ph, value: maskFn ? maskFn(val || "") : (val || ""), ...attrs });
+  if (maskFn) inp.addEventListener("input", () => { inp.value = maskFn(inp.value); });
+  inp._valida = validate ? () => validate(inp.value) : () => true;
+  return inp;
+}
+function markInvalid(inp, invalid) { inp.classList.toggle("input-invalid", !!invalid); }
+
+// ---------- Modal: edição por seção (Dados Pessoais / Contato / Endereço / Observações) ----------
+// existing pode ser null (criação de novo cliente pela seção Dados Pessoais).
+function openClientSection(existing, section, onSaved) {
+  const cad = normalizeCadastro(existing || {});
   const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val || "", ...attrs });
-  const nome = inp("Nome completo *", f.nome, { required: "" });
-  const cpf = inp("000.000.000-00", f.cpf);
-  const rg = inp("RG", f.rg);
-  const tel = inp("(51) 9 0000-0000", f.tel);
-  const email = inp("email@exemplo.com", f.email, { type: "email" });
-  const nasc = inp("", f.nasc, { type: "date" });
-  const endereco = inp("Rua, nº, bairro, cidade — UF", f.endereco);
-  const area = inp("Ex: Família, Cível…", f.area);
-  const origem = inp("Ex: Indicação, Instagram…", f.origem);
-  const obs = el("textarea", { rows: "3", placeholder: "Resumo do caso, histórico…" }, f.obs || "");
-  // Qualificação (usada para gerar procuração/declaração)
-  const nacionalidade = inp("brasileira / brasileiro", f.nacionalidade);
-  const estadoCivil = inp("Ex: casada, solteiro…", f.estado_civil);
-  const profissao = inp("Ex: professora, empresário…", f.profissao);
+  const titulos = { pessoais: "Dados Pessoais", contato: "Contato", endereco: "Endereço", observacoes: "Observações" };
+
+  let campos = [];        // nós do formulário
+  let coletar = () => {}; // aplica os valores no objeto `cad`
+  let validar = () => true;
+
+  if (section === "pessoais") {
+    const pjSel = el("select", { class: "form-control" }, [
+      el("option", { value: "PF", ...(cad.tipoPessoa === "PF" ? { selected: "" } : {}) }, "Pessoa física (PF)"),
+      el("option", { value: "PJ", ...(cad.tipoPessoa === "PJ" ? { selected: "" } : {}) }, "Pessoa jurídica (PJ)"),
+    ]);
+    const statusSel = el("select", { class: "form-control" }, [
+      el("option", { value: "ativo", ...(cad.status !== "inativo" ? { selected: "" } : {}) }, "Ativo"),
+      el("option", { value: "inativo", ...(cad.status === "inativo" ? { selected: "" } : {}) }, "Inativo"),
+    ]);
+    const nome = inp("Nome completo *", cad.nomeCompleto, { required: "" });
+    const nomeSocial = inp("Nome social (opcional)", cad.nomeSocial);
+    const cpf = maskedInput("000.000.000-00", cad.cpf, (v) => maskCpfCnpj(v, pjSel.value), { validate: (v) => isValidCpfCnpj(v, pjSel.value) });
+    const docNum = inp("Nº do documento", cad.documentoIdentidade.numero);
+    const docOrg = inp("Órgão (ex: SSP)", cad.documentoIdentidade.orgaoEmissor);
+    const docUf = inp("UF", cad.documentoIdentidade.uf, { maxlength: "2", style: "text-transform:uppercase" });
+    const nasc = inp("", cad.dataNascimento, { type: "date" });
+    const natCidade = inp("Cidade", cad.localNascimento.cidade);
+    const natUf = inp("UF", cad.localNascimento.uf, { maxlength: "2", style: "text-transform:uppercase" });
+    const nacionalidade = inp("brasileira / brasileiro", cad.nacionalidade);
+    const estadoCivil = inp("Ex: casada, solteiro…", cad.estadoCivil);
+    const regimeBens = inp("Ex: comunhão parcial…", cad.regimeBens);
+    const profissao = inp("Ex: professora, empresário…", cad.profissao);
+    const filPai = inp("Nome do pai", cad.filiacao.pai);
+    const filMae = inp("Nome da mãe", cad.filiacao.mae);
+    // rótulos que mudam conforme PF/PJ
+    const lNome = lbl("Nome completo / Razão social *", nome);
+    const lCpf = lbl("CPF / CNPJ", cpf);
+    const lNasc = lbl("Data de nascimento / fundação", nasc);
+    campos = [
+      el("div", { class: "cap-row" }, [lbl("Tipo de pessoa", pjSel), lbl("Status", statusSel)]),
+      lNome, lbl("Nome social", nomeSocial), lCpf,
+      el("div", { class: "cap-row" }, [lbl("Documento — nº", docNum), lbl("Órgão", docOrg), lbl("UF", docUf)]),
+      lNasc,
+      el("div", { class: "cap-row" }, [lbl("Naturalidade — cidade", natCidade), lbl("UF", natUf)]),
+      el("div", { class: "cap-row" }, [lbl("Nacionalidade", nacionalidade), lbl("Estado civil", estadoCivil)]),
+      el("div", { class: "cap-row" }, [lbl("Regime de bens", regimeBens), lbl("Profissão", profissao)]),
+      el("div", { class: "cap-row" }, [lbl("Filiação — Pai", filPai), lbl("Filiação — Mãe", filMae)]),
+      condicoesField(cad),
+    ];
+    coletar = () => {
+      cad.tipoPessoa = pjSel.value; cad.status = statusSel.value;
+      cad.nomeCompleto = nome.value.trim(); cad.nomeSocial = nomeSocial.value.trim();
+      cad.cpf = cpf.value.trim();
+      cad.documentoIdentidade = { numero: docNum.value.trim(), orgaoEmissor: docOrg.value.trim(), uf: docUf.value.trim().toUpperCase() };
+      cad.dataNascimento = nasc.value || "";
+      cad.localNascimento = { cidade: natCidade.value.trim(), uf: natUf.value.trim().toUpperCase() };
+      cad.nacionalidade = nacionalidade.value.trim(); cad.estadoCivil = estadoCivil.value.trim();
+      cad.regimeBens = regimeBens.value.trim(); cad.profissao = profissao.value.trim();
+      cad.filiacao = { pai: filPai.value.trim(), mae: filMae.value.trim() };
+      cad.condicoesEspeciais = campos[campos.length - 1]._coletar();
+    };
+    validar = () => {
+      if (!nome.value.trim()) { nome.focus(); toast("Informe o nome."); return false; }
+      const bad = !cpf._valida();
+      markInvalid(cpf, bad);
+      if (bad) { cpf.focus(); toast(pjSel.value === "PJ" ? "CNPJ inválido." : "CPF inválido."); return false; }
+      return true;
+    };
+    // ao trocar PF/PJ, reaplica a máscara do CPF/CNPJ ao valor atual
+    pjSel.addEventListener("change", () => { cpf.value = maskCpfCnpj(cpf.value, pjSel.value); });
+  } else if (section === "contato") {
+    const tel = maskedInput("(51) 3000-0000", cad.contato.telefone, maskTelefone, { validate: isValidTelefone });
+    const cel = maskedInput("(51) 9 0000-0000", cad.contato.celular, maskTelefone, { validate: isValidTelefone });
+    const email = inp("email@exemplo.com", cad.contato.email, { type: "email" });
+    campos = [lbl("Telefone", tel), lbl("Celular / WhatsApp", cel), lbl("E-mail", email)];
+    coletar = () => { cad.contato = { telefone: tel.value.trim(), celular: cel.value.trim(), email: email.value.trim() }; };
+    validar = () => {
+      for (const f of [tel, cel]) { const bad = !f._valida(); markInvalid(f, bad); if (bad) { f.focus(); toast("Telefone inválido."); return false; } }
+      return true;
+    };
+  } else if (section === "endereco") {
+    const e = cad.endereco;
+    const cep = maskedInput("00000-000", e.cep, maskCEP, { validate: isValidCEP });
+    const logradouro = inp("Rua / Avenida…", e.logradouro);
+    const numero = inp("Nº", e.numero);
+    const complemento = inp("Ap., bloco, sala…", e.complemento);
+    const bairro = inp("Bairro", e.bairro);
+    const cidade = inp("Cidade", e.cidade);
+    const uf = inp("UF", e.uf, { maxlength: "2", style: "text-transform:uppercase" });
+    campos = [
+      lbl("CEP", cep),
+      el("div", { class: "cap-row" }, [lbl("Logradouro", logradouro), lbl("Número", numero)]),
+      lbl("Complemento", complemento), lbl("Bairro", bairro),
+      el("div", { class: "cap-row" }, [lbl("Cidade", cidade), lbl("UF", uf)]),
+    ];
+    coletar = () => { cad.endereco = { logradouro: logradouro.value.trim(), numero: numero.value.trim(), complemento: complemento.value.trim(), bairro: bairro.value.trim(), cidade: cidade.value.trim(), uf: uf.value.trim().toUpperCase(), cep: cep.value.trim() }; };
+    validar = () => { const bad = !cep._valida(); markInvalid(cep, bad); if (bad) { cep.focus(); toast("CEP inválido."); return false; } return true; };
+  } else if (section === "observacoes") {
+    const obs = el("textarea", { class: "form-control", rows: "4", placeholder: "Resumo do caso, histórico…" }, existing?.obs || "");
+    const area = inp("Ex: Família, Cível…", cad.area);
+    const origem = inp("Ex: Indicação, Instagram…", cad.origem);
+    campos = [lbl("Observações", obs), el("div", { class: "cap-row" }, [lbl("Área", area), lbl("Origem", origem)])];
+    coletar = () => { cad._obs = obs.value.trim(); cad.area = area.value.trim(); cad.origem = origem.value.trim(); };
+  }
 
   const form = el("form", {}, [
-    lbl("Nome *", nome), lbl("CPF", cpf), lbl("RG", rg), lbl("Telefone / WhatsApp", tel),
-    lbl("E-mail", email), lbl("Nascimento", nasc), lbl("Endereço", endereco),
-    el("div", { class: "cap-row" }, [lbl("Nacionalidade", nacionalidade), lbl("Estado civil", estadoCivil), lbl("Profissão", profissao)]),
-    lbl("Área", area), lbl("Origem", origem), lbl("Observações", obs),
+    ...campos,
     el("div", { class: "modal-actions" }, [
       el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
       el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
@@ -1579,13 +1899,163 @@ function openClientModal(existing) {
   ]);
   form.onsubmit = async (e) => {
     e.preventDefault();
-    if (!nome.value.trim()) { nome.focus(); return; }
-    const data = { nome: nome.value.trim(), cpf: cpf.value.trim(), rg: rg.value.trim(), tel: tel.value.trim(), email: email.value.trim(), nasc: nasc.value || null, endereco: endereco.value.trim(), area: area.value.trim(), origem: origem.value.trim(), obs: obs.value.trim(), nacionalidade: nacionalidade.value.trim(), estado_civil: estadoCivil.value.trim(), profissao: profissao.value.trim() };
-    if (existing) { await update("clients", existing.id, data); closeModal(); openClient(existing.id); }
-    else { const saved = await insert("clients", data); closeModal(); if (saved) openClient(saved.id); else renderClients(); }
+    if (!validar()) return;
+    coletar();
+    const extraFlat = {};
+    if (section === "observacoes") { extraFlat.obs = cad._obs || ""; extraFlat.area = cad.area; extraFlat.origem = cad.origem; }
+    delete cad._obs; delete cad.area; delete cad.origem;
+    const savedId = await saveCadastro(existing?.id, cad, extraFlat);
+    closeModal();
+    if (savedId) openClient(savedId); else renderClients();
   };
-  openModal(el("div", {}, [el("h3", {}, existing ? "Editar cliente" : "Novo cliente"), form]));
-  setTimeout(() => nome.focus(), 50);
+  openModal(el("div", {}, [el("h3", {}, existing ? titulos[section] : "Novo cliente"), form]));
+  setTimeout(() => { const first = form.querySelector("input,select,textarea"); if (first) first.focus(); }, 50);
+}
+
+// Multi-seleção de condições especiais (chips que viram flags no cabeçalho).
+function condicoesField(cad) {
+  const sel = new Set(cad.condicoesEspeciais || []);
+  const chips = CONDICOES.map(({ key, label }) => {
+    const b = el("button", { type: "button", class: "cap-type" + (sel.has(key) ? " active" : ""), "data-k": key }, label);
+    b.onclick = () => { sel.has(key) ? sel.delete(key) : sel.add(key); b.classList.toggle("active"); };
+    return b;
+  });
+  const wrap = lbl("Condições especiais", el("div", { class: "cap-types" }, chips));
+  wrap._coletar = () => CONDICOES.map((c) => c.key).filter((k) => sel.has(k));
+  return wrap;
+}
+
+// ---------- Modal: adicionar/editar Documento ----------
+function openDocumentoModal(c, index, reload) {
+  const cad = normalizeCadastro(c);
+  const d = index != null ? normDocumento(cad.documentos[index]) : normDocumento({});
+  const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val || "", ...attrs });
+  const tipo = el("select", { class: "form-control" }, TIPOS_DOCUMENTO.map(({ key, label }) => el("option", { value: key, ...(d.tipo === key ? { selected: "" } : {}) }, label)));
+  const matricula = maskedInput("000000 00 00 0000 0 00000 000 0000000 00", d.matricula, maskMatricula);
+  const livro = inp("Livro", d.livro), folha = inp("Folha", d.folha), termo = inp("Termo", d.termo);
+  const serventia = inp("Ex: Registro Civil da 5ª Zona", d.serventia);
+  const comarca = inp("Ex: Porto Alegre/RS", d.comarca);
+  const dataRegistro = inp("", d.dataRegistro, { type: "date" });
+
+  const form = el("form", {}, [
+    lbl("Tipo de documento", tipo),
+    lbl("Matrícula", matricula),
+    el("div", { class: "cap-row" }, [lbl("Livro", livro), lbl("Folha", folha), lbl("Termo", termo)]),
+    lbl("Serventia", serventia), lbl("Comarca", comarca), lbl("Data do registro", dataRegistro),
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const novo = normDocumento({
+      tipo: tipo.value, matricula: matricula.value.trim(), matriculaLimpa: onlyDigits(matricula.value),
+      livro: livro.value.trim(), folha: folha.value.trim(), termo: termo.value.trim(),
+      serventia: serventia.value.trim(), comarca: comarca.value.trim(), dataRegistro: dataRegistro.value || "",
+    });
+    if (index != null) cad.documentos[index] = novo; else cad.documentos.push(novo);
+    await saveCadastro(c.id, cad);
+    closeModal(); reload();
+  };
+  openModal(el("div", {}, [el("h3", {}, index != null ? "Editar documento" : "Novo documento"), form]));
+}
+
+// ---------- Modal: adicionar/editar Representante ----------
+function openRepresentanteModal(c, index, reload) {
+  const cad = normalizeCadastro(c);
+  const r = index != null ? normRepresentante(cad.representantes[index]) : normRepresentante({});
+  const inp = (ph, val, attrs = {}) => el("input", { class: "form-control", placeholder: ph, value: val || "", ...attrs });
+  const relacao = el("select", { class: "form-control" }, RELACOES_REP.map(({ key, label }) => el("option", { value: key, ...(r.relacao === key ? { selected: "" } : {}) }, label)));
+  const tipoRep = el("select", { class: "form-control" }, [
+    el("option", { value: "legal", ...(r.tipoRepresentacao !== "procuratorio" ? { selected: "" } : {}) }, "Representação legal"),
+    el("option", { value: "procuratorio", ...(r.tipoRepresentacao === "procuratorio" ? { selected: "" } : {}) }, "Procuratório"),
+  ]);
+  const nome = inp("Nome completo *", r.nomeCompleto, { required: "" });
+  const cpf = maskedInput("000.000.000-00", r.cpf, (v) => maskCpfCnpj(v, "PF"), { validate: (v) => isValidCpfCnpj(v, "PF") });
+  const docNum = inp("Nº do documento", r.documentoIdentidade.numero);
+  const docOrg = inp("Órgão", r.documentoIdentidade.orgaoEmissor);
+  const docUf = inp("UF", r.documentoIdentidade.uf, { maxlength: "2", style: "text-transform:uppercase" });
+  const nasc = inp("", r.dataNascimento, { type: "date" });
+  const nacionalidade = inp("brasileira / brasileiro", r.nacionalidade);
+  const estadoCivil = inp("Ex: casada, solteiro…", r.estadoCivil);
+  const profissao = inp("Ex: professora…", r.profissao);
+  const filPai = inp("Nome do pai", r.filiacao.pai);
+  const filMae = inp("Nome da mãe", r.filiacao.mae);
+  const tel = maskedInput("(51) 9 0000-0000", r.contato.celular || r.contato.telefone, maskTelefone, { validate: isValidTelefone });
+  const email = inp("email@exemplo.com", r.contato.email, { type: "email" });
+  // Endereço do representante (ou "mesmo do cliente")
+  const e = r.endereco;
+  const cep = maskedInput("00000-000", e.cep, maskCEP, { validate: isValidCEP });
+  const logradouro = inp("Rua / Avenida…", e.logradouro);
+  const numero = inp("Nº", e.numero);
+  const complemento = inp("Ap., bloco…", e.complemento);
+  const bairro = inp("Bairro", e.bairro);
+  const cidade = inp("Cidade", e.cidade);
+  const uf = inp("UF", e.uf, { maxlength: "2", style: "text-transform:uppercase" });
+  const endBox = el("div", { class: "reg-endbox" }, [
+    lbl("CEP", cep),
+    el("div", { class: "cap-row" }, [lbl("Logradouro", logradouro), lbl("Número", numero)]),
+    lbl("Complemento", complemento), lbl("Bairro", bairro),
+    el("div", { class: "cap-row" }, [lbl("Cidade", cidade), lbl("UF", uf)]),
+  ]);
+  const mesmoEnd = el("input", { type: "checkbox", ...(r.mesmoEndereco ? { checked: "" } : {}) });
+  const syncEnd = () => { endBox.style.display = mesmoEnd.checked ? "none" : ""; };
+  mesmoEnd.addEventListener("change", syncEnd); syncEnd();
+
+  const form = el("form", {}, [
+    el("div", { class: "cap-row" }, [lbl("Relação", relacao), lbl("Tipo de representação", tipoRep)]),
+    lbl("Nome completo *", nome), lbl("CPF", cpf),
+    el("div", { class: "cap-row" }, [lbl("Documento — nº", docNum), lbl("Órgão", docOrg), lbl("UF", docUf)]),
+    lbl("Nascimento", nasc),
+    el("div", { class: "cap-row" }, [lbl("Nacionalidade", nacionalidade), lbl("Estado civil", estadoCivil), lbl("Profissão", profissao)]),
+    el("div", { class: "cap-row" }, [lbl("Filiação — Pai", filPai), lbl("Filiação — Mãe", filMae)]),
+    el("div", { class: "cap-row" }, [lbl("Telefone / WhatsApp", tel), lbl("E-mail", email)]),
+    el("label", { class: "reg-check" }, [mesmoEnd, el("span", {}, "Usar o mesmo endereço do cliente")]),
+    endBox,
+    el("div", { class: "modal-actions" }, [
+      el("button", { type: "button", class: "btn btn-ghost", onclick: closeModal }, "Cancelar"),
+      el("button", { type: "submit", class: "btn btn-primary" }, "Salvar"),
+    ]),
+  ]);
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    if (!nome.value.trim()) { nome.focus(); toast("Informe o nome do representante."); return; }
+    if (!cpf._valida()) { markInvalid(cpf, true); cpf.focus(); toast("CPF inválido."); return; }
+    if (!mesmoEnd.checked && !cep._valida()) { markInvalid(cep, true); cep.focus(); toast("CEP inválido."); return; }
+    const novo = normRepresentante({
+      relacao: relacao.value, tipoRepresentacao: tipoRep.value, mesmoEndereco: mesmoEnd.checked,
+      nomeCompleto: nome.value.trim(), cpf: cpf.value.trim(),
+      documentoIdentidade: { numero: docNum.value.trim(), orgaoEmissor: docOrg.value.trim(), uf: docUf.value.trim().toUpperCase() },
+      dataNascimento: nasc.value || "", nacionalidade: nacionalidade.value.trim(), estadoCivil: estadoCivil.value.trim(), profissao: profissao.value.trim(),
+      filiacao: { pai: filPai.value.trim(), mae: filMae.value.trim() },
+      contato: { telefone: "", celular: tel.value.trim(), email: email.value.trim() },
+      endereco: mesmoEnd.checked ? normalizeCadastro(c).endereco : { logradouro: logradouro.value.trim(), numero: numero.value.trim(), complemento: complemento.value.trim(), bairro: bairro.value.trim(), cidade: cidade.value.trim(), uf: uf.value.trim().toUpperCase(), cep: cep.value.trim() },
+    });
+    if (index != null) cad.representantes[index] = novo; else cad.representantes.push(novo);
+    await saveCadastro(c.id, cad);
+    closeModal(); reload();
+  };
+  openModal(el("div", {}, [el("h3", {}, index != null ? "Editar representante" : "Novo representante"), form]));
+}
+
+// Novo cliente: abre a seção Dados Pessoais em branco (cria ao salvar).
+function openClientModal(existing) {
+  if (existing) { openClientSection(existing, "pessoais"); return; }
+  openClientSection(null, "pessoais");
+}
+
+// Copiar texto para a área de transferência (com retorno visual).
+async function copyText(text, okMsg = "Copiado.") {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); }
+    else {
+      const ta = el("textarea", { style: "position:fixed;opacity:0" }, text);
+      document.body.append(ta); ta.select();
+      document.execCommand("copy"); ta.remove();
+    }
+    toast("✅ " + okMsg);
+  } catch { toast("Não consegui copiar automaticamente. Selecione o texto e copie."); }
 }
 
 // ==================== PESSOAS / CONTATOS ====================
@@ -2528,6 +2998,12 @@ async function renderGerarDocs(preset) {
     [[nome, "nome"], [cpf, "cpf"], [rg, "rg"], [endereco, "endereco"], [nacionalidade, "nacionalidade"], [estadoCivil, "estadoCivil"], [profissao, "profissao"]].forEach(([node, k]) => { node.value = dados[k]; });
   };
   cliSel.addEventListener("change", () => { const c = clients.find((x) => x.id === cliSel.value); if (c) aplicarCliente(c); });
+  // Veio da pasta do cliente ("Gerar documentos") — já pré-seleciona e preenche.
+  if (_docsPresetClientId) {
+    const alvo = clients.find((x) => x.id === _docsPresetClientId);
+    _docsPresetClientId = null;
+    if (alvo) { cliSel.value = alvo.id; aplicarCliente(alvo); }
+  }
 
   // preencher a partir de documentos (CNH/RG/comprovante) — lê e completa
   const fileInput = el("input", { type: "file", class: "hidden", accept: "image/*,.pdf,.txt,.md,.csv,text/plain", multiple: "" });

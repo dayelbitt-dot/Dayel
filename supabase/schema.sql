@@ -80,6 +80,15 @@ alter table public.clients add column if not exists nacionalidade text;
 alter table public.clients add column if not exists estado_civil text;
 alter table public.clients add column if not exists profissao text;
 
+-- ---------- Cadastro estruturado (pasta do cliente em seções) ----------
+--  Objeto único com os dados organizados (tipo de pessoa, documento de
+--  identidade, filiação, endereço estruturado, condições especiais,
+--  documentos[] e representantes[]). As colunas planas acima seguem existindo e
+--  são mantidas em sincronia a cada gravação, para não quebrar a geração de
+--  documentos, a importação de planilha e as exportações. Cadastros antigos
+--  (sem `cadastro`) continuam funcionando: são lidos a partir das colunas planas.
+alter table public.clients add column if not exists cadastro jsonb not null default '{}';
+
 -- ---------- Grau do processo (1º / 2º) ----------
 alter table public.processes add column if not exists grau text default '1';
 
