@@ -1,11 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" rx="112" fill="#ffffff"/>
-  <g transform="translate(168 104) skewX(-7)">
-    <!-- página teal (atrás, à esquerda) -->
-    <rect x="0" y="34" width="66" height="196" rx="26" fill="#0F9FB3"/>
-    <!-- corpo azul-marinho -->
-    <rect x="82" y="0" width="104" height="250" rx="30" fill="#0A2E52"/>
-    <!-- cauda/ponta do marcador (sobrepõe o corpo, sem emenda) -->
-    <path d="M82 200 L186 244 L120 322 Q108 336 102 320 Z" fill="#0A2E52"/>
-  </g>
+  <!-- balão de trás (inferior/direita) -->
+  <path d="M236 224 L420 224 Q464 224 464 268 L464 388 Q464 432 420 432
+           L404 432 L372 496 L344 432 L236 432 Q192 432 192 388 L192 268
+           Q192 224 236 224 Z" fill="#4C6FFF"/>
+  <!-- halo branco que separa os dois balões -->
+  <path d="M92 56 L276 56 Q328 56 328 108 L328 244 Q328 296 276 296
+           L180 296 L104 372 L118 296 L92 296 Q40 296 40 244 L40 108
+           Q40 56 92 56 Z" fill="#ffffff"/>
+  <!-- balão da frente (superior/esquerda) -->
+  <path d="M100 64 L268 64 Q312 64 312 108 L312 244 Q312 288 268 288
+           L172 288 L108 356 L120 288 L100 288 Q56 288 56 244 L56 108
+           Q56 64 100 64 Z" fill="#4C6FFF"/>
+  <!-- três pontinhos -->
+  <circle cx="132" cy="176" r="19" fill="#ffffff"/>
+  <circle cx="184" cy="176" r="19" fill="#ffffff"/>
+  <circle cx="236" cy="176" r="19" fill="#ffffff"/>
 </svg>
