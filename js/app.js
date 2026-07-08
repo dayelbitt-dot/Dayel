@@ -279,7 +279,7 @@ async function renderSecurity() {
     ativo ? acoesAtivo() : el("button", { class: "btn btn-primary", onclick: modalAtivar }, "Ativar proteção"),
   ]);
 
-  main.append(head, statusCard);
+  main.append(backBtn(), head, statusCard);
   if (ativo) main.append(cardAutolock(), cardLogs(), cardWipe());
   else main.append(cardWipe());
 
@@ -550,6 +550,7 @@ function renderCapturaPage() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(
+    backBtn(),
     el("div", {}, [
       el("h1", { class: "page-title" }, "Captura rápida"),
       el("p", { class: "page-sub" }, "Escreva, fale ou anexe documentos — cadastre tarefa, agenda, nota, cliente e processo de uma vez"),
@@ -578,6 +579,7 @@ async function renderTasksPage() {
   main.innerHTML = "";
   main.append(
     ...[
+      backBtn(),
       el("div", {}, [el("h1", { class: "page-title" }, meta.title), el("p", { class: "page-sub" }, meta.sub)]),
       area === "pessoal" ? contactsHub(contacts) : null,
       el("div", { class: "stat-grid" }, [
@@ -1008,6 +1010,7 @@ async function renderAgenda() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(...[
+    backBtn(),
     el("div", {}, [el("h1", { class: "page-title" }, "Agenda"), el("p", { class: "page-sub" }, "Calendário e todos os compromissos")]),
     googleBar(gStatus),
     el("div", { class: "card" }, [head, grid]),
@@ -1193,6 +1196,7 @@ async function renderReminders() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(
+    backBtn(),
     el("div", {}, [
       el("h1", { class: "page-title" }, "Lembretes"),
       el("p", { class: "page-sub" }, "Tudo que você precisa lembrar, em ordem cronológica"),
@@ -1267,6 +1271,7 @@ async function renderNotes() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(
+    backBtn(),
     el("div", {}, [el("h1", { class: "page-title" }, "Notas"), el("p", { class: "page-sub" }, "Ideias, anotações e lembretes")]),
     notes.length
       ? el("div", { class: "list" }, notes.map(noteRow))
@@ -1358,6 +1363,7 @@ async function renderClients() {
     else await importarArquivoLivre(f); // PDF, imagem, txt, doc… (leitura por texto)
   });
   main.append(
+    backBtn(),
     el("div", { class: "section-head" }, [
       el("div", {}, [el("h1", { class: "page-title" }, "Clientes"), el("p", { class: "page-sub" }, `${clients.length} cadastrado${clients.length === 1 ? "" : "s"}`)]),
       el("div", { style: "display:flex; gap:6px; flex-shrink:0" }, [
@@ -2474,9 +2480,15 @@ function contactsHub(contacts) {
 }
 
 // Cabeçalho de página com botão de voltar.
+// Botão de "voltar" padrão das páginas. Sem rota indicada, volta ao Início —
+// que é o hub de onde quase tudo é aberto.
+function backBtn(backRoute = "home") {
+  return el("button", { class: "btn btn-ghost btn-sm back-page", style: "margin-bottom:2px; align-self:flex-start", onclick: () => navigate(backRoute) }, "‹ Voltar");
+}
+
 function pageHeaderBack(title, sub, backRoute) {
   return el("div", {}, [
-    el("button", { class: "btn btn-ghost btn-sm", style: "margin-bottom:8px", onclick: () => navigate(backRoute) }, "‹ Voltar"),
+    backBtn(backRoute),
     el("h1", { class: "page-title" }, title),
     sub ? el("p", { class: "page-sub" }, sub) : null,
   ]);
@@ -2722,6 +2734,7 @@ async function renderProcesses() {
     if (f) await importarPlanilha(f);
   });
   main.append(
+    backBtn(),
     el("div", { class: "section-head" }, [
       el("div", {}, [el("h1", { class: "page-title" }, "Processos"), el("p", { class: "page-sub" }, `${procs.length} cadastrado${procs.length === 1 ? "" : "s"}`)]),
       el("button", { class: "btn btn-ghost btn-sm", style: "flex-shrink:0", onclick: () => prazoInput.click(), title: "Importar Excel de prazos do tribunal" }, "⬆ Importar prazos"),
@@ -3034,6 +3047,7 @@ async function renderPublicacoes() {
   main.innerHTML = "";
 
   const head = el("div", {}, [
+    backBtn(),
     el("h1", { class: "page-title" }, "Publicações oficiais"),
     el("p", { class: "page-sub" }, "Movimentações processuais (EPROC) buscadas no seu Gmail"),
   ]);
@@ -3401,6 +3415,7 @@ async function renderGerarDocs(preset) {
   };
 
   main.append(
+    backBtn(),
     el("div", {}, [el("h1", { class: "page-title" }, "Gerar Documentos"), el("p", { class: "page-sub" }, "Procuração e declaração de hipossuficiência, prontas e no seu modelo")]),
     el("div", { class: "card" }, [
       el("div", { class: "card-title" }, "1. Dados da parte"),

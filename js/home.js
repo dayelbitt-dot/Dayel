@@ -115,9 +115,9 @@ export async function renderHome(ctx) {
   const audiencias = pendentes.filter((t) => t.due_date && t.due_date >= hoje && t.due_date <= em30 &&
     /audi[êe]nc/i.test((t.title || "") + " " + (t.description || "")))
     .sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
-  let pubsNovas = 0;
+  let pubsNovas = 0, pubs = [];
   try {
-    const pubs = JSON.parse(localStorage.getItem(PUB_CACHE_KEY)) || [];
+    pubs = JSON.parse(localStorage.getItem(PUB_CACHE_KEY)) || [];
     const corte = Date.now() - 7 * 86400000;
     pubsNovas = pubs.filter((p) => (p.dateMs || 0) >= corte).length;
   } catch {}
@@ -173,61 +173,90 @@ export async function renderHome(ctx) {
     ["Cadastrar novo cliente", "Crie uma tarefa para amanhã às 14h", "Quais são os prazos desta semana?", "Abrir a agenda"]
       .map((t) => el("button", { class: "ex-chip", onclick: () => { input.value = t; autosize(); input.focus(); } }, t)));
 
-  // ---- sugestões inteligentes ----
-  const sugLinhas = [];
-  if (tarefas.length) sugLinhas.push(plural(tarefas.length, "tarefa pendente", "tarefas pendentes"));
-  if (atrasadas.length) sugLinhas.push(plural(atrasadas.length, "tarefa atrasada", "tarefas atrasadas"));
-  if (prazosHoje.length) sugLinhas.push(plural(prazosHoje.length, "prazo vencendo hoje", "prazos vencendo hoje"));
-  else if (prazos.length) sugLinhas.push(plural(prazos.length, "prazo nesta semana", "prazos nesta semana"));
-  if (pubsNovas) sugLinhas.push(plural(pubsNovas, "publicação nova no EPROC", "publicações novas no EPROC"));
-  const areaMaisPendente = pendentes.filter((t) => t.area === "profissional").length >= pendentes.filter((t) => (t.area || "pessoal") === "pessoal").length ? "professional" : "personal";
-  const qbtn = (label, fn) => el("button", { class: "btn btn-sm sug-btn", onclick: fn }, label);
-  const sugCard = sugLinhas.length
-    ? el("div", { class: "card home-sug" }, [
-        el("div", { class: "card-title" }, "Você possui"),
-        el("div", { class: "sug-lines" }, sugLinhas.map((l) => el("div", { class: "sug-line" }, "•  " + l))),
-        el("div", { class: "sug-actions" }, [
-          pendentes.length ? qbtn("Resolver tarefas", () => ctx.navigate(areaMaisPendente)) : null,
-          qbtn("Ver processos", () => ctx.navigate("processes")),
-          qbtn("Abrir agenda", () => ctx.navigate("agenda")),
-          qbtn("Gerar documentos", () => ctx.navigate("docs")),
-          pubsNovas ? qbtn("Ver publicações", () => ctx.navigate("publicacoes")) : null,
-        ].filter(Boolean)),
-      ])
-    : null;
+  // ---- painel "Hoje": agenda COMPLETA do dia (ou dos próximos 5 dias) ----
+  // Em vez de só um resumo com números, listamos cada item por extenso:
+  // compromissos, prazos, tarefas, lembretes, aniversários e publicações. Se
+  // não houver nada hoje, mostramos o que é importante nos próximos 5 dias.
+  const pubDiaISO = (ms) => { const d = new Date(ms); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+  function itensDoDia(dia) {
+    const itens = [];
+    // Compromissos da Agenda Google
+    googleEventos.filter((e) => e.date === dia).forEach((e) => itens.push({
+      ord: e.time || "00:00", icon: "📅", titulo: e.title || "Compromisso",
+      sub: [e.time ? e.time + (e.endTime ? "–" + e.endTime : "") : "dia todo", e.location].filter(Boolean).join(" · "),
+      onClick: () => ctx.navigate("agenda"),
+    }));
+    // Prazos e tarefas com vencimento no dia
+    pendentes.filter((t) => t.due_date === dia).forEach((t) => {
+      const prazo = ehPrazo(t);
+      itens.push({
+        ord: t.due_time || (prazo ? "06:00" : "23:50"), icon: prazo ? "⏰" : "✔️",
+        titulo: t.title || (prazo ? "Prazo" : "Tarefa"),
+        sub: [prazo ? "Prazo processual" : "Tarefa", t.due_time ? "às " + t.due_time : null, t.priority === "alta" ? "prioridade alta" : null].filter(Boolean).join(" · "),
+        onClick: () => ctx.navigate(t.area === "profissional" ? "professional" : "personal"),
+      });
+    });
+    // Lembretes do dia
+    reminders.filter((r) => r.remind_on === dia).forEach((r) => itens.push({
+      ord: "23:55", icon: "🔔", titulo: r.title || "Lembrete",
+      sub: ["Lembrete", (r.body || "").replace(/\s+/g, " ").trim().slice(0, 60) || null].filter(Boolean).join(" · "),
+      onClick: () => ctx.navigate("reminders"),
+    }));
+    // Aniversários do dia
+    contacts.filter((c) => { const m = String(c.nasc || "").slice(5, 10); return m && m === dia.slice(5, 10); }).forEach((c) => itens.push({
+      ord: "00:01", icon: "🎂", titulo: "Aniversário de " + (c.nome || "").split(/\s+/).slice(0, 2).join(" "),
+      sub: c.relacao || "Contato", onClick: () => ctx.navigate("birthdays"),
+    }));
+    // Publicações oficiais recebidas no dia
+    pubs.filter((p) => p.dateMs && pubDiaISO(p.dateMs) === dia).forEach((p) => itens.push({
+      ord: "00:00", icon: "📰", titulo: p.assunto || p.subject || "Publicação oficial",
+      sub: ["Publicação EPROC", p.numero].filter(Boolean).join(" · "), onClick: () => ctx.navigate("publicacoes"),
+    }));
+    return itens.sort((a, b) => (a.ord < b.ord ? -1 : a.ord > b.ord ? 1 : 0));
+  }
 
-  // ---- painel "Hoje" ----
-  const hcard = (num, label, sub, onClick) => el("button", { class: "hoje-card", onclick: onClick }, [
-    el("span", { class: "hoje-num" }, String(num)),
-    el("span", { class: "hoje-lbl" }, label),
-    sub ? el("span", { class: "hoje-sub" }, sub) : null,
+  const rotuloDia = (iso) => {
+    if (iso === addDaysISO(hoje, 1)) return "Amanhã";
+    const d = new Date(iso + "T00:00:00");
+    const sem = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][d.getDay()];
+    return sem + " · " + prettyDate(iso);
+  };
+  const itemRow = (it) => el("button", { class: "hoje-item", onclick: it.onClick }, [
+    el("span", { class: "hoje-item-ic" }, it.icon),
+    el("span", { class: "hoje-item-body" }, [
+      el("span", { class: "hoje-item-tit" }, it.titulo),
+      it.sub ? el("span", { class: "hoje-item-sub" }, it.sub) : null,
+    ]),
+    el("span", { class: "hoje-item-go" }, "›"),
   ]);
-  const vencemHojeSub = [
-    prazosVencemHoje.length ? plural(prazosVencemHoje.length, "prazo") : null,
-    tarefasHoje.length ? plural(tarefasHoje.length, "tarefa") : null,
-    lembretesHoje.length ? plural(lembretesHoje.length, "lembrete") : null,
-  ].filter(Boolean).join(" · ") || "para hoje";
-  // Sub do card "Compromissos": destaca o próximo evento da Agenda Google, se houver.
-  const compromissosSub = eventosHoje.length
-    ? ((eventosHoje[0].time ? eventosHoje[0].time + " · " : "") + eventosHoje[0].title).slice(0, 40)
-    : "para hoje";
-  const hojeCards = [
-    vencemHoje ? hcard(vencemHoje, "Vencem hoje", vencemHojeSub, () => ctx.navigate("agenda")) : null,
-    prazos.length ? hcard(prazos.length, "Prazos processuais", prazosVencemHoje.length ? plural(prazosVencemHoje.length, "vence hoje", "vencem hoje") : "próximos 7 dias", () => ctx.navigate("professional")) : null,
-    compromissosHoje ? hcard(compromissosHoje, "Compromissos", compromissosSub, () => ctx.navigate("agenda")) : null,
-    audiencias.length ? hcard(audiencias.length, "Audiências", "próxima: " + prettyDate(audiencias[0].due_date), () => ctx.navigate("agenda")) : null,
-    pubsNovas ? hcard(pubsNovas, "Publicações", "movimentações recentes", () => ctx.navigate("publicacoes")) : null,
-    aniversarios.length ? hcard(aniversarios.length, "Aniversários hoje", aniversarios.map((c) => (c.nome || "").split(/\s+/)[0]).slice(0, 2).join(", "), () => ctx.navigate("birthdays")) : null,
-  ].filter(Boolean);
-  const hojeSection = el("div", { class: "home-hoje" }, [
-    el("div", { class: "hoje-title" }, "Hoje"),
-    hojeCards.length
-      ? el("div", { class: "hoje-grid" }, hojeCards)
-      : el("div", { class: "card home-empty" }, "Nada urgente para hoje. Se quiser adiantar algo, é só me pedir aqui em cima. ✨"),
-  ]);
+
+  const itensHoje = itensDoDia(hoje);
+  let hojeSection;
+  if (itensHoje.length) {
+    hojeSection = el("div", { class: "home-hoje" }, [
+      el("div", { class: "hoje-title" }, "Hoje · " + prettyDate(hoje)),
+      el("div", { class: "card hoje-detalhe" }, itensHoje.map(itemRow)),
+    ]);
+  } else {
+    const blocos = [];
+    for (let i = 1; i <= 5; i++) {
+      const d = addDaysISO(hoje, i);
+      const its = itensDoDia(d);
+      if (its.length) blocos.push(el("div", { class: "hoje-dia" }, [
+        el("div", { class: "hoje-dia-lbl" }, rotuloDia(d)),
+        el("div", { class: "card hoje-detalhe" }, its.map(itemRow)),
+      ]));
+    }
+    hojeSection = el("div", { class: "home-hoje" }, [
+      el("div", { class: "hoje-title" }, blocos.length ? "Nada para hoje — próximos 5 dias" : "Hoje"),
+      blocos.length
+        ? el("div", { class: "hoje-dias" }, blocos)
+        : el("div", { class: "card home-empty" }, "Nada urgente para hoje nem nos próximos 5 dias. Se quiser adiantar algo, é só me pedir aqui em cima. ✨"),
+    ]);
+  }
 
   main.innerHTML = "";
-  main.append(hero, composer, exemplos, ...[sugCard, hojeSection].filter(Boolean));
+  main.append(hero, composer, exemplos, hojeSection);
 
   // ---- comportamento ----
   ui = { chatWrap, input, statusEl, attWrap, micBtn, sendBtn, exemplos };
@@ -315,8 +344,10 @@ async function ensureGoogleHoje(hoje, ctx) {
 
   googleLoading = true;
   try {
+    // Carrega a janela de hoje até +5 dias — assim a agenda detalhada da Home
+    // mostra os compromissos do dia e, quando hoje está vazio, os próximos 5.
     const ini = new Date(hoje + "T00:00:00");
-    const fim = new Date(hoje + "T23:59:59");
+    const fim = new Date(addDaysISO(hoje, 5) + "T23:59:59");
     googleEventos = await gcal.listEvents(ini.toISOString(), fim.toISOString());
     googleLoadedDay = hoje;
   } catch { /* silencioso: mantém o cache anterior */ }

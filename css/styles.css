@@ -642,13 +642,6 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 }
 .ex-chip:hover { color: var(--text); border-color: var(--accent); background: var(--card); }
 
-/* Sugestões inteligentes */
-.home-sug { padding: 16px; }
-.sug-lines { display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
-.sug-line { line-height: 1.4; }
-.sug-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.sug-btn { border-radius: 999px; }
-
 /* Painel "Hoje" */
 .home-hoje { margin-top: 2px; }
 .hoje-title { font-size: 13px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin: 0 4px 10px; }
@@ -665,6 +658,24 @@ input[type="date"], input[type="time"] { text-align: left; min-height: 46px; }
 .hoje-lbl { font-size: 14px; font-weight: 700; margin-top: 4px; }
 .hoje-sub { font-size: 12px; color: var(--muted); }
 .home-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 22px 16px; }
+
+/* Agenda detalhada do dia / próximos 5 dias */
+.hoje-detalhe { padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.hoje-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: transparent; border: 0; border-radius: 12px; padding: 11px 10px;
+  color: var(--text); cursor: pointer; transition: background .12s ease;
+}
+.hoje-item + .hoje-item { border-top: 1px solid var(--border); }
+.hoje-item:hover { background: var(--bg-elev); }
+.hoje-item:active { background: var(--card); }
+.hoje-item-ic { font-size: 20px; line-height: 1; flex-shrink: 0; width: 24px; text-align: center; }
+.hoje-item-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.hoje-item-tit { font-size: 15px; font-weight: 700; line-height: 1.3; }
+.hoje-item-sub { font-size: 13px; color: var(--muted); line-height: 1.3; }
+.hoje-item-go { color: var(--muted); font-size: 20px; font-weight: 700; flex-shrink: 0; }
+.hoje-dias { display: flex; flex-direction: column; gap: 16px; }
+.hoje-dia-lbl { font-size: 13px; font-weight: 800; color: var(--accent-2); margin: 0 4px 8px; }
 
 @media (max-width: 480px) {
   .home-hi { font-size: 26px; }
