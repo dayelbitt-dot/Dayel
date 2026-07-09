@@ -243,6 +243,66 @@ export async function fetchPublicacoes(query = DEFAULT_QUERY, { max = 60, onProg
   return out;
 }
 
+// Separa o cabeçalho "From" em nome e e-mail: 'Fulano <fulano@x.com>' →
+// { nome: 'Fulano', email: 'fulano@x.com' }. Sem nome, usa o próprio e-mail.
+export function parseFrom(from) {
+  const s = String(from || "").trim();
+  const m = s.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  if (m) { const email = m[2].trim().toLowerCase(); return { nome: (m[1].trim() || email), email }; }
+  const email = s.toLowerCase();
+  return { nome: s || email, email };
+}
+
+// Busca genérica de mensagens (metadados leves: remetente, assunto, data e
+// trecho). Usada pelo "Resumo do dia" — ex.: query "is:unread newer_than:1d".
+// Não baixa o corpo inteiro (format=metadata), então é rápida e barata.
+export async function fetchMensagens(query, { max = 40 } = {}) {
+  if (!isConnected()) throw new Error("Conecte o Gmail primeiro.");
+  const ids = [];
+  let pageToken = "";
+  while (ids.length < max) {
+    const params = new URLSearchParams({ q: query, maxResults: String(Math.min(50, max - ids.length)) });
+    if (pageToken) params.set("pageToken", pageToken);
+    const data = await api("/messages?" + params.toString());
+    (data.messages || []).forEach((m) => ids.push(m.id));
+    pageToken = data.nextPageToken || "";
+    if (!pageToken) break;
+  }
+  const out = [];
+  const queue = ids.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      try {
+        const msg = await api("/messages/" + id + "?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date");
+        out.push(toMensagem(msg));
+      } catch { /* ignora a que falhou */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(5, ids.length || 1) }, worker));
+  out.sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
+  return out;
+}
+
+function toMensagem(msg) {
+  const headers = msg.payload?.headers || [];
+  const from = header(headers, "From");
+  const dateHeader = header(headers, "Date");
+  const dateMs = Number(msg.internalDate) || (dateHeader ? Date.parse(dateHeader) : 0) || 0;
+  const { nome, email } = parseFrom(from);
+  return {
+    id: msg.id,
+    threadId: msg.threadId,
+    from,
+    fromNome: nome,
+    fromEmail: email,
+    subject: header(headers, "Subject"),
+    dateMs,
+    snippet: (msg.snippet || "").trim(),
+    link: "https://mail.google.com/mail/u/0/#all/" + msg.id,
+  };
+}
+
 function toPublicacao(msg) {
   const headers = msg.payload?.headers || [];
   const subject = header(headers, "Subject");

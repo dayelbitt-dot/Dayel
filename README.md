@@ -7,6 +7,7 @@ Assistente **pessoal e profissional** para organizar toda a sua vida — em um �
 ## O que já tem
 
 - 🏠 **Início com IA no centro** — a tela inicial é uma **conversa com o assistente** (estilo Claude/ChatGPT): saudação pelo horário, caixa para escrever/falar/anexar em linguagem natural (*“crie uma tarefa para amanhã às 14h”*, *“abra o processo 5001234”*, *“cadastre este cliente”*), **sugestões inteligentes** do dia e o painel **Hoje** com cartões clicáveis (tarefas, prazos, compromissos, audiências, publicações, aniversários). Todo o resto do sistema fica no **menu lateral (☰ Menu)** — nada foi removido
+- ☀️ **Resumo do dia** — briefing automático de todo dia, em português, cruzando **Agenda** (hoje e amanhã) e **Gmail** (não lidos das últimas 24h): destaca **e-mails que pedem atenção** (clientes, tribunais/cartórios, possíveis prazos) e conta o resto. Aparece no **Início** e no menu ☰ → *Resumo do dia*, com **aviso opcional às 8h**
 - ✨ **Captura rápida multi-tipo** — escreva/fale/suba documentos, escolha **um ou vários destinos** (Tarefa, Agenda, Nota, Cliente, Processo) e o sistema cadastra tudo de uma vez (no menu ☰ → *Captura rápida*)
 - 🧑 **Pessoal** — tarefas, prioridades e prazos
 - 💼 **Trabalho** — tarefas profissionais separadas das pessoais
@@ -190,6 +191,44 @@ Igual ao leitor de documentos — se você já fez aquilo, só falta publicar es
 
 ---
 
+## ☀️ Resumo do dia (briefing automático de todo dia)
+
+Todo dia o app monta, em português, um **resumo direto** cruzando a sua **Agenda
+Google** e o seu **Gmail** — para você começar o dia sabendo o que importa. Fica
+no menu ☰ → **Resumo do dia** e também aparece como **cartão no topo do Início**.
+
+O resumo tem esta estrutura:
+
+- **📅 Agenda de hoje** — compromissos, audiências e prazos com **horário e local**.
+- **📅 Agenda de amanhã** — o mesmo, para você se antecipar.
+- **📨 E-mails que precisam de atenção** — as mensagens **não lidas das últimas
+  24h** que se destacam, com o **motivo** de cada uma: **cliente** (bate com um
+  cliente cadastrado por e‑mail ou nome), **tribunal/cartório** (remetente/assunto
+  jurídico, EPROC, PJe…) ou **possível prazo processual** (fala em prazo,
+  intimação, audiência, número CNJ…).
+- **📬 Outros e-mails** — só a **contagem** dos não lidos que não caíram em nenhum
+  destaque (sem detalhar).
+
+Cada e‑mail em destaque leva direto para a mensagem no Gmail; os itens da agenda
+abrem a **Agenda**. Há botão **📋 Copiar resumo** (texto pronto para colar).
+
+### 🔔 Aviso às 8h (opcional)
+
+Na página do Resumo, ligue **🔔 Avisar todo dia** e escolha o **horário** (padrão
+**08:00**). A partir dessa hora, ao abrir o app você recebe **uma notificação por
+dia** com o resumo (tocar na notificação abre direto a página).
+
+> Um app instalado pela web (**PWA**) **não roda 100% sozinho em segundo plano** —
+> por isso o aviso dispara **quando o app é aberto a partir do horário marcado**, e
+> o resumo do dia já vem **pronto** no cartão do Início. Tudo é montado **no próprio
+> navegador**, reaproveitando as conexões de **Agenda** e **Gmail** que você já usa
+> (nada é enviado para servidores de IA).
+
+Precisa das mesmas permissões do Google já usadas no app: **Google Agenda**
+(compromissos) e **Gmail** leitura (mesmo escopo das *Publicações oficiais*).
+
+---
+
 ## 📬 Publicações oficiais (EPROC, direto do seu Gmail)
 
 A aba **Publicações oficiais** busca no seu **Gmail** os e-mails de
@@ -328,7 +367,8 @@ js/extract.js           # extração de dados de cliente/processo por REGRAS (pt
 js/ai.js                # leitura de documentos por IA (opcional, via função do Supabase)
 js/files.js             # extrai texto de PDF/imagem (OCR)/txt
 js/gcal.js              # integração com o Google Agenda
-js/gmail.js             # busca e-mails do EPROC no Gmail (Publicações oficiais)
+js/gmail.js             # lê e-mails no Gmail (Publicações oficiais e Resumo do dia)
+js/resumo.js            # Resumo do dia (briefing Agenda+Gmail; aviso das 8h)
 js/app.js               # telas e navegação
 supabase/schema.sql     # banco de dados
 supabase/functions/extrair/  # função de IA (chave da API fica no servidor)

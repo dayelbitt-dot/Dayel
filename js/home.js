@@ -9,6 +9,7 @@ import { buildSnapshot, executarAcao, friendlyErr, rotaDePagina, acaoImediata } 
 import { extractTextFromFile } from "./files.js";
 import { parseNaturalTask } from "./nlp.js";
 import { rank } from "./search.js";
+import { resumoCard } from "./resumo.js";
 import * as gcal from "./gcal.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -256,7 +257,10 @@ export async function renderHome(ctx) {
   }
 
   main.innerHTML = "";
-  main.append(hero, composer, exemplos, hojeSection);
+  main.append(hero, composer, exemplos);
+  // Cartão do Resumo do dia (só quando o Google está configurado).
+  if (gcal.googleEnabled()) main.append(resumoCard(ctx.navigate));
+  main.append(hojeSection);
 
   // ---- comportamento ----
   ui = { chatWrap, input, statusEl, attWrap, micBtn, sendBtn, exemplos };

@@ -23,6 +23,7 @@ import {
   isValidCpfCnpj, isValidCEP, isValidTelefone,
 } from "./cliente.js";
 import { renderHome } from "./home.js";
+import { renderResumo, startResumoScheduler } from "./resumo.js";
 import { rotaDePagina } from "./agent.js";
 import * as gcal from "./gcal.js";
 import * as gmail from "./gmail.js";
@@ -108,12 +109,18 @@ async function showApp(session) {
     gcal.startAutoConnect((connected) => {
       if (connected) { googleLoadedKey = null; } // token novo → rebuscar eventos
       if (state.route === "agenda") renderAgenda();
+      if (state.route === "resumo") renderResumoPage();
     });
   } catch {}
   // Mantém o Gmail conectado sozinho (para as Publicações oficiais).
   try {
-    gmail.startAutoConnect(() => { if (state.route === "publicacoes") renderPublicacoes(); });
+    gmail.startAutoConnect(() => {
+      if (state.route === "publicacoes") renderPublicacoes();
+      if (state.route === "resumo") renderResumoPage();
+    });
   } catch {}
+  // Resumo do dia: monta o briefing ao abrir e avisa na hora marcada.
+  try { startResumoScheduler(); } catch {}
   // Ao voltar para o app (ou focar a janela), se estiver na aba de Publicações,
   // redesenha — o que dispara a rebusca automática das novas do dia.
   if (!window.__pubVisibilityWired) {
@@ -508,7 +515,7 @@ function navigate(route) {
   const activeTab = (route === "contacts" || route === "birthdays") ? "personal" : route;
   $$(".drawer-item").forEach((b) => b.classList.toggle("active", b.dataset.route === activeTab));
   removeFab();
-  const routes = { home: renderHomePage, captura: renderCapturaPage, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, publicacoes: renderPublicacoes, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays, seguranca: renderSecurity };
+  const routes = { home: renderHomePage, resumo: renderResumoPage, captura: renderCapturaPage, agenda: renderAgenda, clients: renderClients, processes: renderProcesses, publicacoes: renderPublicacoes, docs: renderGerarDocs, personal: renderTasksPage, professional: renderTasksPage, reminders: renderReminders, notes: renderNotes, contacts: renderContacts, birthdays: renderBirthdays, seguranca: renderSecurity };
   (routes[route] || renderHomePage)();
 }
 
@@ -532,6 +539,13 @@ function renderHomePage() {
     openClient: (id) => openClient(id),
     openDocumentos: (preset) => { state.route = "docs"; $$(".drawer-item").forEach((b) => b.classList.toggle("active", b.dataset.route === "docs")); renderGerarDocs(preset); },
   });
+}
+
+// Resumo do dia: briefing (Agenda de hoje/amanhã + e-mails que pedem atenção).
+function renderResumoPage() {
+  removeFab();
+  $("#main").innerHTML = "";
+  renderResumo({ navigate, rotaAtual: () => state.route });
 }
 
 // Contexto que permite à IA dos chats navegar/abrir registros (ações "abrir_*").
@@ -3568,6 +3582,11 @@ function addDaysISO(iso, n) {
 // ==================== SERVICE WORKER ====================
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  // Clique numa notificação (ex.: Resumo do dia) → o SW pede para abrir a tela.
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    const rota = e.data?.type === "navigate" && e.data.rota;
+    if (rota && !$("#app").classList.contains("hidden")) navigate(rota);
+  });
 }
 
 boot();

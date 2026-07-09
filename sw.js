@@ -1,7 +1,7 @@
 // Service worker: estratégia "rede primeiro" para os arquivos do app.
 // Assim, com internet, o usuário SEMPRE recebe a versão mais nova;
 // sem internet, cai para o cache (funciona offline).
-const CACHE = "assistente-v46";
+const CACHE = "assistente-v47";
 // Bibliotecas externas que valem a pena guardar para o app abrir OFFLINE
 // (a lib da Supabase é importada de CDN; sem cache, o boot falharia sem net).
 const RUNTIME_CDN = /(^https:\/\/esm\.sh\/)|(cdn\.jsdelivr\.net)|(cdn\.skypack\.dev)/;
@@ -11,6 +11,7 @@ const ASSETS = [
   "./css/styles.css",
   "./js/app.js",
   "./js/home.js",
+  "./js/resumo.js",
   "./js/agent.js",
   "./js/ui.js",
   "./js/store.js",
@@ -51,6 +52,21 @@ self.addEventListener("activate", (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+  );
+});
+
+// Clique na notificação (Resumo do dia): foca o app já aberto ou abre um novo,
+// levando à tela indicada pela notificação (rota do resumo).
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const rota = e.notification.data?.rota || "";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if ("focus" in w) { if (rota) { try { w.postMessage({ type: "navigate", rota }); } catch {} } return w.focus(); }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./" + (rota ? "#" + rota : ""));
+    })
   );
 });
 
