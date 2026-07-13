@@ -1427,12 +1427,38 @@ async function exportarTudo() {
   return contagem;
 }
 
+// Exporta TODA a base de CLIENTES E PROCESSOS num único JSON.
+// Mantém os registros completos (inclusive andamentos, cadastro estruturado e os
+// vínculos client_id/client_ids), removendo apenas os anexos para o arquivo ficar
+// leve. O resultado pode ser reimportado aqui depois (botão Importar).
+async function exportarClientesProcessos() {
+  const semAnexos = (r) => { const { attachments, ...rest } = r || {}; return rest; };
+  const [clientsRows, processesRows] = await Promise.all([
+    list("clients").catch(() => []),
+    list("processes").catch(() => []),
+  ]);
+  const clientes = (clientsRows || []).map(semAnexos);
+  const processos = (processesRows || []).map(semAnexos);
+  const payload = {
+    app: "Meu Assistente",
+    tipo: "backup-clientes-processos",
+    versao: 1,
+    exportadoEm: new Date().toISOString(),
+    total: { clientes: clientes.length, processos: processos.length },
+    clientes,
+    processos,
+  };
+  baixarArquivo(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `clientes-processos-${backupData()}.json`);
+  return { clientes: clientes.length, processos: processos.length };
+}
+
 // Modal de backup / exportação de dados.
 function openBackupClientes(clients) {
   clients = clients || [];
   const doExcel = el("button", { class: "btn btn-block" + (clients.length ? "" : " btn-ghost"), disabled: clients.length ? null : "" }, "⬇ Clientes em Excel (.xlsx)");
   const doJson = el("button", { class: "btn btn-block", disabled: clients.length ? null : "" }, "⬇ Clientes em JSON (.json)");
-  const doTudo = el("button", { class: "btn btn-primary btn-block" }, "⬇ Exportar TODOS os dados (JSON)");
+  const doClientesProc = el("button", { class: "btn btn-primary btn-block" }, "⬇ Clientes e processos (JSON)");
+  const doTudo = el("button", { class: "btn btn-block" }, "⬇ Exportar TODOS os dados (JSON)");
   doExcel.onclick = async () => {
     doExcel.disabled = true; doExcel.textContent = "Gerando planilha…";
     try { await exportClientsXLSX(clients); toast("✅ Planilha gerada. Verifique os downloads."); closeModal(); }
@@ -1441,6 +1467,14 @@ function openBackupClientes(clients) {
   doJson.onclick = async () => {
     try { await exportClientsJSON(clients); toast("✅ Arquivo JSON gerado. Verifique os downloads."); closeModal(); }
     catch (e) { toast("Não consegui gerar o JSON: " + (e?.message || "")); }
+  };
+  doClientesProc.onclick = async () => {
+    doClientesProc.disabled = true; doClientesProc.textContent = "Exportando…";
+    try {
+      const c = await exportarClientesProcessos();
+      toast(`✅ Exportado: ${c.clientes} clientes · ${c.processos} processos. Verifique os downloads.`, { duration: 9000 });
+      closeModal();
+    } catch (e) { doClientesProc.disabled = false; doClientesProc.textContent = "⬇ Clientes e processos (JSON)"; toast("Não consegui exportar: " + (e?.message || "")); }
   };
   doTudo.onclick = async () => {
     doTudo.disabled = true; doTudo.textContent = "Exportando…";
@@ -1454,8 +1488,11 @@ function openBackupClientes(clients) {
     el("h3", {}, "Backup e exportação"),
     el("p", { class: "page-sub", style: "margin:0 0 14px" }, "Baixe uma cópia dos seus dados para guardar, levar para outro sistema ou enviar para análise."),
     el("div", { style: "display:flex; flex-direction:column; gap:10px" }, [
+      doClientesProc,
+      el("p", { class: "t2", style: "margin:0" }, "“Clientes e processos (JSON)” gera um único arquivo .json com TODA a base de clientes e processos (com andamentos, cadastro e os vínculos preservados; sem os arquivos anexados). Pode ser reimportado aqui depois."),
+      el("div", { style: "height:6px" }),
       doTudo,
-      el("p", { class: "t2", style: "margin:0" }, "“Exportar TODOS os dados” gera um único arquivo .json com clientes, processos, tarefas, notas, lembretes e contatos (sem os arquivos anexados). É o ideal para me enviar e eu analisar os vínculos/cadastros."),
+      el("p", { class: "t2", style: "margin:0" }, "“Exportar TODOS os dados” também inclui tarefas, notas, lembretes e contatos (sem os arquivos anexados)."),
       el("div", { style: "height:6px" }),
       doExcel, doJson,
       el("p", { class: "t2", style: "margin:2px 0 0" }, "O JSON de clientes pode ser reimportado aqui depois (botão Importar). ⚠️ Os arquivos contêm dados pessoais (CPF etc.) — guarde/compartilhe com cuidado."),
