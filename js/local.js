@@ -173,16 +173,28 @@ async function fromStored(r) {
   return stripMeta(r);
 }
 
-// Lê todas as linhas de UMA tabela do espelho local.
-export async function localRows(table) {
+// Lê todas as linhas de UMA tabela do espelho local, informando TAMBÉM quantas
+// não puderam ser lidas (registros cifrados sem a chave na memória).
+//
+// Essa contagem é essencial: um registro ilegível não é um registro inexistente.
+// Quem for SOBRESCREVER o espelho (reconcile/dumpRows) precisa saber a diferença
+// para não apagar dado bom achando que ali não havia nada.
+export async function localRowsDetailed(table) {
   const all = await getAll("rows");
-  const out = [];
+  const rows = [];
+  let unreadable = 0;
   for (const r of all) {
     if (r._table !== table) continue;
     const rec = await fromStored(r);
-    if (rec) out.push(rec);
+    if (rec) rows.push(rec);
+    else unreadable += 1;
   }
-  return out;
+  return { rows, unreadable };
+}
+
+// Lê todas as linhas de UMA tabela do espelho local.
+export async function localRows(table) {
+  return (await localRowsDetailed(table)).rows;
 }
 
 // Substitui/insere UM registro no espelho.
@@ -228,18 +240,64 @@ export async function replaceTable(table, records) {
 export async function dumpRows() {
   const all = await getAll("rows");
   const out = [];
+  let unreadable = 0;
   for (const r of all) {
     const rec = await fromStored(r);
     if (rec) out.push({ table: r._table, record: rec });
+    else unreadable += 1;
+  }
+  // Migrar (ligar/desligar/trocar PIN) com registros ilegíveis significaria
+  // regravar o espelho SEM eles — ou seja, apagá-los. Melhor abortar.
+  if (unreadable) {
+    throw new Error(
+      `Há ${unreadable} registro(s) neste aparelho que não consegui abrir com a chave atual. ` +
+      "Nada foi alterado. Use a página de recuperação (recuperar.html) antes de continuar.",
+    );
   }
   return out;
 }
+
+// Cópia CRUA do espelho, exatamente como está no disco — inclusive os registros
+// ainda cifrados. É o que salvamos como rede de proteção antes de apagar algo:
+// mesmo ilegível agora, um dump cru volta a ser legível com o PIN certo.
+export async function rawDump() {
+  const [rows, outbox, changelog, meta] = await Promise.all([
+    getAll("rows"), getAll("outbox"), getAll("changelog"), getAll("meta"),
+  ]);
+  return { rows, outbox, changelog, meta };
+}
+
 export async function clearRows() {
   try { await idbClear("rows"); } catch { LS.write("rows", []); }
 }
+
+// Regrava o espelho inteiro (usado nas migrações de cripto). Faz tudo dentro de
+// UMA transação: ou o aparelho fica 100% no formato novo, ou continua como
+// estava. Antes isso era "apaga tudo, depois regrava um por um" — fechar o app
+// no meio da migração levava embora todo o resto.
 export async function loadRows(items) {
-  await clearRows();
-  for (const it of items) await saveRow(it.table, it.record);
+  // A cripto é assíncrona e não pode ser aguardada dentro de uma transação
+  // IndexedDB (ela se fecha ao ceder o event loop): prepara tudo antes.
+  const prepared = [];
+  for (const it of items) prepared.push(await toStored(it.table, it.record));
+  const keep = new Set(prepared.map((r) => r._key));
+  try {
+    const db = await openDB();
+    await new Promise((res, rej) => {
+      const tx = db.transaction("rows", "readwrite");
+      const os = tx.objectStore("rows");
+      const all = os.getAll();
+      all.onsuccess = () => {
+        for (const r of all.result || []) if (!keep.has(r._key)) os.delete(r._key);
+        for (const value of prepared) os.put(value);
+      };
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  } catch {
+    const others = LS.read("rows").filter((r) => !keep.has(r._key));
+    LS.write("rows", others.concat(prepared));
+  }
 }
 
 // ---------------------------------------------------------------
@@ -275,6 +333,24 @@ export async function getMeta(k) {
   catch { const rec = LS.read("meta").find((r) => r.k === k); return rec ? rec.v : null; }
 }
 export async function setMeta(k, v) { return put("meta", { k, v }); }
+
+// ---------------------------------------------------------------
+//  ARMAZENAMENTO PERSISTENTE
+// ----------------------------------------------------------------
+//  Por padrão o navegador considera o banco local "descartável": em aparelho
+//  com pouco espaço — ou no Safari/iOS, depois de alguns dias sem abrir o site —
+//  ele APAGA IndexedDB e localStorage sozinho, sem avisar. Pedir persistência
+//  tira o app dessa fila de descarte. Em PWA instalado costuma ser concedido
+//  sem nem perguntar.
+// ---------------------------------------------------------------
+export async function requestPersistence() {
+  try {
+    if (!navigator.storage?.persist) return { supported: false, persisted: false };
+    const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+    const persisted = already || (await navigator.storage.persist());
+    return { supported: true, persisted };
+  } catch { return { supported: false, persisted: false }; }
+}
 
 // Apaga TUDO do banco local (logout / "apagar dados locais deste aparelho").
 export async function wipeLocal() {

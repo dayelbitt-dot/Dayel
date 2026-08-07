@@ -273,7 +273,32 @@ Além do selo do topo, cada **item** criado/alterado offline mostra um **pontinh
 
 **Fila de ações offline** — quando você tenta uma ação que depende de internet estando offline (por ex. **WhatsApp** ou **e-mail** de um contato, ou pela conversa da IA), o app **não falha**: pergunta *“Esta ação exige conexão. Deixar programado para quando a internet voltar?”*. Se você programar, ela fica guardada. Um selo **⏳ no topo** mostra quantas ações estão programadas; ao voltar a internet o app avisa e você **executa cada uma com um toque** (as janelas de WhatsApp/e-mail só abrem a partir do seu toque — por isso o app lista em vez de disparar sozinho).
 
-> 🔒 Os dados locais deste aparelho são **apagados ao sair** (logout) — desde que nada esteja pendente de sincronização; se houver pendências, elas ficam guardadas até você entrar de novo e a conexão voltar.
+> 🔒 Os dados locais deste aparelho são **apagados ao sair** (logout) — **e só** depois que o app confere, registro por registro, que a nuvem está mesmo com tudo. Se faltar qualquer confirmação (sem internet, erro de sincronização, algo ainda na fila, aparelho travado pelo PIN), nada é apagado: fica guardado aqui até você entrar de novo.
+
+### 🛟 Nunca perder dado (garantias do módulo local)
+
+O espelho local e a nuvem podem discordar. Quando isso acontece, a regra é sempre a mesma: **na dúvida, o dado fica**.
+
+- **A nuvem não manda apagar por omissão.** Um registro que existe no aparelho e **não veio** na resposta da nuvem só é removido daqui se ele **já esteve confirmado lá** (`_sync: "synced"`) — ou seja, foi realmente apagado em outro aparelho. Se nunca chegou a subir, ele **fica e volta para a fila de envio**.
+- **Resposta vazia é tratada como falha, não como “esvaziou”.** Sessão expirada, conta trocada ou política de acesso podem fazer a nuvem responder *zero linhas* sem erro nenhum. Nesse caso o app **não apaga nada**.
+- **Leitura completa, em páginas.** A nuvem corta respostas grandes em 1.000 linhas sem avisar; o app pagina até o fim, para nunca confundir “não veio” com “não existe”.
+- **A fila nunca esvazia sozinha.** Se uma alteração não puder ser enviada, ela **continua na fila** com o erro à mostra, em vez de sumir em silêncio.
+- **Migração de criptografia é tudo-ou-nada.** Ligar, desligar ou trocar o PIN regrava o banco dentro de **uma única transação**: fechar o app no meio não deixa o aparelho pela metade. E se houver qualquer registro ilegível, a migração **aborta** em vez de regravar sem ele.
+- **Nada é apagado sem cópia.** "Apagar dados locais" e "Esqueci o PIN" **baixam antes** um arquivo com tudo o que está no aparelho — inclusive o que ainda está cifrado.
+- **Armazenamento persistente.** O app pede ao navegador para **não descartar** o banco local (sem isso, o Safari/iOS apaga tudo depois de alguns dias sem uso, e o Android apaga quando falta espaço). Instalar o app na tela inicial torna isso mais garantido.
+
+### 🚑 Página de recuperação (`recuperar.html`)
+
+Se algum dado sumir, abra **`recuperar.html`** (também em ☰ → **Segurança** → *Recuperar dados do aparelho*) **antes de abrir o app** naquele aparelho.
+
+Ela é independente do app: **só lê**, nunca grava, nunca sincroniza e nunca apaga. Mostra:
+
+- tudo o que ainda está no banco local, **por tabela e por mês de cadastro**;
+- quantas alterações **nunca chegaram à nuvem**;
+- o **histórico de alterações** do aparelho (criações, edições e exclusões, com data) — ele não é cifrado e sobrevive mesmo quando o registro em si some, servindo de prova do que existiu;
+- os **eventos de segurança** (quando o PIN foi ativado, trocado ou destravado).
+
+E permite **decifrar com o PIN**, **baixar tudo em JSON** e **reenviar para a nuvem** (upsert pelo id — não duplica o que já estiver lá).
 
 ### 🔐 Segurança local (bloqueio + criptografia)
 
@@ -313,6 +338,7 @@ python3 -m http.server 8000
 
 ```
 index.html              # estrutura das telas
+recuperar.html          # página de RECUPERAÇÃO (somente leitura do banco local; independente do app)
 css/styles.css          # visual
 js/config.js            # onde você cola as chaves do Supabase
 js/store.js             # dados OFFLINE-FIRST (espelho local + fila de sincronização com a nuvem)

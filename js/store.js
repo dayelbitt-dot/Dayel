@@ -19,10 +19,10 @@
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY, CLOUD_ENABLED } from "./config.js";
 import {
-  localRows, saveRow, deleteRow, replaceTable,
+  localRows, localRowsDetailed, saveRow, deleteRow, replaceTable,
   enqueue, queueItems, dequeue, updateQueueItem,
   logChange, getMeta, setMeta, wipeLocal, nowISO,
-  dumpRows, loadRows,
+  dumpRows, rawDump, loadRows, requestPersistence,
 } from "./local.js";
 import { securityEnabled, unlocked, provisionConfig, unlock, clearConfig } from "./security.js";
 
@@ -60,6 +60,9 @@ export const isCloud = () => CLOUD_ENABLED;
 // Carrega o snapshot do usuário do banco local (para funcionar offline) e,
 // havendo Supabase + internet, atualiza-o. Chamado no boot.
 export async function initLocalData() {
+  // Tira o banco local da fila de descarte automático do navegador ANTES de
+  // qualquer outra coisa (ver requestPersistence em local.js).
+  requestPersistence().catch(() => {});
   currentUser = (await getMeta("user")) || currentUser;
   await migrateLegacyLocal();
   if (sb) refreshUser().catch(() => {});
@@ -173,14 +176,34 @@ async function enqueueOp(op, table, id) {
 // Proteção local ligada mas travada: nenhum dado deve ser lido/escrito/cifrado.
 const locked = () => securityEnabled() && !unlocked();
 
+// Baixa a tabela INTEIRA da nuvem, em páginas. O PostgREST corta a resposta em
+// um número máximo de linhas (1.000 por padrão na Supabase) sem avisar que
+// cortou — quem pedisse ".select('*')" e confiasse no resultado achava que a
+// nuvem só tinha as primeiras 1.000 linhas.
+const PAGE = 1000;
+async function fetchAllRows(table) {
+  const out = [];
+  for (let from = 0; ; from += PAGE) {
+    // Ordena por id (único) só para paginar: sem uma ordem ESTÁVEL, o banco
+    // pode devolver a mesma linha em duas páginas e deixar outra de fora. A
+    // ordem que a tela usa é aplicada depois, aqui mesmo, por sortRows.
+    const { data, error } = await sb.from(table).select("*")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return out;
+}
+
 export async function list(table, { orderBy = "created_at", asc = false } = {}) {
   if (locked()) return []; // app fica atrás da tela de bloqueio; salvaguarda
   // Sempre que possível, baixa o fresco da nuvem e concilia com o local.
   if (sb && status.online) {
     try {
-      const { data, error } = await sb.from(table).select("*").order(orderBy, { ascending: asc });
-      if (error) throw error;
-      const merged = await reconcile(table, data || []);
+      const data = await fetchAllRows(table);
+      const merged = await reconcile(table, data);
       return sortRows(merged, orderBy, asc);
     } catch (e) {
       if (!isNetworkError(e)) console.warn("list(" + table + ") caiu para o local:", e?.message || e);
@@ -190,28 +213,60 @@ export async function list(table, { orderBy = "created_at", asc = false } = {}) 
   return sortRows(await localRows(table), orderBy, asc);
 }
 
-// Concilia a versão da nuvem com o espelho local, preservando as alterações
-// locais ainda NÃO sincronizadas (a mais recente do usuário vence até subir).
+// ----------------------------------------------------------------
+//  CONCILIAÇÃO nuvem × aparelho
+// ----------------------------------------------------------------
+//  Regra de ouro: a nuvem NÃO manda apagar por omissão. Um registro que existe
+//  aqui e não veio na resposta pode ter sido apagado em outro aparelho — mas
+//  pode também nunca ter subido, ou a resposta pode ter vindo capenga (sessão
+//  expirada, RLS de outra conta, corte de paginação). Só apagamos do aparelho
+//  o registro que JÁ ESTEVE confirmado na nuvem (_sync: "synced") e sumiu de
+//  lá. Todo o resto fica — e volta para a fila para subir.
 async function reconcile(table, serverRows) {
   const pending = (await queueItems()).filter((i) => i.table === table);
   const pendingById = new Map(pending.map((i) => [i.id, i]));
-  const local = await localRows(table);
+  const { rows: local, unreadable } = await localRowsDetailed(table);
   const localById = new Map(local.map((r) => [r.id, r]));
   const serverIds = new Set(serverRows.map((r) => r.id));
-  const out = [];
 
+  // Registros cifrados que não conseguimos abrir: não sabemos o que há aqui,
+  // então não regravamos o espelho. Serve o que dá para ler e não apaga nada.
+  if (unreadable) {
+    console.warn(`reconcile(${table}): ${unreadable} registro(s) ilegíveis — espelho preservado.`);
+    return local;
+  }
+
+  // Resposta vazia com dados aqui é suspeita (sessão expirada, conta trocada,
+  // RLS): a nuvem não "esvaziou", ela não respondeu direito. Nesse caso ninguém
+  // é apagado — nem o que já estava confirmado lá.
+  const suspeita = !serverRows.length && local.length > 0;
+  if (suspeita) console.warn(`reconcile(${table}): nuvem devolveu 0 linhas com ${local.length} aqui — nada será apagado.`);
+
+  const out = [];
   for (const srv of serverRows) {
     const op = pendingById.get(srv.id);
     if (op && op.op === "remove") continue;                 // exclusão pendente: esconde
     if (op) out.push({ ...(localById.get(srv.id) || srv), _sync: "pending" }); // edição local vence
     else out.push({ ...srv, _sync: "synced" });
   }
-  // Cadastros criados offline que ainda não existem na nuvem.
-  for (const op of pending) {
-    if (op.op === "insert" && !serverIds.has(op.id) && localById.has(op.id))
-      out.push({ ...localById.get(op.id), _sync: "pending" });
+
+  // O que existe SÓ aqui.
+  const resgatados = [];
+  for (const rec of local) {
+    if (serverIds.has(rec.id)) continue;
+    const op = pendingById.get(rec.id);
+    if (op && op.op === "remove") continue;      // o usuário mandou apagar: sai mesmo
+    // Já esteve confirmado na nuvem e agora sumiu de lá: foi apagado em outro
+    // aparelho. Só aceitamos essa leitura quando a resposta é confiável.
+    if (!op && rec._sync === "synced" && !suspeita) continue;
+    const confirmado = rec._sync === "synced";
+    out.push({ ...rec, _sync: !op && confirmado ? "synced" : "pending" });
+    // Nunca chegou a ser confirmado na nuvem: reenfileira para subir.
+    if (!op && !confirmado) resgatados.push(rec.id);
   }
   await replaceTable(table, out);
+  for (const id of resgatados) await enqueueOp("insert", table, id);
+  if (resgatados.length) console.warn(`reconcile(${table}): ${resgatados.length} registro(s) só existiam aqui — recolocados na fila de envio.`);
   return out;
 }
 
@@ -264,16 +319,26 @@ function stripSync(rec) { const { _sync, _pending, ...rest } = rec; return rest;
 // ================================================================
 //  SINCRONIZAÇÃO com a Supabase
 // ================================================================
-let flushing = false;
+let flushing = null; // promessa da sincronização em andamento (null = parada)
 
 function flushSoon() { if (sb && status.online) syncNow().catch(() => {}); }
 
 export async function syncNow() {
-  if (flushing || !sb || !status.online || locked()) return; // travado: não cifra/decifra em 2º plano
+  if (!sb || !status.online || locked()) return; // travado: não cifra/decifra em 2º plano
+  // Já existe uma sincronização rodando: ESPERA por ela em vez de voltar na
+  // hora. Quem escreve "await syncNow()" precisa poder confiar que, ao voltar,
+  // a fila foi mesmo trabalhada — é essa garantia que o logout usa para decidir
+  // se pode ou não limpar o aparelho.
+  if (flushing) return flushing;
+  flushing = doSync();
+  try { await flushing; } finally { flushing = null; }
+}
+
+async function doSync() {
   const items = await queueItems();
   if (!items.length) { status.error = false; emitStatus(); return; }
 
-  flushing = true; status.syncing = true; status.error = false; emitStatus();
+  status.syncing = true; status.error = false; emitStatus();
   let hadError = false, offlineBreak = false;
   try {
     // Esvazia a fila por completo (inclusive itens criados DURANTE o envio).
@@ -300,7 +365,7 @@ export async function syncNow() {
     // Baixa o que outros aparelhos mudaram (sincronização bidirecional).
     if (status.online && !offlineBreak) { for (const t of TABLES) { try { await pull(t); } catch {} } }
   } finally {
-    flushing = false; status.syncing = false; status.error = hadError;
+    status.syncing = false; status.error = hadError;
     await updatePending();
   }
 }
@@ -312,9 +377,19 @@ async function pushItem(item) {
     if (error) throw error;
     return;
   }
-  const rows = await localRows(table);
+  const { rows, unreadable } = await localRowsDetailed(table);
   const rec = rows.find((r) => r.id === id);
-  if (!rec) return; // sumiu do espelho (apagado depois): nada a subir
+  if (!rec) {
+    // O registro sumiu do espelho mas a ordem de subir continua na fila. Isso
+    // não é normal (apagar cancela/converte o item) e antes era engolido em
+    // silêncio: a fila esvaziava sem nada ter subido, e o app passava a achar
+    // que estava tudo sincronizado. Agora erra alto e o item FICA na fila.
+    throw new Error(
+      unreadable
+        ? `registro ${id} está cifrado e ilegível neste aparelho — destrave com o PIN antes de sincronizar`
+        : `registro ${id} não está mais no espelho local — nada foi enviado`,
+    );
+  }
   const payload = cleanPayload({ ...rec, id });
   const { data, error } = await sb.from(table).upsert(payload).select().single();
   if (error) throw error;
@@ -322,9 +397,7 @@ async function pushItem(item) {
 }
 
 async function pull(table) {
-  const { data, error } = await sb.from(table).select("*");
-  if (error) throw error;
-  await reconcile(table, data || []);
+  await reconcile(table, await fetchAllRows(table));
 }
 
 async function markRowError(table, id) {
@@ -338,6 +411,43 @@ export async function pendingCount() { return (await queueItems()).length; }
 
 // Limpa o banco local (logout / "apagar dados deste aparelho").
 export async function clearLocal() { await wipeLocal(); currentUser = null; await updatePending(); }
+
+// Cópia crua de TUDO o que está guardado no aparelho — inclusive registros
+// ainda cifrados e a fila de envio. É o arquivo que baixamos antes de qualquer
+// apagamento local, para nada ser irreversível. Pode ser aberto depois em
+// recuperar.html (que decifra com o PIN, se for o caso).
+export async function emergencyBackup() {
+  const dump = await rawDump();
+  return {
+    app: "Meu Assistente",
+    tipo: "backup-cru-do-aparelho",
+    versao: 1,
+    exportadoEm: new Date().toISOString(),
+    usuario: currentUser?.email || null,
+    seguranca: (() => { try { return JSON.parse(localStorage.getItem("assist:sec:cfg")) || {}; } catch { return {}; } })(),
+    total: { rows: dump.rows.length, outbox: dump.outbox.length, changelog: dump.changelog.length },
+    ...dump,
+  };
+}
+
+// Antes de apagar o aparelho: dá para confiar que a nuvem tem tudo?
+// Só responde "sim" com internet, sem nada na fila, sem erro de sincronização
+// e sem registro que exista apenas aqui.
+export async function cloudHasEverything() {
+  if (!sb || !status.online) return { ok: false, motivo: "sem conexão com a nuvem agora" };
+  if (locked()) return { ok: false, motivo: "os dados deste aparelho estão travados pelo PIN" };
+  try { await syncNow(); } catch { /* avaliado abaixo pelo estado */ }
+  if (status.error) return { ok: false, motivo: "a última sincronização terminou com erro" };
+  const pend = await pendingCount();
+  if (pend) return { ok: false, motivo: `${pend} alteração(ões) ainda não subiram` };
+  for (const t of TABLES) {
+    const { rows, unreadable } = await localRowsDetailed(t);
+    if (unreadable) return { ok: false, motivo: `${unreadable} registro(s) ilegíveis em ${t}` };
+    const soAqui = rows.filter((r) => r._sync && r._sync !== "synced").length;
+    if (soAqui) return { ok: false, motivo: `${soAqui} registro(s) de ${t} ainda não confirmados na nuvem` };
+  }
+  return { ok: true, motivo: "" };
+}
 
 // ================================================================
 //  SEGURANÇA LOCAL — liga/desliga/troca o PIN, recifrando o espelho.

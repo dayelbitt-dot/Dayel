@@ -1,4 +1,4 @@
-import { initSupabase, isCloud, list, insert, update, remove, initLocalData, setOnline, onStatus, getStatus, syncNow, pendingCount, clearLocal } from "./store.js";
+import { initSupabase, isCloud, list, insert, update, remove, initLocalData, setOnline, onStatus, getStatus, syncNow, pendingCount, clearLocal, emergencyBackup, cloudHasEverything } from "./store.js";
 import { scheduleAction, listActions, removeAction, runAction, onActions, actionsCount, actionSummary, ACTION_META } from "./actions.js";
 import { filterRecords } from "./search.js";
 import { securityEnabled, unlocked, unlock, lock, startAutoLock, autolockMinutes, setAutolockMinutes, accessLogs, clearLogs, resetSecurity } from "./security.js";
@@ -239,7 +239,12 @@ function showLockOverlay() {
     // (o que está na nuvem continua salvo). Apaga o local, remove a proteção e
     // sai — ao entrar de novo, os dados são rebaixados da Supabase.
     const sair = el("button", { class: "btn btn-ghost btn-sm", style: "margin-top:14px", onclick: async () => {
-      if (!confirm("Esqueceu o PIN? Podemos remover a proteção deste aparelho e sair. Os dados guardados só aqui (ainda não sincronizados) serão perdidos; o que está na nuvem continua salvo e volta ao entrar de novo.")) return;
+      if (!confirm("Esqueceu o PIN?\n\nVou primeiro BAIXAR uma cópia crua de tudo o que está neste aparelho (ainda cifrada — se você lembrar do PIN depois, ela pode ser aberta em recuperar.html). Só então removo a proteção e saio.\n\nGuarde esse arquivo antes de continuar.")) return;
+      // Rede de proteção: nada aqui é apagado sem antes virar arquivo.
+      try { await baixarBackupCru(); }
+      catch (e) {
+        if (!confirm("Não consegui gerar a cópia de segurança (" + (e?.message || "erro") + ").\n\nApagar mesmo assim? Os dados guardados só aqui serão perdidos para sempre.")) return;
+      }
       try { await clearLocal(); } catch {}
       resetSecurity();
       try { await signOut(); } catch {}
@@ -280,8 +285,16 @@ async function renderSecurity() {
   ]);
 
   main.append(backBtn(), head, statusCard);
-  if (ativo) main.append(cardAutolock(), cardLogs(), cardWipe());
-  else main.append(cardWipe());
+  if (ativo) main.append(cardAutolock(), cardLogs(), cardRecuperar(), cardWipe());
+  else main.append(cardRecuperar(), cardWipe());
+
+  function cardRecuperar() {
+    return el("div", { class: "card" }, [
+      el("div", { class: "card-title" }, "🛟 Recuperar dados do aparelho"),
+      el("p", { class: "t2", style: "margin:4px 0 10px" }, "Abre o banco local em modo somente leitura e mostra tudo o que ainda está guardado aqui — inclusive registros cifrados e alterações que nunca subiram. Não altera nem apaga nada."),
+      el("a", { class: "btn btn-sm", href: "recuperar.html", target: "_blank", rel: "noopener" }, "Abrir a página de recuperação"),
+    ]);
+  }
 
   function acoesAtivo() {
     return el("div", { style: "display:flex; flex-wrap:wrap; gap:8px" }, [
@@ -320,13 +333,32 @@ async function renderSecurity() {
   function cardWipe() {
     return el("div", { class: "card" }, [
       el("div", { class: "card-title" }, "Apagar dados deste aparelho"),
-      el("p", { class: "t2", style: "margin:4px 0 10px" }, "Remove os dados guardados localmente (o que estiver sincronizado permanece na nuvem). Útil em caso de perda do aparelho."),
+      el("p", { class: "t2", style: "margin:4px 0 10px" }, "Remove os dados guardados localmente. Antes de apagar, o app confere se a nuvem realmente tem tudo e baixa uma cópia de segurança."),
       el("button", { class: "btn btn-danger btn-sm", onclick: async () => {
-        if (!confirm("Apagar TODOS os dados locais deste aparelho? O que já subiu para a nuvem continua salvo lá.")) return;
+        const { ok, motivo } = await cloudHasEverything().catch(() => ({ ok: false, motivo: "não consegui conferir a nuvem" }));
+        const aviso = ok
+          ? "Apagar TODOS os dados locais deste aparelho?\n\nConferi: a nuvem está com tudo. Mesmo assim vou baixar uma cópia antes."
+          : `⚠️ ATENÇÃO — a nuvem pode NÃO estar com tudo (${motivo}).\n\nSe você apagar agora, o que existe só aqui se perde. Vou baixar uma cópia antes, mas o ideal é resolver isso primeiro.\n\nApagar mesmo assim?`;
+        if (!confirm(aviso)) return;
+        try { await baixarBackupCru(); }
+        catch (e) { if (!confirm("Não consegui gerar a cópia (" + (e?.message || "erro") + "). Apagar mesmo assim?")) return; }
         await clearLocal(); toast("Dados locais apagados."); location.reload();
       } }, "Apagar dados locais"),
     ]);
   }
+}
+
+// Baixa a cópia CRUA do aparelho (inclusive registros cifrados e a fila de
+// envio). É a rede de proteção obrigatória antes de qualquer apagamento local.
+async function baixarBackupCru() {
+  const dump = await emergencyBackup();
+  baixarArquivo(
+    new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" }),
+    `aparelho-cru-${backupData()}.json`,
+  );
+  toast("💾 Cópia de segurança baixada. Guarde o arquivo antes de seguir.", { duration: 7000 });
+  // Dá tempo do navegador realmente gravar o arquivo antes de apagarmos algo.
+  await new Promise((r) => setTimeout(r, 1200));
 }
 
 // PIN novo (com confirmação) — usado para ativar e para trocar.
@@ -466,14 +498,15 @@ function wireShell() {
   $$(".drawer-item").forEach((b) => { b.onclick = () => { closeDrawer(); navigate(b.dataset.route); }; });
   $("#logout-btn").onclick = async () => {
     closeDrawer();
-    // Antes de sair, tenta subir o que estiver pendente para não perder nada.
-    try { if (navigator.onLine) await syncNow(); } catch {}
-    const pend = await pendingCount().catch(() => 0);
+    // Antes de sair, sobe o que estiver pendente e CONFERE de verdade que a
+    // nuvem ficou com tudo. Fila vazia sozinha não é prova de nada — o que vale
+    // é cada registro estar confirmado lá (_sync: "synced").
+    const { ok, motivo } = await cloudHasEverything().catch(() => ({ ok: false, motivo: "não consegui conferir a nuvem" }));
     await signOut();
-    // Limpa os dados locais deste aparelho (privacidade), desde que nada tenha
-    // ficado por sincronizar — senão mantém para o dono recuperar no próximo login.
-    if (pend === 0) { try { await clearLocal(); } catch {} }
-    else toast("Há " + pend + " alteração(ões) ainda não sincronizada(s). Elas continuam salvas neste aparelho até você entrar de novo e a conexão voltar.", { duration: 8000 });
+    // Só limpamos o aparelho (privacidade) quando a nuvem comprovadamente tem
+    // tudo; caso contrário os dados ficam aqui, esperando o próximo login.
+    if (ok) { try { await clearLocal(); } catch {} }
+    else toast("Saí da conta, mas mantive os dados neste aparelho: " + motivo + ". Eles voltam quando você entrar de novo.", { duration: 9000 });
     if (!isCloud()) showAuth();
   };
 }
